@@ -23,7 +23,13 @@ try {
     $env:PATH = $originalPath
 }
 
-& $pnpm --dir $webRoot audit --audit-level high
-if ($LASTEXITCODE -ne 0) { throw 'pnpm audit found a high or critical vulnerability or failed.' }
+$originalNodeOptions = $env:NODE_OPTIONS
+$env:NODE_OPTIONS = "$originalNodeOptions --dns-result-order=ipv4first".Trim()
+try {
+    & $pnpm --dir $webRoot audit --audit-level high
+    if ($LASTEXITCODE -ne 0) { throw 'pnpm audit found a high or critical vulnerability or failed.' }
+} finally {
+    $env:NODE_OPTIONS = $originalNodeOptions
+}
 
 Write-Output 'Dependency vulnerability checks passed: govulncheck, pnpm audit.'
