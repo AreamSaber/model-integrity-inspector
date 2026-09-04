@@ -1,0 +1,12 @@
+integrity:
+  role: all
+  listen: 127.0.0.1:8080
+  queue:
+    provider: database
+  database:
+    provider: sqlite
+    path: ./data/mii.db
+  reports:
+    path: ./reports
+  security:
+    master_key_file: ./data/integrity-master.key
