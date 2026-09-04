@@ -21,7 +21,7 @@ try {
     $outputPath = Join-Path $outputRoot "mii_${version}_${shortCommit}_source.cdx.json"
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
-    & $syftExecutable scan "dir:$workspaceRoot" --config (Join-Path $workspaceRoot '.syft.yaml') -o "cyclonedx-json=$outputPath"
+    & $syftExecutable scan "dir:$workspaceRoot" --config (Join-Path $workspaceRoot '.syft.yaml') --source-name 'model-integrity-inspector' --source-version "$version+$shortCommit" -o "cyclonedx-json=$outputPath"
     if ($LASTEXITCODE -ne 0) { throw 'Syft SBOM generation failed.' }
 
     $sbom = Get-Content -Raw -Encoding UTF8 -LiteralPath $outputPath | ConvertFrom-Json
