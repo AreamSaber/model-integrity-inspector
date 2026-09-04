@@ -43,13 +43,45 @@
 - 脏工作树会被 package/SBOM 脚本拒绝，避免旧 commit 标记未提交源码；
 - 分支保护 Preview 请求结构及必需检查名称正确。
 
-最终提交后运行：
+在实现提交 `42243d859cd721540cc7a47ad75b02ee0b75a1f3` 上运行：
 
 ```powershell
 ./scripts/verify-m0-04.ps1
 ```
 
-验证器会重新执行静态检查、漏洞扫描、版本化打包和本地 CycloneDX SBOM，并核对 manifest、文件哈希、CI SHA pin、Docker 基础镜像 digest 与分支保护策略。
+验证器重新执行静态检查、漏洞扫描、版本化打包和本地 CycloneDX SBOM，并核对 manifest、文件哈希、CI SHA pin、Docker 基础镜像 digest 与分支保护策略。实际结果：
+
+```text
+M0-04 local verification passed.
+CI: triggers=push+pull_request, actionlint=passed, actions=15-sha-pinned, gate=m0-04-required
+Quality: gofmt=passed, go-vet=passed, golangci-lint=passed, powershell=passed, oxlint=passed, tests=passed
+Security: govulncheck=passed, pnpm-audit=passed, trivy=ci-defined
+Artifacts: version=0.1.0-dev, commit=42243d859cd7, manifest=verified, checksums=present, sbom=cyclonedx
+External: origin=missing, docker=missing, branch-protection=not-verified-locally
+Task status: M0-03=pending-review, M0-04=in-progress
+```
+
+制品证据：
+
+- Windows amd64 二进制 SHA-256：`8820e453ebe7b5201d241ca00f927292c3e357bdc081edbe6277cda763d3e05d`；
+- Web ZIP SHA-256：`75357800e7b31a859fa1f54a243ca3f0ef96e5fd9bf6585f9f63d3d4ce55a14f`；
+- manifest SHA-256：`6511bc1399345adb59a9f609336d26e735cd56c0c0ab58f40a17070cc9d922b4`；
+- CycloneDX 1.7 源码 SBOM：123 个组件，SHA-256 `3baeca1da2d192f914b2e5feca5ecde9a3394217cdbfbf6bd1f2bbbd24600ec8`。
+
+关键实现 SHA-256：
+
+```text
+4d51b7798e04926a94c01af49a3318efbc05fed1251e4e9142dc45ec89d66e03  .github/workflows/ci.yml
+9a599ebf2b256bd9201b6e6950e7efc46dd7d631f77a06943eaeea86876b04c1  .github/branch-protection/main.json
+6c69ce2b92ed2e9ce74b3997270e807f2185cfa9a1af915b419a58f1b113acb9  Dockerfile
+361fe3107d3a761a03a25d0f1c6bab39458b9664ec875ba9cd3762271e584305  scripts/lint.ps1
+366f4eb66aae8e8b29578015a29efc2b38bd3b53548d527bbffe9ac2d2c559b4  scripts/security-scan.ps1
+5a127c20146e7f24dd236edbe06bb94f5e83d699567e6db5b91b3dcfb4bf76a4  scripts/package.ps1
+2381436f0cc00de4803dd4e807c9da72ca573ce36fcd9ea7b5ce2de727475d9b  scripts/generate-sbom.ps1
+5e199a630a68c7eb779cbad8c6e6f30dc0bf9de6f61ff45d9b9441b3788a5861  scripts/verify-m0-04.ps1
+08fa6bceef71cbc6a3dcd7c632bb7e91b2176adc9cdea4deb6ec8c352946aa69  web/package.json
+e928e623c42234e35352a9f7deaa8d537d8ce7c3378e7d4b6dc8615b6f473ebb  web/pnpm-lock.yaml
+```
 
 ## 尚未关闭的外部条件
 
