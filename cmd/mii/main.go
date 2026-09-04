@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +15,15 @@ import (
 )
 
 func main() {
+	printed, err := writeVersion(os.Args, os.Stdout)
+	if err != nil {
+		slog.Error("write build information", "error", err)
+		os.Exit(1)
+	}
+	if printed {
+		return
+	}
+
 	role, err := appruntime.ParseRole(os.Getenv("APP_ROLE"))
 	if err != nil {
 		slog.Error("invalid runtime role", "error", err)
@@ -31,6 +42,13 @@ func main() {
 		slog.Error("mii stopped with an error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func writeVersion(args []string, output io.Writer) (bool, error) {
+	if len(args) != 2 || (args[1] != "version" && args[1] != "--version") {
+		return false, nil
+	}
+	return true, json.NewEncoder(output).Encode(buildinfo.Current())
 }
 
 func envOrDefault(name, fallback string) string {

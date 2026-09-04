@@ -1,0 +1,7 @@
+check-for-app-update: false
+exclude:
+  - .git
+  - .tools
+  - artifacts
+  - web/node_modules
+  - web/dist

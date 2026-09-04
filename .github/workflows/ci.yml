@@ -1,0 +1,191 @@
+name: M0-04 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m0-04-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: 1.26.7
+  NODE_VERSION: 24.19.0
+  PNPM_VERSION: 11.19.0
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Install pnpm
+        run: npm install --global pnpm@${PNPM_VERSION}
+      - name: Static checks
+        shell: pwsh
+        run: ./scripts/lint.ps1
+      - name: Test and build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+  dependency-scan:
+    name: dependency-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Install pnpm
+        run: npm install --global pnpm@${PNPM_VERSION}
+      - name: Ecosystem vulnerability scans
+        shell: pwsh
+        run: ./scripts/security-scan.ps1
+      - name: Repository vulnerability, secret, and misconfiguration scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: false
+          version: v0.74.0
+          skip-dirs: .git,.tools,.cache,artifacts,web/node_modules,web/dist
+      - name: Generate source SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: mii-source-sbom-${{ github.sha }}.cdx.json
+          syft-version: v1.51.1
+          dependency-snapshot: false
+          upload-release-assets: false
+
+  package:
+    name: package-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Install pnpm
+        shell: bash
+        run: npm install --global pnpm@${PNPM_VERSION}
+      - name: Build versioned package
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - name: Upload package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mii-${{ matrix.os }}-${{ github.sha }}
+          path: artifacts/package/*
+          if-no-files-found: error
+          retention-days: 14
+
+  image:
+    name: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve image metadata
+        id: meta
+        shell: bash
+        run: |
+          echo "version=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build image
+        shell: bash
+        run: |
+          docker build \
+            --build-arg VERSION="${{ steps.meta.outputs.version }}" \
+            --build-arg COMMIT="${GITHUB_SHA}" \
+            --build-arg BUILT_AT="${{ steps.meta.outputs.built_at }}" \
+            --build-arg SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --tag "mii:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}" \
+            .
+      - name: Verify image labels
+        shell: bash
+        run: |
+          image="mii:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}"
+          test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "${{ steps.meta.outputs.version }}"
+          test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "${GITHUB_SHA}"
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: mii:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}
+          format: cyclonedx-json
+          artifact-name: mii-image-sbom-${{ github.sha }}.cdx.json
+          syft-version: v1.51.1
+          upload-release-assets: false
+      - name: Scan image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: mii:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: false
+          version: v0.74.0
+
+  required:
+    name: m0-04-required
+    if: always()
+    needs: [quality, dependency-scan, package, image]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce all CI results
+        shell: bash
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}
+          PACKAGE: ${{ needs.package.result }}
+          IMAGE: ${{ needs.image.result }}
+        run: |
+          for result in "$QUALITY" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE"; do
+            test "$result" = "success" || exit 1
+          done

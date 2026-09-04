@@ -6,6 +6,7 @@ coverage/
 # Dependency caches
 web/node_modules/
 .tools/
+.cache/
 
 # Runtime data and secrets
 data/

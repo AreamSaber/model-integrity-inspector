@@ -1,6 +1,6 @@
 # Model Integrity Inspector
 
-Model Integrity Inspector（模型真实性检测系统）是一个独立部署的模型 API 完整性检测工具。本仓库当前处于 M0-03 工程基线阶段，提供可编译的 Go 单一制品骨架、React + TypeScript 管理端、双数据库迁移目录、规则目录、测试入口和部署目录。
+Model Integrity Inspector（模型真实性检测系统）是一个独立部署的模型 API 完整性检测工具。本仓库当前进入 M0-04 工程交付基线阶段，提供可编译的 Go 单一制品骨架、React + TypeScript 管理端、双数据库迁移目录、规则目录、测试入口、CI、安全扫描、SBOM 和部署目录。
 
 ## Toolchain
 
@@ -17,6 +17,17 @@ Windows 环境可先运行 `./scripts/bootstrap-toolchain.ps1`，在仓库私有
 ```
 
 该命令安装锁定的前端依赖、执行前端测试与生产构建、运行全部 Go 测试，并生成 `artifacts/mii.exe`。
+
+## Quality, security, and packaging
+
+```powershell
+./scripts/lint.ps1
+./scripts/security-scan.ps1
+./scripts/package.ps1
+./scripts/generate-sbom.ps1
+```
+
+CI 定义位于 `.github/workflows/ci.yml`，稳定合并门禁为 `m0-04-required`。分支保护的应用方法见 `docs/operations/M0-04-CI-AND-BRANCH-PROTECTION.md`。
 
 ## Run locally
 

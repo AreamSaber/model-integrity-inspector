@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func TestStatusEndpoints(t *testing.T) {
 		{"/version", `"version":"test"`},
 	} {
 		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, test.path, nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("GET %s status = %d", test.path, recorder.Code)
 		}
