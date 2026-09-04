@@ -59,9 +59,11 @@ try {
             throw "Action is not pinned to a full commit SHA: $($actionReference.Value.Trim())"
         }
     }
+    $versionSources = @($workflow) + @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter '*.ps1' | ForEach-Object {
+        Get-Content -Raw -Encoding UTF8 -LiteralPath $_.FullName
+    })
     foreach ($versionMarker in @('v2.13.2', 'v1.7.0', 'v0.74.0', 'v1.51.1')) {
-        $allScripts = Get-Content -Raw -Encoding UTF8 -LiteralPath $workflowPath, (Join-Path $workspaceRoot 'scripts\lint.ps1'), (Join-Path $workspaceRoot 'scripts\security-scan.ps1'), (Join-Path $workspaceRoot 'scripts\bootstrap-syft.ps1')
-        if (($allScripts -join "`n") -notmatch [regex]::Escape($versionMarker)) { throw "Pinned CI tool version is missing: $versionMarker" }
+        if (($versionSources -join "`n") -notmatch [regex]::Escape($versionMarker)) { throw "Pinned CI tool version is missing: $versionMarker" }
     }
 
     $policy = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspaceRoot '.github\branch-protection\main.json') | ConvertFrom-Json
