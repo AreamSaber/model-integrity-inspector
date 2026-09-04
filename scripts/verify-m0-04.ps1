@@ -124,8 +124,13 @@ try {
     $m003State = if ($m003Row.EndsWith("| $passed |")) { 'passed' } elseif ($m003Row.EndsWith("| $pendingReview |")) { 'pending-review' } else { throw 'M0-03 must be pending review or passed.' }
     $m004State = if ($m004Row.EndsWith("| $inProgress |")) { 'in-progress' } elseif ($m004Row.EndsWith("| $pendingReview |")) { 'pending-review' } elseif ($m004Row.EndsWith("| $passed |")) { 'passed' } else { throw 'M0-04 must be in progress, pending review, or passed.' }
 
-    $origin = (& git remote get-url origin 2>$null | Out-String).Trim()
-    $originState = if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($origin)) { 'configured' } else { 'missing' }
+    $remoteNames = @(& git remote)
+    if ($remoteNames -contains 'origin') {
+        $origin = (& git remote get-url origin | Out-String).Trim()
+        $originState = if (-not [string]::IsNullOrWhiteSpace($origin)) { 'configured' } else { 'missing' }
+    } else {
+        $originState = 'missing'
+    }
     $dockerState = if (Get-Command docker -ErrorAction SilentlyContinue) { 'available' } else { 'missing' }
 } finally {
     Pop-Location
