@@ -54,6 +54,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-m0-03.p
 
 实际成功摘要：
 
+初始代码基线提交：`2ec221ae4bfa1f93618c9822a6344d7814268a73`（84 个跟踪文件）。
+
 ```text
 M0-03 verification passed.
 Repository: git=initialized, branch=main, head=present, required-files=tracked
