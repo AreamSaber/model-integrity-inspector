@@ -19,10 +19,23 @@ try {
     $shortCommit = $commit.Substring(0, 12)
     $outputRoot = Join-Path $workspaceRoot 'artifacts\sbom'
     $outputPath = Join-Path $outputRoot "mii_${version}_${shortCommit}_source.cdx.json"
+    if (Test-Path -LiteralPath $outputRoot -PathType Container) {
+        $resolvedArtifactRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts')).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $resolvedOutputRoot = [IO.Path]::GetFullPath($outputRoot)
+        if (-not $resolvedOutputRoot.StartsWith($resolvedArtifactRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Refusing to clean an SBOM directory outside the workspace artifact root.'
+        }
+        foreach ($staleArtifact in Get-ChildItem -LiteralPath $resolvedOutputRoot -File | Where-Object Name -Like 'mii*_source.cdx.json*') {
+            Remove-Item -LiteralPath $staleArtifact.FullName -Force
+        }
+    }
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
     & $syftExecutable scan "dir:$workspaceRoot" --config (Join-Path $workspaceRoot '.syft.yaml') --source-name 'model-integrity-inspector' --source-version "$version+$shortCommit" -o "cyclonedx-json=$outputPath"
-    if ($LASTEXITCODE -ne 0) { throw 'Syft SBOM generation failed.' }
+    if ($LASTEXITCODE -ne 0) {
+        if (Test-Path -LiteralPath $outputPath -PathType Leaf) { Remove-Item -LiteralPath $outputPath -Force }
+        throw 'Syft SBOM generation failed.'
+    }
 
     $sbom = Get-Content -Raw -Encoding UTF8 -LiteralPath $outputPath | ConvertFrom-Json
     if ($sbom.bomFormat -ne 'CycloneDX' -or [string]::IsNullOrWhiteSpace($sbom.specVersion)) {
