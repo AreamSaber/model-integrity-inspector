@@ -1,0 +1,3 @@
+[
+  {"case_id": "c-001", "conditions": ["normal", "unknown_tokenizer"], "rationale": "Public synthetic development example; no mutation; not evidence of algorithm accuracy."}
+]

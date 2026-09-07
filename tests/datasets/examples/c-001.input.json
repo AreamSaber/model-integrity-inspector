@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "c-001",
+  "samples": [{
+    "sample_id": "s-001",
+    "probe_family": "format_contract",
+    "language": "en-US",
+    "request": {"model": "test-model", "messages": [{"role": "user", "content": "Return only OK"}], "max_output_tokens": 64, "stream": false},
+    "response": {"http_status": 200, "content": "OK", "model_reported": "test-model", "finish_reason": "stop", "duration_ms": 10},
+    "tokenizer": {"id": "", "version": "", "quality": "unavailable"}
+  }]
+}

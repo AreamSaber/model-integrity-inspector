@@ -1,0 +1,1 @@
+{"seed": 104, "cap_steps": [{"min_requested": 128, "cap": 64}, {"min_requested": 512, "cap": 256}], "override_probability": 1}
