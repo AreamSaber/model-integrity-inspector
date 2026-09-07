@@ -10,6 +10,7 @@ import { CatalogPage } from './catalog/CatalogPage'
 import { HistoricalRun, RunHistory } from './history/RunHistory'
 import { ResultsPage } from './results/ResultsPage'
 import { decimalID } from '../runs-history-api'
+import { BaselinesPage } from './baselines/BaselinesPage'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -18,7 +19,7 @@ const navigation = [
   ['model-profiles', '模型档案管理', '管理'],
   ['runs', '检测任务', '检测'],
   ['reports', '结果与报告', '检测'],
-  ['baselines', '可信基线', '治理'],
+  ['baselines', '基线管理', '治理'],
   ['rules', '规则与模板', '治理'],
   ['audit', '审计日志', '治理'],
   ['organizations', '组织与角色', '管理'],
@@ -108,6 +109,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
           route === 'runs' || route === 'reports' || historicalID || resultID ? (organization ? (resultID ? <ResultsPage key={`${organization.id}-result-${resultID}`} {...management} organizationID={organization.id} runID={resultID} /> : historicalID ? <HistoricalRun key={`${organization.id}-run-${historicalID}`} {...management} organizationID={organization.id} runID={historicalID} /> : <RunHistory key={`${organization.id}-${route}`} {...management} organizationID={organization.id} resultsOnly={route === 'reports'} />) : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取检测历史和结果。</p></section>) :
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
           route === 'providers' || route === 'model-profiles' ? (organization ? <CatalogPage key={`${organization.id}-${route}`} kind={route} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理目录档案。</p></section>) :
+          route === 'baselines' ? (organization ? <BaselinesPage key={`${session.user.id}-${organization.id}`} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理参考基线。</p></section>) :
           route === 'account' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> :
           route === 'users' ? <UsersPage {...management} /> :
           route === 'organization-management' ? <OrganizationsPage {...management} onChanged={(org) => {

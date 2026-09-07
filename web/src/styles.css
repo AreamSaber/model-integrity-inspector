@@ -187,3 +187,26 @@ td { min-width: 220px; line-height: 1.8; overflow-wrap: anywhere; }
 .chart-reference { stroke: #a6bcb1; stroke-dasharray: 5 5; }
 .chart-local { fill: #83c9ff; stroke: #071411; stroke-width: 1; }
 .chart-reported { fill: #ffad6e; stroke: #071411; stroke-width: 1; opacity: .85; }
+.review-history { padding-left: 1.4rem; }
+.review-explanation { white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-panel form fieldset { display: grid; gap: 12px; }
+.review-panel form legend { margin-bottom: 12px; }
+.review-panel textarea { width: 100%; min-height: 130px; resize: vertical; border: 1px solid #4b645b; background: #091913; color: #edf7f3; padding: 11px 12px; border-radius: 7px; font: inherit; }
+
+/* Real organization baseline management; namespaced to avoid report styling. */
+.baseline-page { min-width: 0; }
+.baseline-details, .baseline-form { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 24px; }
+.baseline-facts { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 3fr); gap: 12px 20px; margin-block: 24px; }
+.baseline-facts dt { color: #b4c9bf; }
+.baseline-facts dd { margin: 0; overflow-wrap: anywhere; }
+.baseline-facts code { font-size: .875rem; }
+.baseline-status { display: inline-block; border: 1px solid #7ca88d; color: #d3efdd; background: #153929; padding: 4px 9px; border-radius: 6px; font-size: .85rem; }
+.baseline-status-draft { color: #cfe7ff; border-color: #7e9db6; background: #163143; }
+.baseline-status-expired { color: #ffe3ab; border-color: #b59b6a; background: #43321a; }
+.baseline-status-retired { color: #d2d7d4; border-color: #8c9990; background: #303b34; }
+.baseline-limitations li { margin-block: 7px; overflow-wrap: anywhere; }
+.baseline-form fieldset { display: grid; gap: 12px; }
+.baseline-form input:not([type="checkbox"]), .baseline-form textarea, .baseline-form select { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid #4b645b; background: #091913; color: #edf7f3; border-radius: 7px; font: inherit; }
+.baseline-form textarea { resize: vertical; min-height: 92px; }
+.baseline-confirm { margin-block: 12px; }
+@media (max-width: 640px) { .baseline-facts { grid-template-columns: 1fr; gap: 6px; } .baseline-facts dd { margin-bottom: 12px; } }

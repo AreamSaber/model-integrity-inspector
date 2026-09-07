@@ -538,6 +538,10 @@ func (s *Service) Findings(ctx context.Context, orgID, runID int64, revision int
 	if err != nil {
 		return nil, err
 	}
+	return findingsViews(data, doc, orgID, runID, revision, page)
+}
+
+func findingsViews(data repository.PublishedRead, doc analyzer.Document, orgID, runID int64, revision int, page repository.ListOptions) ([]FindingView, error) {
 	items := []FindingView{}
 	ids := map[string]bool{}
 	for _, sample := range data.Samples {
@@ -651,14 +655,23 @@ func (s *Service) Sample(ctx context.Context, orgID, runID, sampleID int64, revi
 	if out.Sample.ID == "" {
 		return out, repository.ErrNotFound
 	}
-	for _, a := range data.Attempts {
-		if a.ID <= 0 || a.OrganizationID != orgID || a.RunID != runID || a.LogicalSampleID != sampleID || a.AttemptNo < 1 || a.AttemptNo > 3 || !slices.Contains(validities, a.Validity) || a.HTTPStatus != nil && (*a.HTTPStatus < 100 || *a.HTTPStatus > 599) || !boundedCount(a.PromptTokens) || !boundedCount(a.CompletionTokens) || !boundedCount(a.TotalTokens) || !boundedCount(a.DurationMS) {
-			return SampleDetail{}, repository.ErrResultDocument
-		}
-		code := attemptErrorCode(a.ErrorCode)
-		out.Attempts = append(out.Attempts, AttemptView{decimal(a.ID), a.AttemptNo, a.Validity, code, a.HTTPStatus, a.PromptTokens, a.CompletionTokens, a.TotalTokens, a.DurationMS, a.StartedAt, a.FinishedAt, "redacted"})
+	out.Attempts, err = attemptsViews(data.Attempts, orgID, runID, sampleID)
+	if err != nil {
+		return SampleDetail{}, err
 	}
 	return out, nil
+}
+
+func attemptsViews(rows []repository.ResultAttemptRecord, orgID, runID, sampleID int64) ([]AttemptView, error) {
+	items := []AttemptView{}
+	for _, a := range rows {
+		if a.ID <= 0 || a.OrganizationID != orgID || a.RunID != runID || a.LogicalSampleID != sampleID || a.AttemptNo < 1 || a.AttemptNo > 3 || !slices.Contains(validities, a.Validity) || a.HTTPStatus != nil && (*a.HTTPStatus < 100 || *a.HTTPStatus > 599) || !boundedCount(a.PromptTokens) || !boundedCount(a.CompletionTokens) || !boundedCount(a.TotalTokens) || !boundedCount(a.DurationMS) {
+			return nil, repository.ErrResultDocument
+		}
+		code := attemptErrorCode(a.ErrorCode)
+		items = append(items, AttemptView{decimal(a.ID), a.AttemptNo, a.Validity, code, a.HTTPStatus, a.PromptTokens, a.CompletionTokens, a.TotalTokens, a.DurationMS, a.StartedAt, a.FinishedAt, "redacted"})
+	}
+	return items, nil
 }
 
 func attemptErrorCode(stored *string) *string {

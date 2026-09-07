@@ -119,7 +119,13 @@ func startRunWorker(t *testing.T, f runFixture, config RunConfig, log io.Writer)
 		t.Fatal(err)
 	}
 	if log == nil {
-		log = io.Discard
+		buffer := &executionLogBuffer{}
+		log = buffer
+		t.Cleanup(func() {
+			if t.Failed() {
+				t.Log(buffer.String())
+			}
+		})
 	}
 	runner, err := New(Config{Store: f.store, Handlers: handlers, Logger: slog.New(slog.NewTextHandler(log, nil)), PollInterval: 10 * time.Millisecond, HeartbeatInterval: 40 * time.Millisecond})
 	if err != nil {

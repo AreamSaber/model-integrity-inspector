@@ -16,7 +16,7 @@ var errJSONContract = errors.New("invalid JSON contract")
 // can accept duplicate keys, case aliases or null scalar values. Depth and body
 // size are bounded separately; errors never contain submitted data.
 func strictJSON(raw []byte, out any) error {
-	if !utf8.Valid(raw) {
+	if !utf8.Valid(raw) || !validJSONSurrogates(raw) {
 		return errJSONContract
 	}
 	shape := reflect.TypeOf(out)

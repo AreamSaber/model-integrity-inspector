@@ -24,6 +24,8 @@ func TestRequirementsTraceability(t *testing.T) {
 		t.Fatal(err)
 	}
 	var matrix struct {
+		GoalScope    string `json:"goal_scope"`
+		FormalReview string `json:"formal_review"`
 		Requirements []struct {
 			ID             string   `json:"id"`
 			Priority       string   `json:"priority"`
@@ -34,10 +36,14 @@ func TestRequirementsTraceability(t *testing.T) {
 			Implementation string   `json:"implementation"`
 			Code           []string `json:"code"`
 			Tests          []string `json:"tests"`
+			GoalIncluded   bool     `json:"goal_included"`
 		} `json:"requirements"`
 	}
 	if err := json.Unmarshal(raw, &matrix); err != nil {
 		t.Fatal(err)
+	}
+	if matrix.GoalScope != "all_original_requirements" || matrix.FormalReview != "deferred_until_complete" {
+		t.Fatal("current authorized Goal scope/review policy missing")
 	}
 	pattern := regexp.MustCompile(`(?m)^\| ((?:SYS|TAR|RUN|PINJ|MTOK|RINT|BASE|REP|HIS|CFG)-\d{3}) \|[^\r\n]+\| (P[012]) \|`)
 	required := map[string]string{}
@@ -53,6 +59,12 @@ func TestRequirementsTraceability(t *testing.T) {
 			t.Errorf("duplicate/unknown/changed priority: %s", row.ID)
 		}
 		seen[row.ID] = true
+		if !row.GoalIncluded {
+			t.Errorf("original requirement excluded from current Goal: %s", row.ID)
+		}
+		if row.Implementation != "not_started" && row.Implementation != "in_progress" && row.Implementation != "verified" {
+			t.Errorf("unknown development state: %s", row.ID)
+		}
 		if row.Owner == "" || row.TestCase != "REQ-"+row.ID || len(row.Tasks) == 0 {
 			t.Errorf("missing ownership/test allocation: %s", row.ID)
 		}
@@ -64,7 +76,7 @@ func TestRequirementsTraceability(t *testing.T) {
 		if row.Priority == "P0" && len(row.Acceptance) == 0 {
 			t.Errorf("no acceptance owner: %s", row.ID)
 		}
-		if row.Implementation == "verified" {
+		if row.Implementation == "verified" || row.Implementation == "in_progress" {
 			if len(row.Code) == 0 || len(row.Tests) == 0 {
 				t.Errorf("verified without evidence: %s", row.ID)
 			}

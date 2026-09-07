@@ -38,9 +38,10 @@ type Config struct {
 }
 
 type Runner struct {
-	config  Config
-	ready   atomic.Bool
-	running atomic.Bool
+	config    Config
+	ready     atomic.Bool
+	running   atomic.Bool
+	queueGate chan struct{}
 }
 
 func New(config Config) (*Runner, error) {
@@ -67,7 +68,7 @@ func New(config Config) (*Runner, error) {
 		handlers[kind] = handler
 	}
 	config.Handlers = handlers
-	return &Runner{config: config}, nil
+	return &Runner{config: config, queueGate: make(chan struct{}, 1)}, nil
 }
 
 // Ready is false until Run owns a real consumer and its first heartbeat succeeds.
@@ -127,11 +128,17 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 				runner.ready.Store(false)
 				return
 			case <-ticker.C:
-				pulseCtx, stop := context.WithTimeout(runCtx, 2*time.Second)
-				err := queue.HeartbeatConsumer(pulseCtx)
-				stop()
+				err := runner.withQueueGate(runCtx, func() error {
+					pulseCtx, stop := context.WithTimeout(runCtx, 2*time.Second)
+					defer stop()
+					return queue.HeartbeatConsumer(pulseCtx)
+				})
 				if err != nil {
 					runner.ready.Store(false)
+					if runCtx.Err() != nil {
+						return
+					}
+					runner.logQueueFailure(runCtx, "consumer_heartbeat")
 					heartbeatFailure <- err
 					cancel()
 					return
@@ -139,6 +146,10 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 			case <-maintenance.C:
 				if err := runner.maintain(runCtx, queue); err != nil {
 					runner.ready.Store(false)
+					if runCtx.Err() != nil {
+						return
+					}
+					runner.logQueueFailure(runCtx, "maintenance")
 					heartbeatFailure <- err
 					cancel()
 					return
@@ -160,9 +171,39 @@ func (runner *Runner) maintain(ctx context.Context, queue *repository.JobQueue) 
 	if runner.config.Maintenance == nil {
 		return nil
 	}
-	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	return runner.config.Maintenance(bounded, queue)
+	return runner.withQueueGate(ctx, func() error {
+		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		return runner.config.Maintenance(bounded, queue)
+	})
+}
+
+// Background pulses must not time out waiting for this Runner's own terminal
+// transaction on SQLite's single connection. The pulse's existing two-second
+// SQL deadline starts after this cancellable gate; completion still has its
+// original ten-second total deadline, including gate wait. Both remain well
+// within the sixty-second lease, which the repository rechecks before and after
+// completion. This grants no dispatch/commit authority and performs no retries.
+func (runner *Runner) withQueueGate(ctx context.Context, operation func() error) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case runner.queueGate <- struct{}{}:
+	}
+	defer func() { <-runner.queueGate }()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return operation()
+}
+
+// Only internal, fixed operation labels enter logs: database/handler errors can
+// contain protected values and must never be logged here. Normal shutdown is
+// not an outage; a live parent with a failed bounded SQL operation still is.
+func (runner *Runner) logQueueFailure(ctx context.Context, operation string) {
+	if ctx.Err() == nil {
+		runner.config.Logger.Error("worker queue operation failed", "operation", operation)
+	}
 }
 
 func (runner *Runner) loop(ctx context.Context, queue *repository.JobQueue) error {
@@ -175,6 +216,7 @@ func (runner *Runner) loop(ctx context.Context, queue *repository.JobQueue) erro
 				return nil
 			}
 			runner.ready.Store(false)
+			runner.logQueueFailure(ctx, "claim")
 			return err
 		}
 		if lease == nil {
@@ -256,16 +298,22 @@ func (runner *Runner) execute(ctx context.Context, queue *repository.JobQueue, l
 			}
 			commitCtx, stop := context.WithTimeout(ctx, 10*time.Second)
 			defer stop()
-			if result.err != nil {
-				// Handler errors can contain arbitrary diagnostics. Never log or store
-				// them. Only the fixed classification crosses this boundary.
-				runner.config.Logger.Warn("worker handler failed", "code", "WORKER_HANDLER_FAILED")
-				if errors.Is(result.err, repository.ErrUnavailable) {
-					return queue.Retry(commitCtx, lease, "WORKER_STORAGE_UNAVAILABLE", 3*time.Second)
+			return runner.withQueueGate(commitCtx, func() error {
+				if result.err != nil {
+					// Handler errors can contain arbitrary diagnostics. Never log or store
+					// them. Only the fixed classification crosses this boundary.
+					runner.config.Logger.Warn("worker handler failed", "code", "WORKER_HANDLER_FAILED")
+					if errors.Is(result.err, repository.ErrUnavailable) {
+						return queue.Retry(commitCtx, lease, "WORKER_STORAGE_UNAVAILABLE", 3*time.Second)
+					}
+					return queue.Fail(commitCtx, lease, "WORKER_HANDLER_FAILED")
 				}
-				return queue.Fail(commitCtx, lease, "WORKER_HANDLER_FAILED")
-			}
-			return queue.CompleteWith(commitCtx, lease, result.completion)
+				err := queue.CompleteWith(commitCtx, lease, result.completion)
+				if err != nil {
+					runner.logQueueFailure(ctx, "complete")
+				}
+				return err
+			})
 		case <-stopC:
 			runner.ready.Store(false)
 			beginCancel(context.Canceled)
@@ -277,6 +325,7 @@ func (runner *Runner) execute(ctx context.Context, queue *repository.JobQueue, l
 			stop()
 			if err != nil {
 				if !errors.Is(err, repository.ErrJobCancelled) && !errors.Is(err, repository.ErrPrecheckStale) {
+					runner.logQueueFailure(ctx, "check_lease")
 					lost = err
 					runner.ready.Store(false)
 				}
@@ -287,6 +336,7 @@ func (runner *Runner) execute(ctx context.Context, queue *repository.JobQueue, l
 			renewed, err := queue.Renew(pulseCtx, lease)
 			stop()
 			if err != nil {
+				runner.logQueueFailure(ctx, "renew")
 				lost = err
 				runner.ready.Store(false)
 				beginCancel(err)

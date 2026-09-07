@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,14 +71,14 @@ func TestApplicationPersistsInitializationAcrossRestart(t *testing.T) {
 	case <-time.After(12 * time.Second):
 		t.Fatal("server shutdown did not complete")
 	}
-	if err := app.store.Close(); err != nil {
+	if err := app.close(); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := prepare(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = restarted.store.Close() }()
+	defer func() { _ = restarted.close() }()
 	initialized, err := restarted.store.SetupStatus(t.Context())
 	if err != nil || !initialized {
 		t.Fatal("initialization did not survive restart")
@@ -106,8 +107,31 @@ func TestApplicationRejectsMissingOrWrongMasterKey(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.MasterKeyFile = filepath.Join(t.TempDir(), "missing.key")
 	if app, err := prepare(t.Context(), cfg); err == nil {
-		_ = app.store.Close()
+		_ = app.close()
 		t.Fatal("missing master key accepted")
+	}
+}
+
+func TestApplicationRejectsUnsafeReportDirectoryAndClosesOwnedHandles(t *testing.T) {
+	cfg := testConfig(t)
+	privatePath := cfg.ReportPath
+	cfg.ReportPath = cfg.MasterKeyFile // An existing private file is never a directory.
+	if app, err := prepare(t.Context(), cfg); err == nil {
+		_ = app.close()
+		t.Fatal("unsafe report directory accepted")
+	}
+	cfg.ReportPath = privatePath
+	app, err := prepare(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.close(); err != nil {
+		t.Fatal(err)
+	}
+	// Both names are exact siblings in this test-owned temporary directory.
+	// On Windows this also detects a retained no-delete-share directory handle.
+	if err := os.Rename(privatePath, privatePath+"-closed"); err != nil {
+		t.Fatal("application retained report directory handle after close")
 	}
 }
 
@@ -117,7 +141,7 @@ func TestApplicationReadinessTracksRealWorkerAndCleanShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = app.store.Close() }()
+	defer func() { _ = app.close() }()
 	readiness := func() int {
 		w := httptest.NewRecorder()
 		app.handler.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), "GET", "/ready", nil))

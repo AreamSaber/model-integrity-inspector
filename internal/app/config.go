@@ -138,7 +138,7 @@ func LoadConfig(path string, lookup func(string) string) (Config, error) {
 	}
 	out := Config{Role: role, Addr: valueOr(lookup("MII_ADDR"), c.Listen), PublicOrigin: valueOr(lookup("MII_PUBLIC_ORIGIN"), c.PublicOrigin), AllowInsecureLoopback: c.AllowInsecureLoopback,
 		DatabaseDriver: valueOr(lookup("MII_DATABASE_DRIVER"), c.Database.Provider), DatabasePath: valueOr(lookup("MII_DATABASE_PATH"), c.Database.Path), DatabaseDSN: lookup(c.Database.DSNEnv),
-		MasterKeyFile: valueOr(lookup("MII_MASTER_KEY_FILE"), c.Security.MasterKeyFile), MasterKeyVersion: valueOr(lookup("MII_MASTER_KEY_VERSION"), c.Security.MasterKeyVersion), SetupToken: lookup(c.Security.SetupTokenEnv), ReportPath: c.Reports.Path}
+		MasterKeyFile: valueOr(lookup("MII_MASTER_KEY_FILE"), c.Security.MasterKeyFile), MasterKeyVersion: valueOr(lookup("MII_MASTER_KEY_VERSION"), c.Security.MasterKeyVersion), SetupToken: lookup(c.Security.SetupTokenEnv), ReportPath: valueOr(lookup("MII_REPORT_PATH"), c.Reports.Path)}
 	if value := lookup("MII_ALLOW_INSECURE_LOOPBACK"); value != "" {
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -183,6 +183,9 @@ func (c Config) Validate() error {
 		return ErrConfig
 	}
 	if c.MasterKeyFile == "" || c.MasterKeyVersion == "" || c.ReportPath == "" {
+		return ErrConfig
+	}
+	if !filepath.IsAbs(c.ReportPath) || strings.ContainsRune(c.ReportPath, 0) || filepath.Clean(c.ReportPath) == filepath.VolumeName(c.ReportPath)+string(filepath.Separator) {
 		return ErrConfig
 	}
 	host, port, err := net.SplitHostPort(c.Addr)

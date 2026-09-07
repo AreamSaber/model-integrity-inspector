@@ -15,10 +15,12 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/analysis/features"
 	"model-integrity-inspector.local/mii/internal/integrity/analysis/scoring"
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
+	"model-integrity-inspector.local/mii/internal/integrity/baseline"
 	runtimebundle "model-integrity-inspector.local/mii/internal/integrity/bundle"
 	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
+	"model-integrity-inspector.local/mii/internal/integrity/reportstorage"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
 	"model-integrity-inspector.local/mii/internal/integrity/safehttp"
@@ -34,8 +36,15 @@ var ErrStartup = errors.New("MI_STARTUP_FAILED")
 
 type application struct {
 	store   *repository.Store
+	reports *reportstorage.Store
 	handler http.Handler
 	worker  *worker.Runner
+}
+
+// The pinned report-directory handles outlive all HTTP/Worker users and are
+// closed together with the database only after their graceful shutdown.
+func (a *application) close() error {
+	return errors.Join(a.reports.Close(), a.store.Close())
 }
 
 // prepare validates keys and schema before opening a listening socket. Workers
@@ -81,8 +90,9 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 			return nil, ErrStartup
 		}
 	}
-	if err := os.MkdirAll(cfg.ReportPath, 0700); err != nil {
-		return nil, ErrStartup
+	reports, err := reportstorage.Open(cfg.ReportPath)
+	if err != nil {
+		return nil, err
 	}
 	dsn := cfg.DatabaseDSN
 	if cfg.DatabaseDriver == "sqlite" {
@@ -90,12 +100,14 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 	}
 	store, err := repository.Open(ctx, repository.Config{Driver: cfg.DatabaseDriver, DSN: dsn, AuditSigner: key, Bootstrap: bootstrap})
 	if err != nil {
+		_ = reports.Close()
 		return nil, err
 	}
+	app := &application{store: store, reports: reports}
 	failed := true
 	defer func() {
 		if failed {
-			_ = store.Close()
+			_ = app.close()
 		}
 	}()
 	if cfg.Role.Components().Server {
@@ -114,7 +126,6 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 			return nil, err
 		}
 	}
-	app := &application{store: store}
 	secretService, err := secret.NewService(store, key)
 	if err != nil {
 		return nil, err
@@ -146,8 +157,16 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 			return nil, err
 		}
 		handlers[repository.JobRunAnalyze] = analysis
+		reportHandler, err := worker.NewReportHandler(worker.ReportConfig{Storage: reports})
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobReportGenerate] = reportHandler
 		app.worker, err = worker.New(worker.Config{Store: store, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
 			if err := worker.ReconcileRunJobs(ctx, queue); err != nil {
+				return err
+			}
+			if err := queue.ReconcileReports(ctx); err != nil {
 				return err
 			}
 			return queue.ExpireRunEstimates(ctx)
@@ -182,7 +201,15 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Frontend: webui.Handler()})
+		baselines, err := baseline.NewService(baseline.Config{Store: store, Generator: compiler, Signer: key})
+		if err != nil {
+			return nil, err
+		}
+		reportService, err := runservice.NewReportService(runservice.ReportConfig{Store: store, Storage: reports, Ready: readiness})
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +227,7 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = app.store.Close() }()
+	defer func() { _ = app.close() }()
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return ErrStartup

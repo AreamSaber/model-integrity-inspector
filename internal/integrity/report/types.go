@@ -216,6 +216,12 @@ type document struct {
 	Recommendations   []string  `json:"recommendations"`
 }
 
+// Document is the typed JSON content projection for artifact readers and
+// contract generation. A value is not an authorized source or a Snapshot;
+// marshaling one cannot mint trusted provenance. Final artifact JSON includes
+// the independently computed content_hash in addition to these fields.
+type Document = document
+
 // Snapshot and Artifacts own their memory. No mutable projection/bytes escape.
 type Snapshot struct{ doc document }
 type Artifacts struct {

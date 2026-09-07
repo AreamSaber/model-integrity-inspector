@@ -18,7 +18,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-002",
@@ -36,7 +37,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-003",
@@ -54,7 +56,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-004",
@@ -72,7 +75,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-005",
@@ -92,7 +96,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-006",
@@ -111,7 +116,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-007",
@@ -129,7 +135,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-008",
@@ -147,7 +154,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "SYS-009",
@@ -163,7 +171,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "SYS-010",
@@ -179,7 +188,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "TAR-001",
@@ -197,7 +207,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "TAR-002",
@@ -215,7 +226,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "TAR-003",
@@ -233,7 +245,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "TAR-004",
@@ -251,7 +264,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "TAR-005",
@@ -270,7 +284,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "TAR-006",
@@ -286,7 +301,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "TAR-007",
@@ -302,7 +318,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "TAR-008",
@@ -321,7 +338,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-001",
@@ -342,7 +360,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-002",
@@ -360,7 +379,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-003",
@@ -379,7 +399,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-004",
@@ -398,7 +419,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-005",
@@ -416,7 +438,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-006",
@@ -434,7 +457,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-007",
@@ -452,7 +476,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-008",
@@ -471,7 +496,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RUN-009",
@@ -487,7 +513,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "RUN-010",
@@ -503,7 +530,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "PINJ-001",
@@ -522,7 +550,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "PINJ-002",
@@ -541,7 +570,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "PINJ-003",
@@ -560,7 +590,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "PINJ-004",
@@ -579,7 +610,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "PINJ-005",
@@ -598,7 +630,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "PINJ-006",
@@ -614,7 +647,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "PINJ-007",
@@ -630,7 +664,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "PINJ-008",
@@ -649,7 +684,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-001",
@@ -668,7 +704,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-002",
@@ -687,7 +724,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-003",
@@ -706,7 +744,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-004",
@@ -725,7 +764,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-005",
@@ -745,7 +785,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-006",
@@ -764,7 +805,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-007",
@@ -784,7 +826,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "MTOK-008",
@@ -800,7 +843,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "MTOK-009",
@@ -816,7 +860,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "完整自适应分段诊断为 P1；固定/概率上限发布检出率仍由 M3-06、M7-02 验证。"
+      "notes": "完整自适应分段诊断为 P1；固定/概率上限发布检出率仍由 M3-06、M7-02 验证。",
+      "goal_included": true
     },
     {
       "id": "RINT-001",
@@ -836,7 +881,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RINT-002",
@@ -856,7 +902,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RINT-003",
@@ -875,7 +922,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RINT-004",
@@ -894,7 +942,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RINT-005",
@@ -914,7 +963,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "RINT-006",
@@ -930,7 +980,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "BASE-001",
@@ -945,10 +996,20 @@
         "M7-01"
       ],
       "test_case": "REQ-BASE-001",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "组织基线草稿/审批已接真实已发布来源；开发未校准基线仍不能参加可信评分，不能把组织业务批准冒充校准或正式项目批准。",
+      "goal_included": true
     },
     {
       "id": "BASE-002",
@@ -963,10 +1024,20 @@
         "M7-01"
       ],
       "test_case": "REQ-BASE-002",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "签名冻结模型/协议/参数hash/日期/版本；区域和official来源是组织声明未验证，实际区域/可信来源认证仍需完善。",
+      "goal_included": true
     },
     {
       "id": "BASE-003",
@@ -981,10 +1052,20 @@
         "M7-01"
       ],
       "test_case": "REQ-BASE-003",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "后端到期返回expired及重新采样限制，审批不能使用过期参考；实际前端与全链路后续继续。",
+      "goal_included": true
     },
     {
       "id": "BASE-004",
@@ -999,10 +1080,20 @@
         "M7-01"
       ],
       "test_case": "REQ-BASE-004",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "支持official/historical类型的组织声明来源；不得声称系统认证了官方供应商，可信官方对照采样/评分尚缺。",
+      "goal_included": true
     },
     {
       "id": "BASE-005",
@@ -1017,10 +1108,20 @@
         "M7-01"
       ],
       "test_case": "REQ-BASE-005",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "草稿修改与审批/退休使用版本CAS/持久权限/事务审计，批准后不可就地覆盖；双库篡改/并发/撤权已验证，页面仍在接入。",
+      "goal_included": true
     },
     {
       "id": "BASE-006",
@@ -1033,10 +1134,20 @@
       ],
       "acceptance": [],
       "test_case": "REQ-BASE-006",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "已有同批变量hash和适用性描述检查；并未实现对照采样与可信成对评分。原始P1仍在当前Goal范围。",
+      "goal_included": true
     },
     {
       "id": "REP-001",
@@ -1053,10 +1164,20 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-001",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "已展示四维风险/置信/C-D/完整性与开发限制；可信基线与正式校准仍待完成。",
+      "goal_included": true
     },
     {
       "id": "REP-002",
@@ -1071,10 +1192,20 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-002",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "当前Finding显示样本引用且可读S1样本/Attempt；完整结论→探针→样本交互及正文复现尚缺。",
+      "goal_included": true
     },
     {
       "id": "REP-003",
@@ -1089,10 +1220,20 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-003",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "已有S1 Usage/停止原因/耗时/最终Attempt；授权脱敏正文/完整请求参数/复现入口尚缺，不能以元数据替代完整要求。",
+      "goal_included": true
     },
     {
       "id": "REP-004",
@@ -1108,10 +1249,20 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-004",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "真实结果及报告包含闭集替代解释/开发限制/探索性统计说明；整体算法与文案验收仍待完成。",
+      "goal_included": true
     },
     {
       "id": "REP-005",
@@ -1129,7 +1280,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "REP-006",
@@ -1144,10 +1296,23 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-006",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/canonical.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go"
+      ],
+      "tests": [
+        "internal/integrity/report/report_test.go",
+        "internal/integrity/worker/report_generate_test.go",
+        "internal/integrity/repository/report_test.go",
+        "internal/integrity/api/reports_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "JSON/HTML真实异步生成与授权下载已双库/实际HTTP验证；报告前端、人工复核快照与完整导出内容仍待完成。",
+      "goal_included": true
     },
     {
       "id": "REP-007",
@@ -1163,7 +1328,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "REP-008",
@@ -1176,10 +1342,23 @@
       ],
       "acceptance": [],
       "test_case": "REQ-REP-008",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "完整版本链为 P1；M5-08 基础 canonical hash 仍须 V1.0 实现。"
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/canonical.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go"
+      ],
+      "tests": [
+        "internal/integrity/report/report_test.go",
+        "internal/integrity/worker/report_generate_test.go",
+        "internal/integrity/repository/report_test.go",
+        "internal/integrity/api/reports_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "冻结输入/时间/内容hash/独立文件hash、不可覆盖版本及同key重试字节一致已验证；完整修改差异/关联版本链尚待完成。原P1仍在Goal范围。",
+      "goal_included": true
     },
     {
       "id": "REP-009",
@@ -1195,7 +1374,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "HIS-001",
@@ -1213,7 +1393,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "HIS-002",
@@ -1232,7 +1413,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "HIS-003",
@@ -1250,7 +1432,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "HIS-004",
@@ -1266,7 +1449,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "HIS-005",
@@ -1282,7 +1466,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "CFG-001",
@@ -1301,7 +1486,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "CFG-002",
@@ -1319,7 +1505,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "CFG-003",
@@ -1337,7 +1524,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "CFG-004",
@@ -1356,7 +1544,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     },
     {
       "id": "CFG-005",
@@ -1372,7 +1561,8 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
     },
     {
       "id": "CFG-006",
@@ -1391,7 +1581,11 @@
       "implementation": "not_started",
       "code": [],
       "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
     }
-  ]
+  ],
+  "goal_scope": "all_original_requirements",
+  "formal_review": "deferred_until_complete",
+  "scope_note": "release 保留原PRD历史分类；当前项目方Goal明确覆盖全部77项原始P0/P1/P2，不因future分类排除开发。implementation只记录开发进度，不代表正式审核。"
 }

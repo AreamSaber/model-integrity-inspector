@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/integrity/baseline"
+	"model-integrity-inspector.local/mii/internal/integrity/report"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
 )
 
@@ -30,6 +32,17 @@ func TestPublicRunReadSchemasMatchActualClosedDTOs(t *testing.T) {
 		"TokenAnalysis": reflect.TypeFor[runservice.TokenAnalysisView](), "TokenTier": reflect.TypeFor[runservice.TokenTierView](), "TokenPlateau": reflect.TypeFor[runservice.TokenPlateauView](),
 		"BehaviorAnalysis": reflect.TypeFor[runservice.BehaviorAnalysisView](), "BehaviorPattern": reflect.TypeFor[runservice.PatternView](), "BehaviorDifference": reflect.TypeFor[runservice.DifferenceView](),
 		"Statistic": reflect.TypeFor[runservice.StatisticView](), "Finding": reflect.TypeFor[runservice.FindingView](), "Sample": reflect.TypeFor[runservice.SampleView](), "Attempt": reflect.TypeFor[runservice.AttemptView](), "SampleDetail": reflect.TypeFor[runservice.SampleDetail](),
+		"Review":   reflect.TypeFor[runservice.ReviewView](),
+		"Baseline": reflect.TypeFor[baseline.View](), "Report": reflect.TypeFor[runservice.ReportView](),
+		"ReportDocumentContent": reflect.TypeFor[report.Document](),
+		"ReportDocument": reflect.TypeFor[struct {
+			report.Document
+			ContentHash string `json:"content_hash"`
+		}](),
+		"ReportVersions": reflect.TypeFor[report.Versions](), "ReportRun": reflect.TypeFor[report.Run](), "ReportResult": reflect.TypeFor[report.Result](),
+		"ReportStatistic": reflect.TypeFor[report.Statistic](), "ReportFinding": reflect.TypeFor[report.Finding](), "ReportSample": reflect.TypeFor[report.Sample](), "ReportAttempt": reflect.TypeFor[report.Attempt](),
+		"ReportTokenStatistics": reflect.TypeFor[report.TokenStatistics](), "ReportTier": reflect.TypeFor[report.Tier](), "ReportPlateau": reflect.TypeFor[report.Plateau](),
+		"ReportBehaviorStatistics": reflect.TypeFor[report.BehaviorStatistics](), "ReportPattern": reflect.TypeFor[report.Pattern](), "ReportDifference": reflect.TypeFor[report.Difference](),
 	}
 	for name, typeOf := range types {
 		t.Run(name, func(t *testing.T) {

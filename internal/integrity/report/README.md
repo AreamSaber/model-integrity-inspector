@@ -87,8 +87,10 @@ pass. All figures remain observations, not misconduct probabilities.
 
 Every output fixes `observation_mode=blackbox`, `development=true`,
 `calibrated=false`, `content_state=redacted`, `review=null`,
-`review_state=not_reviewed`. Input has no approval/calibration/gateway-evidence
-switch. Machine evaluation is distinct from human review. Adding a future review
+`review_state=not_included`. This means the report does not contain a frozen human
+review, **not** that the Run has no historical reviews. Input has no
+approval/calibration/gateway-evidence switch. Machine evaluation is distinct from
+human review. Adding a future review
 requires a **new report version**, never overwriting the existing snapshot.
 
 Bounds include 512 samples, 256 findings, 3 attempts per sample, 512 tiers and

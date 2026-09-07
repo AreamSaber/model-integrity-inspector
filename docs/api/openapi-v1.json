@@ -11,6 +11,144 @@
     }
   ],
   "paths": {
+    "/reports/{reportId}": {
+      "get": {
+        "operationId": "getReport",
+        "summary": "getReport",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；只包含授权且脱敏的数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Report"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "report.export",
+        "x-development-status": "implemented",
+        "description": "精确读取已授权报告状态；页面轮询此路由，不根据列表缺失推断失败。"
+      }
+    },
     "/setup/status": {
       "get": {
         "operationId": "setupStatus",
@@ -3913,14 +4051,14 @@
                           "items": {
                             "$ref": "#/components/schemas/Baseline"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -4023,7 +4161,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented"
       },
       "post": {
         "operationId": "createBaseline",
@@ -4159,7 +4297,7 @@
           }
         },
         "x-permission": "baseline.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented",
         "requestBody": {
           "required": true,
           "content": {
@@ -4306,7 +4444,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented"
       },
       "patch": {
         "operationId": "updateBaseline",
@@ -4450,7 +4588,7 @@
           }
         },
         "x-permission": "baseline.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented",
         "requestBody": {
           "required": true,
           "content": {
@@ -7419,7 +7557,7 @@
     "/runs/{id}/reviews": {
       "get": {
         "operationId": "getRunReview",
-        "summary": "getRunReview",
+        "summary": "读取固定分析修订的人工复核历史",
         "security": [
           {
             "SessionCookie": []
@@ -7461,11 +7599,13 @@
             }
           },
           {
-            "name": "q",
+            "name": "analysis_revision",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "default": 1
             }
           }
         ],
@@ -7487,14 +7627,14 @@
                           "items": {
                             "$ref": "#/components/schemas/Review"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -7596,12 +7736,13 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read",
+        "x-development-status": "implemented-database-backed",
+        "description": "按created_at/id倒序的追加历史；不覆盖机器结果。q和未知参数拒绝。游标签名绑定当前用户/组织/Run/分析修订。说明为人工文字，客户端必须纯文本转义，禁止作为HTML或Markdown渲染。"
       },
       "post": {
         "operationId": "createReview",
-        "summary": "createReview",
+        "summary": "追加人工复核",
         "security": [
           {
             "SessionCookie": []
@@ -7631,6 +7772,17 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
             }
           }
         ],
@@ -7741,7 +7893,7 @@
           }
         },
         "x-permission": "review.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-database-backed",
         "requestBody": {
           "required": true,
           "content": {
@@ -7751,12 +7903,16 @@
               }
             }
           }
-        }
+        },
+        "x-additional-permissions": [
+          "run.read"
+        ],
+        "description": "首次省略previous_review_id表示已确认当前没有复核；后续必须传入最新已读ID。过期视图或同幂等键不同内容409 MI_REVIEW_CONFLICT。同组织同操作者同键同body重复提交返回原记录，即使后续有人追加；不自动重试或创建新键。审计/权限/机器修订/最新ID在事务复验，失败整笔回滚。禁止编辑/删除旧复核；业务判断不是正式软件批准。"
       }
     },
     "/runs/{id}/reports": {
       "get": {
-        "operationId": "getRunReport",
+        "operationId": "listRunReports",
         "summary": "getRunReport",
         "security": [
           {
@@ -7799,11 +7955,12 @@
             }
           },
           {
-            "name": "q",
+            "name": "analysis_revision",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
+              "type": "integer",
+              "const": 1,
+              "default": 1
             }
           }
         ],
@@ -7825,14 +7982,14 @@
                           "items": {
                             "$ref": "#/components/schemas/Report"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -7934,8 +8091,9 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "report.export",
+        "x-development-status": "implemented",
+        "description": "只列出当前会话有 report.export、run.read、evidence.read 的固定 Run/revision 报告，签名游标同时绑定用户、组织及资源。"
       },
       "post": {
         "operationId": "createReport",
@@ -7969,6 +8127,17 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$"
             }
           }
         ],
@@ -8079,7 +8248,7 @@
           }
         },
         "x-permission": "report.export",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented",
         "requestBody": {
           "required": true,
           "content": {
@@ -8089,7 +8258,8 @@
               }
             }
           }
-        }
+        },
+        "description": "同事务复验 report.export/run.read/evidence.read，写不可变重试收据并创建真实数据库任务。受理后退出会话不取消作业；生成前仍检查创建者有效账户及授权。固定输入快照、报告版本和时间；只输出S1，无人工复核快照（not_included 不表示 Run 没有复核）。"
       }
     },
     "/reports/{reportId}/download": {
@@ -8133,70 +8303,24 @@
                 "schema": {
                   "const": "nosniff"
                 }
+              },
+              "X-Report-Content-Hash": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "X-Report-File-Hash": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
               }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "schema_version": {
-                      "type": "string",
-                      "maxLength": 32
-                    },
-                    "report_id": {
-                      "type": "string",
-                      "pattern": "^[1-9][0-9]{0,18}$"
-                    },
-                    "run": {
-                      "$ref": "#/components/schemas/Run"
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/Result"
-                    },
-                    "findings": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Finding"
-                      },
-                      "maxItems": 1000
-                    },
-                    "limitations": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 1024
-                      },
-                      "maxItems": 1000
-                    },
-                    "recommendations": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 1024
-                      },
-                      "maxItems": 1000
-                    },
-                    "disclaimer": {
-                      "type": "string",
-                      "maxLength": 2048
-                    },
-                    "content_hash": {
-                      "type": "string",
-                      "maxLength": 71
-                    }
-                  },
-                  "required": [
-                    "schema_version",
-                    "report_id",
-                    "run",
-                    "result",
-                    "findings",
-                    "limitations",
-                    "disclaimer",
-                    "content_hash"
-                  ]
+                  "$ref": "#/components/schemas/ReportDocument"
                 }
               },
               "text/html": {
@@ -8288,7 +8412,8 @@
           }
         },
         "x-permission": "report.export",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented",
+        "description": "重新验证当前用户三项权限，先校验独立文件长度/hash再记录下载审计；慢传输周期性复验。受限目录，不接受文件路径；文件成功但事务失败会留下不可下载孤立文件，不宣称文件系统和数据库原子提交。"
       }
     },
     "/baselines/{id}/approve": {
@@ -8434,17 +8559,18 @@
           }
         },
         "x-permission": "baseline.approve",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Reason"
+                "$ref": "#/components/schemas/BaselineApproval"
               }
             }
           }
-        }
+        },
+        "description": "CAS 只批准未过期且充分有效样本的草稿；事务重新检查 baseline.approve/run.read/evidence.read、冻结来源和审计。组织批准不会启用开发基线评分或产生正式项目批准。"
       }
     },
     "/baselines/{id}/retire": {
@@ -8590,17 +8716,18 @@
           }
         },
         "x-permission": "baseline.approve",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Reason"
+                "$ref": "#/components/schemas/BaselineRetirement"
               }
             }
           }
-        }
+        },
+        "description": "按版本退役并保留原审批人与审批时间，退休说明保存在私有签名记录中。"
       }
     },
     "/rule-bundles": {
@@ -10973,6 +11100,1405 @@
       }
     },
     "schemas": {
+      "BaselineApproval": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "business_review": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "overall_risk >= 40 时必填；仅组织业务说明。"
+          },
+          "acknowledge_development_limits": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "version",
+          "reason",
+          "acknowledge_development_limits"
+        ]
+      },
+      "BaselineRetirement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "version",
+          "reason"
+        ]
+      },
+      "ReportAttempt": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_no": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validity": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "attempt_no",
+          "validity",
+          "error_code",
+          "http_status",
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "duration_ms",
+          "started_at",
+          "finished_at"
+        ],
+        "type": "object"
+      },
+      "ReportBehaviorStatistics": {
+        "additionalProperties": false,
+        "properties": {
+          "analyzed_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "auxiliary_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/ReportDifference"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "patterns": {
+            "items": {
+              "$ref": "#/components/schemas/ReportPattern"
+            },
+            "maxItems": 2048,
+            "type": "array"
+          }
+        },
+        "required": [
+          "analyzed_samples",
+          "auxiliary_samples",
+          "patterns",
+          "differences",
+          "limitations"
+        ],
+        "type": "object"
+      },
+      "ReportDifference": {
+        "additionalProperties": false,
+        "properties": {
+          "adjusted_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effect_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metric": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pairs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "state",
+          "pairs",
+          "effect_size",
+          "p_value",
+          "adjusted_p"
+        ],
+        "type": "object"
+      },
+      "ReportDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "calibrated": {
+            "const": false,
+            "type": "boolean"
+          },
+          "canonical_version": {
+            "const": "mii.report.canonical-json.v1",
+            "type": "string"
+          },
+          "content_hash": {
+            "maxLength": 71,
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "content_state": {
+            "const": "redacted",
+            "type": "string"
+          },
+          "development": {
+            "const": true,
+            "type": "boolean"
+          },
+          "development_notice": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "disclaimer": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReportFinding"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "observation_mode": {
+            "enum": [
+              "blackbox"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "recommendations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "report_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ReportResult"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "const": null
+          },
+          "review_state": {
+            "const": "not_included",
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/ReportRun"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSample"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "mii.report.v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "canonical_version",
+          "report_id",
+          "organization_id",
+          "run_id",
+          "analysis_revision",
+          "generated_at",
+          "observation_mode",
+          "development",
+          "calibrated",
+          "content_state",
+          "run",
+          "result",
+          "findings",
+          "samples",
+          "review",
+          "review_state",
+          "disclaimer",
+          "development_notice",
+          "recommendations",
+          "content_hash"
+        ],
+        "type": "object"
+      },
+      "ReportDocumentContent": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "calibrated": {
+            "const": false,
+            "type": "boolean"
+          },
+          "canonical_version": {
+            "const": "mii.report.canonical-json.v1",
+            "type": "string"
+          },
+          "content_state": {
+            "const": "redacted",
+            "type": "string"
+          },
+          "development": {
+            "const": true,
+            "type": "boolean"
+          },
+          "development_notice": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "disclaimer": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReportFinding"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "observation_mode": {
+            "enum": [
+              "blackbox"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "recommendations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "report_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ReportResult"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "const": null
+          },
+          "review_state": {
+            "const": "not_included",
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/ReportRun"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSample"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "mii.report.v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "canonical_version",
+          "report_id",
+          "organization_id",
+          "run_id",
+          "analysis_revision",
+          "generated_at",
+          "observation_mode",
+          "development",
+          "calibrated",
+          "content_state",
+          "run",
+          "result",
+          "findings",
+          "samples",
+          "review",
+          "review_state",
+          "disclaimer",
+          "development_notice",
+          "recommendations"
+        ],
+        "type": "object"
+      },
+      "ReportFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "alternative_explanations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "category": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 74,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidence_grade": {
+            "enum": [
+              "C",
+              "D"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "risk_score": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "rule_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "rule_version": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "severity": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "statistics": {
+            "items": {
+              "$ref": "#/components/schemas/ReportStatistic"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "analysis_revision",
+          "category",
+          "rule_id",
+          "rule_version",
+          "severity",
+          "risk_score",
+          "confidence",
+          "evidence_grade",
+          "statistics",
+          "alternative_explanations",
+          "sample_refs"
+        ],
+        "type": "object"
+      },
+      "ReportPattern": {
+        "additionalProperties": false,
+        "properties": {
+          "family_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fingerprint": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "language_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "state": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "template_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "fingerprint",
+          "state",
+          "family_count",
+          "template_count",
+          "language_count",
+          "sample_refs"
+        ],
+        "type": "object"
+      },
+      "ReportPlateau": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "type": "boolean"
+          },
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "growth_ratio": {
+            "type": "number"
+          },
+          "high_requested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "independent_groups": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "limited": {
+            "type": "boolean"
+          },
+          "low_requested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paired": {
+            "type": "boolean"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "series_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "strength": {
+            "type": "number"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "series_id",
+          "family",
+          "low_requested",
+          "high_requested",
+          "growth_ratio",
+          "strength",
+          "candidate",
+          "limited",
+          "paired",
+          "lower",
+          "upper",
+          "independent_groups",
+          "limitations",
+          "sample_refs"
+        ],
+        "type": "object"
+      },
+      "ReportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "behavior_statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportBehaviorStatistics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completeness": {
+            "enum": [
+              "full",
+              "partial",
+              "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 74,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidence_grade": {
+            "enum": [
+              "C",
+              "D"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "evidence_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "overall_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_level": {
+            "enum": [
+              "low",
+              "watch",
+              "medium",
+              "high",
+              "critical",
+              "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "token_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token_statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportTokenStatistics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valid_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/ReportVersions"
+          }
+        },
+        "required": [
+          "run_id",
+          "analysis_revision",
+          "versions",
+          "expected_samples",
+          "valid_samples",
+          "overall_risk",
+          "prompt_risk",
+          "token_risk",
+          "response_risk",
+          "evidence_risk",
+          "confidence",
+          "evidence_grade",
+          "risk_level",
+          "completeness",
+          "limitations",
+          "token_statistics",
+          "behavior_statistics"
+        ],
+        "type": "object"
+      },
+      "ReportRun": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "estimated_cost_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "package": {
+            "enum": [
+              "quick",
+              "standard",
+              "deep",
+              "custom"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "request_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "token_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "package",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "request_count",
+          "token_count",
+          "estimated_cost_micros"
+        ],
+        "type": "object"
+      },
+      "ReportSample": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/ReportAttempt"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "auxiliary_only": {
+            "type": "boolean"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "final_attempt_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finish_reason": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hard_truncation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "identity_class": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "included": {
+            "type": "boolean"
+          },
+          "language": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "local_completion_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ordinal": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probe_instance_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "refusal_class": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reported_completion_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requested_max_tokens": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "response_hash": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "structure_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokenizer_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "tokenizer_quality": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "validity": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "probe_instance_id",
+          "ordinal",
+          "family",
+          "language",
+          "validity",
+          "included",
+          "auxiliary_only",
+          "requested_max_tokens",
+          "local_completion_tokens",
+          "reported_completion_tokens",
+          "tokenizer_id",
+          "tokenizer_quality",
+          "stream",
+          "finish_reason",
+          "structure_complete",
+          "hard_truncation",
+          "contract",
+          "refusal_class",
+          "identity_class",
+          "response_hash",
+          "final_attempt_id",
+          "limitations",
+          "attempts"
+        ],
+        "type": "object"
+      },
+      "ReportStatistic": {
+        "additionalProperties": false,
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "actual",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "ReportTier": {
+        "additionalProperties": false,
+        "properties": {
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "language": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "mad": {
+            "type": "number"
+          },
+          "median": {
+            "type": "number"
+          },
+          "requested_max_tokens": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "robust_cv": {
+            "type": "number"
+          },
+          "samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "series_id": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "family",
+          "language",
+          "requested_max_tokens",
+          "samples",
+          "median",
+          "mad",
+          "robust_cv"
+        ],
+        "type": "object"
+      },
+      "ReportTokenStatistics": {
+        "additionalProperties": false,
+        "properties": {
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "plateaus": {
+            "items": {
+              "$ref": "#/components/schemas/ReportPlateau"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "stream_median_relative_difference": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stream_pairs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTier"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "usage_median_relative_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usage_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tiers",
+          "plateaus",
+          "usage_samples",
+          "usage_median_relative_error",
+          "stream_pairs",
+          "stream_median_relative_difference",
+          "limitations"
+        ],
+        "type": "object"
+      },
+      "ReportVersions": {
+        "additionalProperties": false,
+        "properties": {
+          "rule_bundle": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "scoring": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "template_bundle": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "tokenizer_bundle": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_bundle",
+          "template_bundle",
+          "scoring",
+          "tokenizer_bundle"
+        ],
+        "type": "object"
+      },
       "ID": {
         "type": "string",
         "pattern": "^[1-9][0-9]{0,18}$"
@@ -13733,82 +15259,239 @@
         "type": "object"
       },
       "Baseline": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "approval_meaning": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calibrated": {
+            "const": false,
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "development": {
+            "const": true,
+            "type": "boolean"
+          },
+          "eligible_for_scoring": {
+            "const": false,
+            "type": "boolean"
+          },
+          "expected_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
           "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+            "$ref": "#/components/schemas/ID"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "manifest_hash": {
+            "maxLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "name": {
-            "type": "string",
-            "maxLength": 128
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "overall_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parameters_hash": {
+            "maxLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "openai_chat"
+            ],
+            "type": "string"
+          },
+          "region": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "region_assurance": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule_version": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
           },
           "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+            "$ref": "#/components/schemas/ID"
+          },
+          "sampled_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "scoring_version": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "source": {
-            "type": "string",
             "enum": [
               "official",
               "historical"
-            ]
+            ],
+            "type": "string"
           },
-          "model": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "protocol": {
-            "type": "string",
-            "enum": [
-              "openai_chat"
-            ]
-          },
-          "region": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "parameters_hash": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "rule_version": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "expires_at": {
-            "type": "string",
-            "format": "date-time"
+          "source_assurance": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "status": {
-            "type": "string",
             "enum": [
               "draft",
               "approved",
               "expired",
               "retired"
-            ]
+            ],
+            "type": "string"
           },
-          "approved_by": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "target_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "template_version": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "tokenizer_version": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "valid_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "version": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2147483647
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
           "id",
-          "name",
           "run_id",
+          "target_id",
+          "analysis_revision",
+          "version",
+          "name",
           "source",
-          "expires_at",
+          "source_assurance",
+          "region",
+          "region_assurance",
+          "model",
+          "protocol",
+          "parameters_hash",
+          "manifest_hash",
+          "rule_version",
+          "template_version",
+          "scoring_version",
+          "tokenizer_version",
           "status",
-          "version"
-        ]
+          "expected_samples",
+          "valid_samples",
+          "overall_risk",
+          "created_by",
+          "approved_by",
+          "created_at",
+          "updated_at",
+          "sampled_at",
+          "approved_at",
+          "expires_at",
+          "retired_at",
+          "approval_meaning",
+          "development",
+          "calibrated",
+          "eligible_for_scoring",
+          "limitations"
+        ],
+        "type": "object"
       },
       "BaselineInput": {
         "type": "object",
@@ -13836,6 +15519,11 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "analysis_revision": {
+            "type": "integer",
+            "const": 1,
+            "default": 1
           }
         },
         "required": [
@@ -13843,7 +15531,8 @@
           "run_id",
           "source",
           "expires_at"
-        ]
+        ],
+        "description": "创建来源于真实已发布 revision 1 的草稿。official/source 和 region 均为组织声明而非系统认证；到期时间必须在当前时间之后且不超过 365 天。"
       },
       "BaselinePatch": {
         "type": "object",
@@ -13865,6 +15554,18 @@
         },
         "required": [
           "version"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "expires_at"
+            ]
+          }
         ]
       },
       "Reason": {
@@ -13882,70 +15583,91 @@
         ]
       },
       "Review": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
-          "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "conclusion": {
-            "type": "string",
             "enum": [
               "confirmed",
               "false_positive",
-              "observe",
+              "watch",
               "not_applicable"
-            ]
-          },
-          "note": {
-            "type": "string",
-            "maxLength": 4096
-          },
-          "created_by": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+            ],
+            "maxLength": 4096,
+            "type": "string"
           },
           "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "explanation": {
+            "maxLength": 4096,
             "type": "string",
-            "format": "date-time"
+            "minLength": 1,
+            "x-max-utf8-bytes": 4096
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
           }
         },
         "required": [
           "id",
           "run_id",
+          "analysis_revision",
           "conclusion",
-          "note",
+          "explanation",
           "created_by",
           "created_at"
-        ]
+        ],
+        "type": "object",
+        "description": "人工业务判断，独立于不可变算法结果；说明须纯文本展示。当前创建只支持实际发布的开发修订1。"
       },
       "ReviewInput": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "analysis_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "previous_review_id": {
+            "$ref": "#/components/schemas/ID",
+            "description": "可省略仅表示已读当前无复核；不接受null。"
+          },
           "conclusion": {
             "type": "string",
             "enum": [
               "confirmed",
               "false_positive",
-              "observe",
+              "watch",
               "not_applicable"
             ]
           },
-          "note": {
+          "explanation": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 4096,
-            "minLength": 1
+            "x-max-utf8-bytes": 4096,
+            "description": "复核理由，必须有效Unicode；除LF/TAB外拒绝控制字符与格式字符。不得填写凭证或请求/响应/业务正文。"
           }
         },
         "required": [
+          "analysis_revision",
           "conclusion",
-          "note"
+          "explanation"
         ]
       },
       "ReportRequest": {
@@ -13961,8 +15683,7 @@
           },
           "analysis_revision": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 2147483647
+            "const": 1
           },
           "include_restricted_content": {
             "const": false
@@ -13974,63 +15695,87 @@
         ]
       },
       "Report": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
-          "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
           "analysis_revision": {
-            "type": "integer",
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "content_hash": {
+            "maxLength": 71,
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "error_code": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "file_hash": {
+            "maxLength": 71,
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "file_size": {
+            "maximum": 16777216,
             "minimum": 1,
-            "maximum": 2147483647
+            "type": "integer"
           },
           "format": {
-            "type": "string",
             "enum": [
               "json",
               "html"
-            ]
+            ],
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "review_state": {
+            "const": "not_included",
+            "type": "string"
+          },
+          "revision": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
           },
           "schema_version": {
-            "type": "string",
-            "maxLength": 32
+            "const": "mii.report.v1",
+            "type": "string"
           },
           "status": {
-            "type": "string",
             "enum": [
               "queued",
               "generating",
               "ready",
               "failed",
               "expired"
-            ]
-          },
-          "content_hash": {
-            "type": "string",
-            "maxLength": 71
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "error_code": {
-            "type": "string",
-            "maxLength": 64
+            ],
+            "type": "string"
           }
         },
         "required": [
           "id",
           "run_id",
           "analysis_revision",
+          "revision",
           "format",
-          "status"
-        ]
+          "schema_version",
+          "status",
+          "created_at",
+          "review_state"
+        ],
+        "type": "object"
       },
       "ReplayMetrics": {
         "type": "object",

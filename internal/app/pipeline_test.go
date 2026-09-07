@@ -89,6 +89,7 @@ type pipelineHTTP struct {
 	client                  *http.Client
 	endpoint, origin, orgID string
 	csrf                    string
+	retryKey                string
 }
 
 func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, status int, out any) []byte {
@@ -112,6 +113,9 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 	}
 	if p.csrf != "" {
 		req.Header.Set("X-CSRF-Token", p.csrf)
+	}
+	if p.retryKey != "" {
+		req.Header.Set("Idempotency-Key", p.retryKey)
 	}
 	res, err := p.client.Do(req)
 	if err != nil {
@@ -171,7 +175,7 @@ func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = app.store.Close() })
+			t.Cleanup(func() { _ = app.close() })
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
 			go func() { done <- app.serve(ctx, cfg, listener, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
@@ -292,6 +296,15 @@ func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testi
 			}
 			http.request(t, "GET", runPath+"/findings?analysis_revision=1", nil, 200, nil)
 			http.request(t, "GET", "/api/v1/runs?target_id="+target.ID, nil, 200, nil)
+			http.retryKey = "synthetic-application-review-1"
+			var review struct{ ID string }
+			http.request(t, "POST", runPath+"/reviews", map[string]any{"analysis_revision": 1, "conclusion": "watch", "explanation": "Synthetic integration review; no release approval or provider intent asserted."}, 201, &review)
+			if review.ID == "" {
+				t.Fatal("actual application review receipt missing")
+			}
+			http.retryKey = ""
+			http.request(t, "GET", runPath+"/reviews", nil, 200, nil)
+			exercisePublishedArtifacts(t, &http, record.ID, record.Planned, poll)
 			originalID := record.ID
 			http.request(t, "POST", "/api/v1/runs", confirm, 202, &record)
 			if record.ID != originalID || !bytes.Equal(frozen, http.request(t, "GET", runPath+"/result?analysis_revision=1", nil, 200, nil)) {

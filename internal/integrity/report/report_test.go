@@ -102,12 +102,12 @@ func TestCanonicalArtifactsDeterministicAndBound(t *testing.T) {
 	if err != nil || digest(content) != a.ContentHash() {
 		t.Fatal("hash must exclude the field, not include null or empty value")
 	}
-	for key, want := range map[string]string{"development": "true", "calibrated": "false", "review": "null", "review_state": `"not_reviewed"`, "observation_mode": `"blackbox"`, "content_state": `"redacted"`, "organization_id": `"9007199254741999"`} {
+	for key, want := range map[string]string{"development": "true", "calibrated": "false", "review": "null", "review_state": `"not_included"`, "observation_mode": `"blackbox"`, "content_state": `"redacted"`, "organization_id": `"9007199254741999"`} {
 		if string(document[key]) != want {
 			t.Fatalf("metadata %s not fixed: %s", key, document[key])
 		}
 	}
-	for _, text := range []string{a.ContentHash(), Disclaimer, "未人工复核", "统计与分母", "四维算法风险", "配对差分", "平台比较", "5001", "9007199254743999", "未测", "null"} {
+	for _, text := range []string{a.ContentHash(), Disclaimer, "未纳入人工复核快照", "统计与分母", "四维算法风险", "配对差分", "平台比较", "5001", "9007199254743999", "未测", "null"} {
 		if !bytes.Contains(a.HTML(), []byte(text)) {
 			t.Fatalf("missing rendered section %q", text)
 		}

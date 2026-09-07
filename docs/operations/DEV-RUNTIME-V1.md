@@ -1,6 +1,6 @@
 # V1 持续开发运行入口
 
-当前是功能持续集成版本，不是完整V1/发布候选。初始化、登录、会话、用户/组织/成员管理、模型档案、目标、预检、检测执行、开发分析和只读结果页面已接入实际数据库；报告、可信基线、复核、规则发布及其页面仍在开发。`all`/`worker` 只有真正取得消费者租约且首次心跳成功才就绪，停止或丢失消费者后不再就绪。`/ready` 还检查DB、schema与审计；运行组件就绪不代表整个V1开发完成。
+当前是功能持续集成版本，不是完整V1/发布候选。初始化、登录、会话、用户/组织/成员管理、模型档案、目标、预检、检测执行、开发分析、结果与人工复核页面已接入实际数据库；组织基线管理和异步 JSON/HTML 报告后端已接入应用。可信基线评分、规则发布、其余页面及运维交付仍在开发。`all`/`worker` 只有真正取得消费者租约且首次心跳成功才就绪，停止或丢失消费者后不再就绪。`/ready` 还检查DB、schema与审计；运行组件就绪不代表整个V1开发完成。
 
 ## Windows 本地隔离启动
 
@@ -20,7 +20,7 @@
 
 `--config` / `MII_CONFIG` 可指定 YAML；未指定则使用 loopback SQLite 默认值。文件最多 64 KiB，只允许一个 YAML 文档，未知字段/未实现的 adapter 配置直接拒绝。路径相对配置文件，未指定配置文件时相对工作目录。不会执行环境变量插值或模板。
 
-可覆盖：`APP_ROLE`、`MII_ADDR`、`MII_PUBLIC_ORIGIN`、`MII_ALLOW_INSECURE_LOOPBACK`、`MII_DATABASE_DRIVER`、`MII_DATABASE_PATH`、`MII_MASTER_KEY_FILE`、`MII_MASTER_KEY_VERSION`。数据库 DSN、初始化令牌只从 `dsn_env` / `setup_token_env` 指定的环境变量读取，不允许在普通 YAML 中存放值。默认名称分别为 `MII_DATABASE_DSN` / `MII_SETUP_TOKEN`。
+可覆盖：`APP_ROLE`、`MII_ADDR`、`MII_PUBLIC_ORIGIN`、`MII_ALLOW_INSECURE_LOOPBACK`、`MII_DATABASE_DRIVER`、`MII_DATABASE_PATH`、`MII_MASTER_KEY_FILE`、`MII_MASTER_KEY_VERSION`、`MII_REPORT_PATH`。数据库 DSN、初始化令牌只从 `dsn_env` / `setup_token_env` 指定的环境变量读取，不允许在普通 YAML 中存放值。默认名称分别为 `MII_DATABASE_DSN` / `MII_SETUP_TOKEN`。
 
 SQLite 只允许 `APP_ROLE=all`。PostgreSQL 允许 server/worker/all；server/all 执行带锁迁移，worker 只检查版本，不能自动迁移。原有迁移不可编辑，每次变更新增迁移。
 
@@ -87,7 +87,7 @@ RunAnalysis 现已接入真实处理器：读取受租约保护的冻结执行�
 
 结果路径 `/runs/{id}/result` 固定 `analysis_revision`（当前仅 1），无该修订返回404；默认只需 run.read。`include=statistics` 及 `/findings`、`/samples`、`/samples/{sampleId}` 额外要求 evidence.read。所有读取在一致数据库快照内复验持久会话及角色权限；SQLite 使用只读 DEFERRED 事务，不为轮询申请写锁；PG 使用 REPEATABLE READ。SQL 先限制文本字节和行数，再严格解析闭集 S1 投影，拒绝无效修订、版本、样本分母、引用或结构。正文、请求变量、凭证与密文均不进入这些接口。
 
-页面提供四维风险、置信度、C/D、未校准/公开开发模板声明、全量档位统计、仅当前样本页的散点、探索性成对 BH、最终 Attempt 与非独立重试。缺失指标为 null，不记作0。切换组织/用户/Run 清空旧状态；重新读取不会重新调用上游或修改分析。报告、完整两任务对比、基线和重分析尚未实现。
+页面提供四维风险、置信度、C/D、未校准/公开开发模板声明、全量档位统计、仅当前样本页的散点、探索性成对 BH、最终 Attempt 与非独立重试。缺失指标为 null，不记作0。切换组织/用户/Run 清空旧状态；重新读取不会重新调用上游或修改分析。完整两任务对比、可信基线评分和重分析尚未实现；组织基线与报告后端见下文。
 
 这些结构/交叉字段检查不能替代密码学对象认证：具有任意数据库写权限的人如一致地重写文档及关联列，不保证由只读结果接口检出。正常发布路径受 Job fencing/不可覆盖事务和审计约束，审计 MAC 保护的是审计事件，不能宣称同时认证了整个结果正文；报告封存和更强对象封印需单独实现。
 
@@ -96,3 +96,33 @@ RunAnalysis 现已接入真实处理器：读取受租约保护的冻结执行�
 `GET /api/v1/runs/{id}/events` 已由真实数据库状态驱动。首次连接和重连都发送当前快照，事件 ID 为 `<Run ID>:<记录版本>`，只传公开 Run 统计；租约/样本正文、Manifest内容、凭证和任意上游诊断不进入事件。无变化时只查询窄版本，不反复读取执行快照。每2秒重新验证会话/账号/组织成员/权限；撤销会话、重置密码、禁用账号或成员后关闭流，已发送数据不能追回。
 
 每个处理器/进程最多64连接、每个用户4连接；这不是跨副本配额，部署入口还需相应连接限制。单连接5分钟、心跳10秒、每轮DB和写操作各1秒期限。前端 RunProgress 已接入有界 fetch SSE：最大12次连接/1小时，断线和终态只读核对原Run；终态事件在最终GET返回前不会显示完成或结果入口。超过自动跟踪上限可由用户主动恢复；不会通过重连创建新检测。反向代理应为该路径禁缓冲，尊重 `X-Accel-Buffering: no`，不能按普通短请求超时关闭合法流。真实 HTTP SSE 的撤权/重连/容量测试和组件回归已执行；活动 Run 的浏览器 SSE 故障注入仍待后续整体 E2E。
+
+## 人工复核（独立于机器结果）
+
+`GET/POST /api/v1/runs/{id}/reviews` 按组织、Run、固定 `analysis_revision=1` 隔离。读取需要 `run.read`；追加还需 `review.write`、当前会话/CSRF，事务中再次复验。POST 必须带 16～128 个 ASCII 字母数字及 `._:-` 组成的 `Idempotency-Key`；body 为 `analysis_revision`、`conclusion`、`explanation`，非首次追加还须 `previous_review_id` 等于最新已读记录 ID。结论只有 `confirmed/false_positive/watch/not_applicable`；说明非空、UTF-8 最多4096字节，不允许不可见格式字符或控制字符（换行/制表符除外）。所有严格 JSON 写接口同时拒绝孤立 Unicode surrogate 转义，不静默替换后保存。
+
+新复核、原请求哈希收据及审计同事务提交。原 key/body 重试恢复原记录，即使别人已追加较新记录；同 key 改内容或 latest-ID 过时返回409。复核只能追加，不能覆盖/删除，也不修改原机器风险、置信度或结果修订。授权前的收据恢复不能绕过撤权。说明只在授权 DTO 中作为纯文本展示；内部输入、记录和公开 DTO 的 fmt/slog 均脱敏。不要把密钥或请求/响应原文填入说明。
+
+前端在未知 POST 结果时仅允许显式使用同 body/key 恢复，禁止自动重试为新提交；切换账号/组织/Run 清空页面说明和提交身份。2026-09-07 真实浏览器已验证追加包含 `<script>` 字样的合成说明、刷新后持久读取及纯文本转义，机器风险21/置信27/C保持不变；记录只是隔离测试组织的业务判断，不是正式软件审核批准。
+
+## 组织基线参考
+
+已接 `GET/POST /baselines`、`GET/PATCH /baselines/{id}`、`POST /baselines/{id}/approve` 与 `/retire`（均在 `/api/v1` 下）。创建从真实已发布结果及经验证的签名 Manifest 冻结来源、模型、协议、参数/样本/结果 hash 和各版本；缺省修订1，显式其他修订拒绝。`source=official|historical` 和 `region` 都只是组织声明，返回 `organization_declared_unverified`，系统不替组织证明供应商来源或真实执行区域。
+
+仅草稿可改名称/有效期；有效期须未来且不超过365天。批准/退役使用版本CAS、业务说明和相应持久权限，审计与更新原子提交。批准必须显式确认开发限制，风险≥40还须业务复核说明；无足够有效证据不能批准。新独立 HKDF 用途签名固定来源、元数据和审批/退休说明；旧无签名记录不视为可信。批准后不可就地改来源/有效期，应新建参考；退役保留原审核人/时间，过期不再可用。
+
+审批含义固定 `organization_reviewed_reference_only`，当前始终 `development=true/calibrated=false/eligible_for_scoring=false`。内部适用性比较只描述模型、协议、参数、版本、区域声明及成对变量是否匹配，不能被调用者转换成可信 D 维评分、A/B 等级或独立校准证据。可信对照采样与评分仍待实现。
+
+## 异步 S1 报告与文件目录
+
+`POST /api/v1/runs/{id}/reports` body 为 `format=json|html`、`analysis_revision=1`，必带16～128字符 `Idempotency-Key`；当前 `include_restricted_content` 只能省略或 false。同事务检查 `report.export/run.read/evidence.read` 并写入报告版本、固定时间、重试收据及数据库 Job。HTTP 不同步生成文件、不发起上游请求。通过 `GET /api/v1/reports/{reportId}` 精确轮询，或 Run 下的同名 GET 有界分页；返回 queued/generating 不等于文件已经可下载。
+
+真实 Worker 在一致授权快照读取全部 S1 样本和重试链，冻结一次报告输入后生成不可变 JSON/HTML；重试不重新取当前分数或生成时间。受理后退出创建者会话不取消已接受作业，但生成前仍核验账号/成员/三项权限。文件先按独立内容地址落盘，再通过 Job fencing 将 ready/hash/size、审计、作业完成一并提交；数据库回滚或失租可留下不可下载的孤立文件，不宣称文件系统和数据库是同一原子事务。永久失败 Job 由维护流程投影为报告失败，保留原结果。
+
+下载 `GET /api/v1/reports/{reportId}/download` 重新核验当前用户三项权限；先校验文件长度及独立 SHA-256，再记下载审计。只根据数据库身份构造受限文件名，没有用户路径参数。响应为 attachment、nosniff、HTML sandbox CSP，带 `X-Report-Content-Hash` 和 `X-Report-File-Hash`。每服务实例最多4个在途下载，最长60秒、写期限2秒，慢传输每秒复验权限。已发送字节不能在撤权后追回。
+
+配置 `integrity.reports.path`（默认 `./reports`）或 `MII_REPORT_PATH`；加载时解析为绝对路径。只创建末级目录，父目录须已存在。拒绝卷根、路径链接/reparse、宽权限目录、非普通文件及硬链接；Windows 新目录为当前主体/SYSTEM 的限制 ACL，Unix 目录0700/文件0600。已有过宽目录启动失败，不自动改动操作者权限。server 和 worker 必须使用同一私有存储及兼容服务身份；完整 Compose 权限初始化和备份/孤立文件清理仍待运维交付。应用关闭时释放持有的目录句柄。
+
+内容规范 `mii.report.canonical-json.v1` 的 hash 不含 `content_hash` 字段，最终 JSON/HTML 文件各有独立 hash；精确规范见 `internal/integrity/report/README.md`。报告当前只包含 S1，`review=null/review_state=not_included` 表示未封存人工复核，不表示该 Run 没有历史复核；不伪造批准。JSON/HTML 不覆盖旧版本；PDF/CSV、人工复核快照和完整差异版本链仍待开发。
+
+实际应用测试现覆盖初始化→真实受控 TLS 检测→人工复核→基线草稿/审批/退役→JSON/HTML异步生成/下载，并核验哈希、同 key 字节相同、机器结果不变和审计链。上述通过不代替完整浏览器、部署、算法校准与发布验收。

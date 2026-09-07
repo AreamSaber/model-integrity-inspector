@@ -140,7 +140,7 @@ func NewDevelopmentSnapshot(scope Scope, input Input) (*Snapshot, error) {
 		return nil, ErrInput
 	}
 	normalize(&owned)
-	doc := document{SchemaVersion: SchemaVersion, CanonicalVersion: CanonicalVersion, ReportID: scope.ReportID, OrganizationID: scope.OrganizationID, RunID: scope.RunID, AnalysisRevision: scope.AnalysisRevision, GeneratedAt: scope.GeneratedAt.UTC(), ObservationMode: "blackbox", Development: true, Calibrated: false, ContentState: "redacted", Input: owned, Review: nil, ReviewState: "not_reviewed", Disclaimer: Disclaimer, DevelopmentNotice: DevelopmentNotice, Recommendations: []string{"MI_REVIEW_OBSERVED_EVIDENCE", "MI_REPEAT_WITH_TRUSTED_BASELINE"}}
+	doc := document{SchemaVersion: SchemaVersion, CanonicalVersion: CanonicalVersion, ReportID: scope.ReportID, OrganizationID: scope.OrganizationID, RunID: scope.RunID, AnalysisRevision: scope.AnalysisRevision, GeneratedAt: scope.GeneratedAt.UTC(), ObservationMode: "blackbox", Development: true, Calibrated: false, ContentState: "redacted", Input: owned, Review: nil, ReviewState: "not_included", Disclaimer: Disclaimer, DevelopmentNotice: DevelopmentNotice, Recommendations: []string{"MI_REVIEW_OBSERVED_EVIDENCE", "MI_REPEAT_WITH_TRUSTED_BASELINE"}}
 	return &Snapshot{doc: doc}, nil
 }
 
@@ -201,7 +201,7 @@ func validate(scope Scope, in Input) error {
 		numbers := map[int]bool{}
 		finalFound := s.FinalAttemptID == nil
 		for _, a := range s.Attempts {
-			if !id(a.ID) || attempts[a.ID] || numbers[a.AttemptNo] || a.AttemptNo < 1 || a.AttemptNo > 3 || !one(a.Validity, validities) || !count(a.PromptTokens) || !count(a.CompletionTokens) || !count(a.TotalTokens) || !count(a.DurationMS) || a.HTTPStatus != nil && (*a.HTTPStatus < 100 || *a.HTTPStatus > 599) || !optional(a.ErrorCode, "MI_EXECUTION_ERROR MI_AUTH_FAILED MI_MODEL_NOT_FOUND MI_PROTOCOL_UNSUPPORTED MI_RATE_LIMITED MI_TIMEOUT MI_NETWORK_FAILED MI_UNCERTAIN_ATTEMPT MI_CONNECTION_RESET MI_EXECUTION_BUDGET_EXCEEDED MI_EXECUTION_CANCELLED") {
+			if !id(a.ID) || attempts[a.ID] || numbers[a.AttemptNo] || a.AttemptNo < 1 || a.AttemptNo > 3 || !one(a.Validity, validities) || !count(a.PromptTokens) || !count(a.CompletionTokens) || !count(a.TotalTokens) || !count(a.DurationMS) || a.HTTPStatus != nil && (*a.HTTPStatus < 100 || *a.HTTPStatus > 599) || !optional(a.ErrorCode, "MI_EXECUTION_ERROR MI_AUTH_FAILED MI_MODEL_NOT_FOUND MI_PROTOCOL_UNSUPPORTED MI_RATE_LIMITED MI_TIMEOUT MI_NETWORK_FAILED MI_NETWORK_TEMPORARY MI_SERVICE_UNAVAILABLE MI_CLIENT_SAFETY_LIMIT MI_EVIDENCE_LIMIT MI_SAFETY_REFUSAL MI_EXECUTION_TARGET_STALE MI_EXECUTION_CIRCUIT_OPEN MI_UNCERTAIN_ATTEMPT MI_CONNECTION_RESET MI_EXECUTION_BUDGET_EXCEEDED MI_EXECUTION_CANCELLED") {
 				return ErrInput
 			}
 			attempts[a.ID] = true

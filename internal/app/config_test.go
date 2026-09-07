@@ -77,3 +77,23 @@ func TestConfigurationEnvironmentValidation(t *testing.T) {
 		t.Fatal("explicit overrides missing")
 	}
 }
+
+func TestReportDirectoryIsExplicitAbsoluteAndNotVolumeRoot(t *testing.T) {
+	expected := filepath.Join(t.TempDir(), "private-reports")
+	cfg, err := LoadConfig("", func(key string) string {
+		if key == "MII_REPORT_PATH" {
+			return expected
+		}
+		return ""
+	})
+	if err != nil || cfg.ReportPath != expected {
+		t.Fatal("report path override missing")
+	}
+	for _, path := range []string{"", "relative-reports", filepath.VolumeName(expected) + string(filepath.Separator), expected + "\x00"} {
+		invalid := cfg
+		invalid.ReportPath = path
+		if invalid.Validate() == nil {
+			t.Fatal("unsafe report path accepted")
+		}
+	}
+}
