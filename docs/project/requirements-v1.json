@@ -1,0 +1,1397 @@
+{
+  "schema_version": 1,
+  "source": "模型真实性检测系统-PRD-V1.0.md",
+  "requirements": [
+    {
+      "id": "SYS-001",
+      "requirement": "首次启动提供初始化流程，创建系统配置、首个组织和初始管理员",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-02"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-002",
+      "requirement": "自带用户名/密码登录、退出、会话管理和密码修改能力",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-003",
+      "requirement": "自带用户、组织、成员、角色和权限管理",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-004",
+      "requirement": "自带供应商与模型档案管理，不依赖外部模型目录",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-005",
+      "requirement": "自带任务队列、Worker、失败恢复和任务清理能力",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-06",
+        "M2-07",
+        "M6-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-006",
+      "requirement": "自带数据库迁移、版本检查、健康检查和运行状态页",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-01",
+        "M1-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-007",
+      "requirement": "提供项目自身的 Docker 镜像及 Docker Compose 部署清单",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M6-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-008",
+      "requirement": "支持从系统内导出配置与数据备份，并提供恢复校验",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M6-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "SYS-009",
+      "requirement": "可选接入 OIDC/SSO，不得作为本地部署的强制依赖",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M7-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-SYS-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "SYS-010",
+      "requirement": "可选通过通用 REST API/Webhook 与外部平台集成",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M7-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-SYS-010",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "TAR-001",
+      "requirement": "创建目标：名称、Endpoint、协议、API Key、模型名",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "TAR-002",
+      "requirement": "配置组织、环境、渠道 ID、标准模型和标签",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "TAR-003",
+      "requirement": "API Key 加密保存、掩码显示、只可替换",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-02"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "TAR-004",
+      "requirement": "执行连通性、鉴权、模型存在性和流式兼容检查",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "TAR-005",
+      "requirement": "支持自定义请求头，但禁止覆盖系统保留头",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01",
+        "M2-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "TAR-006",
+      "requirement": "支持代理、超时、区域和 TLS 校验设置",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-03"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-TAR-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "TAR-007",
+      "requirement": "一个目标绑定多个模型配置",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-TAR-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "TAR-008",
+      "requirement": "在系统内维护供应商与模型档案，并与检测目标关联",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M1-05",
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-001",
+      "requirement": "提供快速、标准、深度、自定义四种检测包",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01",
+        "M3-03",
+        "M4-01",
+        "M2-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-002",
+      "requirement": "运行前显示预计请求量、Token 量、费用和时间",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-003",
+      "requirement": "支持并发数、重复次数、超时、重试和预算上限",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-08",
+        "M2-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-004",
+      "requirement": "每次运行冻结规则版本、提示模板版本和参数",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01",
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-005",
+      "requirement": "同批次使用随机 nonce 和动态样本，避免固定题库",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-006",
+      "requirement": "实时展示总进度、各探针进度、成功/失败数和消耗",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-10"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-007",
+      "requirement": "支持安全取消；已完成样本保留并标记取消",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-008",
+      "requirement": "允许对失败或可疑探针单独复测；复测形成新任务或修订，不覆盖原始样本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-07",
+        "M2-10"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RUN-009",
+      "requirement": "支持定时复检和异常通知",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M6-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RUN-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "RUN-010",
+      "requirement": "支持多目标同策略对照运行",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RUN-010",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "PINJ-001",
+      "requirement": "格式契约探针 — 要求只输出随机结构或短标记，检测固定前后缀、额外解释和格式破坏",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-01"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "PINJ-002",
+      "requirement": "成对差分探针 — 仅改变一个无关变量，判断输出是否受到非用户指令稳定影响",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-02"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "PINJ-003",
+      "requirement": "中性拒答探针 — 对无风险任务测试异常拒答、身份声明和固定免责声明",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-03"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "PINJ-004",
+      "requirement": "身份/风格偏置探针 — 检测持续自称特定身份、固定语气或强制话题偏移",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-04"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "PINJ-005",
+      "requirement": "多语言等价探针 — 对语义等价的中英文请求比较行为差异",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "PINJ-006",
+      "requirement": "顺序与位置探针 — 改变用户内容顺序，判断隐藏前后缀影响",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-02"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-PINJ-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "PINJ-007",
+      "requirement": "工具调用契约探针 — 检测隐藏指令对函数调用选择和参数的影响",
+      "priority": "P2",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-PINJ-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "PINJ-008",
+      "requirement": "自报告问题 — 仅作为辅助信息，禁止单独参与确定性结论",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-001",
+      "requirement": "多档位阶梯测试 — 至少测试 64/128/256/512 四档，可按模型调整",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-03"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-002",
+      "requirement": "持续生成任务 — 使用不易自然提前结束且可验证完整性的任务",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-02"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-003",
+      "requirement": "结构完整性检测 — 判断 JSON、编号序列、句子或代码块是否未完成",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-004",
+      "requirement": "停止原因一致性 — 比较 `finish_reason`、协议事件、输出形态和 Token 数",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-005",
+      "requirement": "Usage 交叉校验 — 比较上游 Usage 与本地 tokenizer/估算器",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-04",
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-006",
+      "requirement": "流式/非流式对照 — 检测仅在某种传输模式发生的提前截断",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-007",
+      "requirement": "参数别名兼容 — 识别 `max_tokens` 与 `max_completion_tokens` 的协议差异",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04",
+        "M2-06"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "MTOK-008",
+      "requirement": "上下文窗口测试 — 检测输入+输出总长度能力",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-03"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-MTOK-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "MTOK-009",
+      "requirement": "隐性分段上限 — 识别按账户、模型、时间或请求类型变化的限制",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-MTOK-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "完整自适应分段诊断为 P1；固定/概率上限发布检出率仍由 M3-06、M7-02 验证。"
+    },
+    {
+      "id": "RINT-001",
+      "requirement": "检测固定前缀、后缀、免责声明或代理水印",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-06",
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RINT-002",
+      "requirement": "检测 SSE 提前结束、缺少结束事件和异常断连",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-05",
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RINT-003",
+      "requirement": "检测正文与 Usage、finish_reason 的明显矛盾",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RINT-004",
+      "requirement": "比较流式与非流式内容长度和结束方式",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RINT-005",
+      "requirement": "记录响应头白名单字段及请求追踪 ID",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04",
+        "M2-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "RINT-006",
+      "requirement": "检测响应 JSON 字段被删除、添加或类型改变",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RINT-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "BASE-001",
+      "requirement": "支持将已审核任务设为可信基线",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "BASE-002",
+      "requirement": "基线绑定模型、协议、参数、区域、日期和规则版本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "BASE-003",
+      "requirement": "基线过期后提示重新采样",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "BASE-004",
+      "requirement": "支持官方接口基线和目标自身历史基线",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "BASE-005",
+      "requirement": "基线不能被普通用户静默覆盖",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "BASE-006",
+      "requirement": "支持同批随机种子/探针变量的成对比较",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-BASE-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "REP-001",
+      "requirement": "任务总览包含风险、置信度、证据等级和完整性声明",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-02",
+        "M5-03",
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-002",
+      "requirement": "每项结论可下钻到探针和样本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-003",
+      "requirement": "样本展示请求参数、脱敏正文、响应、Usage、停止原因和耗时",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-004",
+      "requirement": "给出替代解释与检测局限性",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04",
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-005",
+      "requirement": "输出复现用请求模板，但不包含真实 Key",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-006",
+      "requirement": "支持 JSON 和 HTML 导出",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "REP-007",
+      "requirement": "支持 PDF/CSV 导出",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "REP-008",
+      "requirement": "报告冻结后生成内容哈希，后续修改形成新版本",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "完整版本链为 P1；M5-08 基础 canonical hash 仍须 V1.0 实现。"
+    },
+    {
+      "id": "REP-009",
+      "requirement": "支持两个任务的差异报告",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "HIS-001",
+      "requirement": "按目标展示历次风险、置信度、调用成功率和延迟",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "HIS-002",
+      "requirement": "检测规则升级时区分“行为变化”和“算法变化”",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-06",
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "HIS-003",
+      "requirement": "可筛选模型、渠道、日期、风险项和任务状态",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "HIS-004",
+      "requirement": "支持固定基线下重新分析历史原始数据",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-HIS-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "HIS-005",
+      "requirement": "显著恶化时产生站内通知/Webhook",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M6-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-HIS-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "CFG-001",
+      "requirement": "检测模板、阈值、评分权重全部版本化",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M3-01",
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "CFG-002",
+      "requirement": "已执行任务始终引用不可变规则快照",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "CFG-003",
+      "requirement": "规则发布前支持离线回放验收集",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "CFG-004",
+      "requirement": "规则变更记录操作者、差异和发布时间",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06",
+        "M1-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    },
+    {
+      "id": "CFG-005",
+      "requirement": "支持灰度启用新规则",
+      "priority": "P1",
+      "release": "future",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-CFG-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "按冻结范围延后；关联任务仅记录设计归属，不声明完整增强功能已纳入 V1.0。"
+    },
+    {
+      "id": "CFG-006",
+      "requirement": "探针模板中的敏感内容须经过安全评审",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M3-01",
+        "SEC-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。"
+    }
+  ]
+}
