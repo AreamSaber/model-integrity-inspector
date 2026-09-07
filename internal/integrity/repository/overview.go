@@ -7,7 +7,6 @@ import (
 	_ "time/tzdata" // Stable IANA data for the single-binary deployment.
 
 	"gorm.io/gorm"
-	"model-integrity-inspector.local/mii/internal/integrity/analysis/scoring"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 )
@@ -15,6 +14,14 @@ import (
 const OverviewMaxRows = 10000
 const OverviewMaxCohorts = 16
 const OverviewMaxInteger int64 = 9007199254740991
+
+// This is the frozen revision-1 read compatibility boundary, not the current
+// application runtime selector. Persistence must not import the analysis engine
+// (whose real tests also exercise persistence). Cross-layer tests bind these
+// independent identities to the installed rule/scoring versions; future runtime
+// changes require an explicit read-compatibility decision, never silent drift.
+const overviewRuleVersion = "1.0.0-dev.1"
+const overviewScoringVersion = "1.0.0-dev.1"
 
 var ErrOverviewLimit = errors.New("MI_OVERVIEW_LIMIT")
 var ErrOverviewTimezone = errors.New("MI_OVERVIEW_TIMEZONE_INVALID")
@@ -150,7 +157,7 @@ func (t *Tenant) Overview(days int) (OverviewRecord, error) {
 		 FROM integrity_runs WHERE organization_id=? AND created_at>=? AND created_at<? LIMIT 10001) r
 		 LEFT JOIN integrity_run_results rr ON rr.organization_id=r.organization_id AND rr.run_id=r.id AND rr.analysis_revision=1 AND rr.is_published=TRUE`
 		var counts struct{ Total, Invalid int64 }
-		if err := tx.Raw(guard, scoring.Version, templates.BuiltinVersion, scoring.Version, tokenizer.BuiltinVersion, t.orgID, window.StartUTC, window.EndUTC).Scan(&counts).Error; err != nil {
+		if err := tx.Raw(guard, overviewRuleVersion, templates.BuiltinVersion, overviewScoringVersion, tokenizer.BuiltinVersion, t.orgID, window.StartUTC, window.EndUTC).Scan(&counts).Error; err != nil {
 			return err
 		}
 		if counts.Total > OverviewMaxRows {

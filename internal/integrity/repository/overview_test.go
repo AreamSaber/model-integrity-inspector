@@ -8,15 +8,22 @@ import (
 	"time"
 
 	"model-integrity-inspector.local/mii/internal/integrity/analysis/scoring"
+	"model-integrity-inspector.local/mii/internal/integrity/bundle"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 )
+
+func TestOverviewReadCompatibilityMatchesFrozenRuntime(t *testing.T) {
+	if overviewRuleVersion != bundle.BuiltinVersion || overviewScoringVersion != scoring.Version {
+		t.Fatal("new runtime needs an explicit overview revision-1 read compatibility decision")
+	}
+}
 
 func overviewFixture(t *testing.T, store *Store) (*Tenant, RunRecord) {
 	t.Helper()
 	tenant, _, plan, policy := executionFixture(t, store, 1)
 	readPermissions(t, tenant)
-	plan.Versions.Rule = scoring.Version
+	plan.Versions.Rule = bundle.BuiltinVersion
 	plan.Versions.Scoring = scoring.Version
 	plan.Versions.Template = templates.BuiltinVersion
 	plan.Versions.Tokenizer = tokenizer.BuiltinVersion
