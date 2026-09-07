@@ -56,17 +56,13 @@ describe('explicit bounded target precheck workflow', () => {
     expect((screen.getByRole('button', { name: '发起检测（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
   })
   it('posts the fresh target version with CSRF/org/fixed idempotency key and tracks its precise precheck ID', async () => {
-    const calls = network((path) => path === `/api/v1/targets/${targetID}` ? ok({ ...target, version: 10 }) : undefined)
-    // Override the synthetic enqueue/poll versions to match the fresh GET.
-    const original = globalThis.fetch
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, options) => {
-      const response = await original(input, options)
-      if (String(input).includes('/precheck')) {
-        const json = await response.json(); json.data.target_version = 10
-        return Response.json(json, { status: response.status })
-      }
-      return response
-    }))
+    // Supply the wire fixtures directly. A nested fetch wrapper that drains and
+    // rebuilds Response bodies adds unrelated native stream scheduling on Windows.
+    const calls = network((path, options) => {
+      if (path === `/api/v1/targets/${targetID}`) return ok({ ...target, version: 10 })
+      if (path.endsWith('/precheck') && options.method === 'POST') return ok({ ...queued, target_version: 10 }, 202)
+      if (path.includes('/prechecks/')) return ok({ ...passed, target_version: 10 })
+    })
     renderTargets(); await openPanel(); await submit()
     await screen.findByRole('heading', { name: '本次提交的预检：通过' })
     const post = posts(calls)[0]
