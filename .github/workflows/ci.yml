@@ -38,7 +38,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
       - name: Install pnpm
-        run: npm install --global pnpm@${PNPM_VERSION}
+        run: npm install --global "pnpm@${PNPM_VERSION}"
       - name: Static checks
         shell: pwsh
         run: ./scripts/lint.ps1
@@ -64,7 +64,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
       - name: Install pnpm
-        run: npm install --global pnpm@${PNPM_VERSION}
+        run: npm install --global "pnpm@${PNPM_VERSION}"
       - name: Ecosystem vulnerability scans
         shell: pwsh
         run: ./scripts/security-scan.ps1
@@ -112,7 +112,7 @@ jobs:
           package-manager-cache: false
       - name: Install pnpm
         shell: bash
-        run: npm install --global pnpm@${PNPM_VERSION}
+        run: npm install --global "pnpm@${PNPM_VERSION}"
       - name: Build versioned package
         shell: pwsh
         run: ./scripts/package.ps1
@@ -135,9 +135,11 @@ jobs:
         id: meta
         shell: bash
         run: |
-          echo "version=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_OUTPUT"
-          echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
-          echo "built_at=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$(tr -d '\r\n' < VERSION)"
+            echo "short=${GITHUB_SHA:0:12}"
+            echo "built_at=$(git show -s --format=%cI HEAD)"
+          } >> "$GITHUB_OUTPUT"
       - name: Build image
         shell: bash
         run: |
