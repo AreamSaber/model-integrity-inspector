@@ -51,7 +51,7 @@ func applyContract(sample Sample, text string, out *Features) {
 			out.ContractReason = "expected_marker_absent"
 			return
 		}
-		if strings.Index(text[start+1:], contract.Expected) >= 0 {
+		if strings.Contains(text[start+1:], contract.Expected) {
 			out.ContractReason, out.Anchor = "ambiguous_repeated_marker", "ambiguous"
 			return
 		}
