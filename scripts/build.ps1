@@ -20,7 +20,9 @@ try {
     & $go test ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
     New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
-    & $go build -trimpath -o (Join-Path $artifactRoot 'mii.exe') ./cmd/mii
+    & $go test -tags webassets ./web ./internal/app
+    if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend integration tests failed.' }
+    & $go build -tags webassets -trimpath -o (Join-Path $artifactRoot 'mii.exe') ./cmd/mii
     if ($LASTEXITCODE -ne 0) { throw 'Go build failed.' }
 } finally {
     Pop-Location

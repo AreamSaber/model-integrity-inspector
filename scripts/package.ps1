@@ -51,7 +51,9 @@ try {
     $binaryExtension = if ($goos -eq 'windows') { '.exe' } else { '' }
     $binaryPath = Join-Path $outputRoot "$artifactStem$binaryExtension"
     $ldflags = "-s -w -X model-integrity-inspector.local/mii/internal/buildinfo.version=$version -X model-integrity-inspector.local/mii/internal/buildinfo.commit=$commit -X model-integrity-inspector.local/mii/internal/buildinfo.builtAt=$builtAt"
-    & $go build -trimpath -buildvcs=true -ldflags $ldflags -o $binaryPath ./cmd/mii
+    & $go test -tags webassets ./web ./internal/app
+    if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend integration tests failed.' }
+    & $go build -tags webassets -trimpath -buildvcs=true -ldflags $ldflags -o $binaryPath ./cmd/mii
     if ($LASTEXITCODE -ne 0) { throw 'Versioned Go build failed.' }
 
     $embeddedBuild = (& $binaryPath version | Out-String).Trim() | ConvertFrom-Json

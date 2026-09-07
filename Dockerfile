@@ -14,11 +14,18 @@ ARG COMMIT=unknown
 ARG BUILT_AT=unknown
 WORKDIR /src
 RUN apk add --no-cache ca-certificates
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY migrations/ ./migrations/
+COPY tests/ ./tests/
+COPY docs/ ./docs/
+COPY *.md ./
+COPY web/*.go ./web/
+COPY --from=web /src/web/dist ./web/dist/
 RUN go test ./...
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+RUN go test -tags webassets ./web ./internal/app
+RUN CGO_ENABLED=0 GOOS=linux go build -tags webassets -trimpath -buildvcs=false \
     -ldflags "-s -w -X model-integrity-inspector.local/mii/internal/buildinfo.version=${VERSION} -X model-integrity-inspector.local/mii/internal/buildinfo.commit=${COMMIT} -X model-integrity-inspector.local/mii/internal/buildinfo.builtAt=${BUILT_AT}" \
     -o /out/mii ./cmd/mii
 
@@ -34,8 +41,7 @@ LABEL org.opencontainers.image.title="Model Integrity Inspector" \
       org.opencontainers.image.source="${SOURCE}"
 COPY --from=backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=backend /out/mii /mii
-COPY --from=web /src/web/dist /web
 USER 65532:65532
-ENV APP_ROLE=all MII_ADDR=0.0.0.0:8080
+ENV APP_ROLE=all MII_ADDR=0.0.0.0:8080 MII_ALLOW_INSECURE_LOOPBACK=false
 EXPOSE 8080
 ENTRYPOINT ["/mii"]

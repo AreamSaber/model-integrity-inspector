@@ -14,13 +14,13 @@ import (
 func TestStatusEndpoints(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(buildinfo.Info{Version: "test"}, appruntime.RoleServer)
+	handler := NewStatusHandler(buildinfo.Info{Version: "test"}, appruntime.RoleWorker, func(context.Context) bool { return true })
 	for _, test := range []struct {
 		path string
 		want string
 	}{
 		{"/health", `"status":"ok"`},
-		{"/ready", `"role":"server"`},
+		{"/ready", `"role":"worker"`},
 		{"/version", `"version":"test"`},
 	} {
 		recorder := httptest.NewRecorder()

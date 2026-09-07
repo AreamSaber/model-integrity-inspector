@@ -1,12 +1,24 @@
 integrity:
+  enabled: true
   role: all
   listen: 127.0.0.1:8080
+  public_origin: http://127.0.0.1:8080
+  # HTTP is allowed only for a literal loopback listen address AND public origin.
+  # For remote deployments use an HTTPS reverse proxy and set this false.
+  allow_insecure_loopback: true
   queue:
     provider: database
   database:
     provider: sqlite
-    path: ./data/mii.db
+    # Paths are relative to this configuration file, not the process directory.
+    path: ../data/mii.db
+    dsn_env: MII_DATABASE_DSN
   reports:
-    path: ./reports
+    path: ../reports
   security:
-    master_key_file: ./data/integrity-master.key
+    master_key_source: file
+    master_key_file: ../data/integrity-master.key
+    master_key_version: v1
+    # Remote first initialization additionally requires X-Setup-Token matching
+    # this environment variable (>=32 characters). Never put its value here.
+    setup_token_env: MII_SETUP_TOKEN
