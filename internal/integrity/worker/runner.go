@@ -70,10 +70,20 @@ func New(config Config) (*Runner, error) {
 // Ready is false until Run owns a real consumer and its first heartbeat succeeds.
 func (runner *Runner) Ready() bool { return runner.ready.Load() }
 
-func (runner *Runner) Run(ctx context.Context) error {
+func (runner *Runner) Run(ctx context.Context) (result error) {
 	if ctx == nil {
 		return ErrConfiguration
 	}
+	defer func() {
+		// Persistence intentionally sanitizes driver cancellation to unavailable.
+		// The caller's own cancelled context disambiguates that shutdown path,
+		// including cancellation while committing or renewing a consumer. A live
+		// caller still receives database failures; fencing and unresponsive-handler
+		// failures are never reclassified as graceful shutdown.
+		if ctx.Err() != nil && (errors.Is(result, repository.ErrUnavailable) || errors.Is(result, context.Canceled) || errors.Is(result, context.DeadlineExceeded)) {
+			result = nil
+		}
+	}()
 	if !runner.running.CompareAndSwap(false, true) {
 		return ErrAlreadyRunning
 	}
