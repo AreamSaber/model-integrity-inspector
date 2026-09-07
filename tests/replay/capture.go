@@ -247,7 +247,10 @@ func bounded(d captureData) error {
 		if err := validHeaders(a.Response.Headers); err != nil {
 			return err
 		}
-		if err := validTiming(a.Response.Timing, a.FinishedAt.Sub(a.StartedAt)); err != nil {
+		// Adapter timing starts before Doer.Do, which reserves the Attempt.
+		// A real reservation lock wait is therefore outside the persisted
+		// Attempt interval. Bound both intervals, but do not compare origins.
+		if err := validTiming(a.Response.Timing, 180*time.Second); err != nil {
 			return err
 		}
 	}
@@ -284,8 +287,8 @@ func validHeaders(headers []headerData) error {
 	return nil
 }
 
-func validTiming(t ObservedTiming, attemptDuration time.Duration) error {
-	if t.DurationMillis < 0 || t.DurationMillis > 180_000 || t.DurationMillis > attemptDuration.Milliseconds()+1 || t.FirstByteMillis < 0 || t.FirstByteMillis > t.DurationMillis || len(t.Events) > 16 || (t.FirstTokenMillis != nil && (*t.FirstTokenMillis < t.FirstByteMillis || *t.FirstTokenMillis > t.DurationMillis)) {
+func validTiming(t ObservedTiming, limit time.Duration) error {
+	if t.DurationMillis < 0 || t.DurationMillis > 180_000 || t.DurationMillis > limit.Milliseconds() || t.FirstByteMillis < 0 || t.FirstByteMillis > t.DurationMillis || len(t.Events) > 16 || (t.FirstTokenMillis != nil && (*t.FirstTokenMillis < t.FirstByteMillis || *t.FirstTokenMillis > t.DurationMillis)) {
 		return ErrIntegrity
 	}
 	for i, event := range t.Events {
@@ -308,12 +311,19 @@ func bindPlan(d captureData, p domain.ExecutionPlan) error {
 	if p.Versions.Rule != bundle.BuiltinVersion || p.Versions.Scoring != bundle.BuiltinVersion {
 		return ErrUnsupported
 	}
-	if len(p.Probes) != len(d.Samples) || p.Budget.TimeoutSeconds < 1 {
+	if len(p.Probes) != len(d.Samples) || p.Budget.TimeoutSeconds < 1 || p.Budget.TimeoutSeconds > 86400 || p.Target.TimeoutSeconds < 1 || p.Target.TimeoutSeconds > 180 {
 		return ErrIntegrity
 	}
+	// callRunSample uses min(server RequestTimeout, frozen Target timeout).
+	// The server override is not recorded here; the frozen request and total
+	// Run budgets are independent upper bounds, not recovered wall-clock starts.
+	requestLimit := time.Duration(min(int64(p.Target.TimeoutSeconds), p.Budget.TimeoutSeconds)) * time.Second
 	for i, s := range d.Samples {
 		if len(p.Probes[i].Samples) != 1 || s.PairID != p.Probes[i].Samples[0].PairID || d.ExecutionClosedAt.Sub(s.Attempts[0].StartedAt) > time.Duration(p.Budget.TimeoutSeconds)*time.Second {
 			return ErrIntegrity
+		}
+		if err := validTiming(s.Attempts[0].Response.Timing, requestLimit); err != nil {
+			return err
 		}
 	}
 	return nil

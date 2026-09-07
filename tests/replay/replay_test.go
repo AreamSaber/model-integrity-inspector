@@ -67,7 +67,7 @@ func newFixture(t *testing.T, model string, omitDone bool) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := generator.Options{OrganizationID: 7, Target: domain.ExecutionTarget{ID: 10, Version: 1, SecretID: 11, SecretVersion: 1, Model: model, Endpoint: "https://never-dial.invalid/v1", Protocol: "openai_chat", MaxOutputParameter: "max_tokens"}, Package: "custom", Custom: &generator.Custom{Families: []string{"format", "sequence"}, Tiers: []int{64, 128}, Languages: []string{"en-US"}, Repetitions: 3}, SupportsStream: true, SupportsSeed: true, Budget: domain.ExecutionBudget{MaxRequests: 150, MaxTokens: 1000000, TimeoutSeconds: 600}, RuleVersion: bundle.BuiltinVersion, ScoringVersion: bundle.BuiltinVersion, ContextWindow: 128000, MaxOutputTokens: 4096, Concurrency: 1}
+	o := generator.Options{OrganizationID: 7, Target: domain.ExecutionTarget{ID: 10, Version: 1, SecretID: 11, SecretVersion: 1, Model: model, Endpoint: "https://never-dial.invalid/v1", Protocol: "openai_chat", MaxOutputParameter: "max_tokens", TimeoutSeconds: 180}, Package: "custom", Custom: &generator.Custom{Families: []string{"format", "sequence"}, Tiers: []int{64, 128}, Languages: []string{"en-US"}, Repetitions: 3}, SupportsStream: true, SupportsSeed: true, Budget: domain.ExecutionBudget{MaxRequests: 150, MaxTokens: 1000000, TimeoutSeconds: 600}, RuleVersion: bundle.BuiltinVersion, ScoringVersion: bundle.BuiltinVersion, ContextWindow: 128000, MaxOutputTokens: 4096, Concurrency: 1}
 	m, err := g.Generate(o)
 	if err != nil {
 		t.Fatal(err)
@@ -308,12 +308,12 @@ func TestReplayRejectsTamperingUnsupportedAndUnsettled(t *testing.T) {
 			a.WirePayload = []byte(`{"model":"other"}`)
 			a.RequestHash = digest(a.WirePayload)
 		},
-		"body":              func(d *CaptureDraft) { a := &d.Samples[0].Attempts[0]; a.Response.Body[0] ^= 1 },
-		"protocol":          func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.ProtocolHash = strings.Repeat("0", 64) },
-		"timeout":           func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.End = "timeout" },
-		"http-error":        func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.HTTPStatus = 503 },
-		"negative-time":     func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.Timing.DurationMillis = -1 },
-		"time-over-attempt": func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.Timing.DurationMillis = 200 },
+		"body":                     func(d *CaptureDraft) { a := &d.Samples[0].Attempts[0]; a.Response.Body[0] ^= 1 },
+		"protocol":                 func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.ProtocolHash = strings.Repeat("0", 64) },
+		"timeout":                  func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.End = "timeout" },
+		"http-error":               func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.HTTPStatus = 503 },
+		"negative-time":            func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.Timing.DurationMillis = -1 },
+		"time-over-adapter-budget": func(d *CaptureDraft) { d.Samples[0].Attempts[0].Response.Timing.DurationMillis = 180001 },
 		"header-secret": func(d *CaptureDraft) {
 			d.Samples[0].Attempts[0].Response.Headers = append(d.Samples[0].Attempts[0].Response.Headers, Header{"Set-Cookie", []string{"secret-canary"}})
 		},

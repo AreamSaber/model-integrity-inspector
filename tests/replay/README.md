@@ -29,6 +29,16 @@ There is no HTTP client, DNS, Dial, database or controller import in this core.
 The actual parser must reproduce a digest of the original protocol projection.
 Only then are signed capture-observed timing fields attached, with explicit
 output limitations: offline elapsed time is not a new network measurement.
+The Adapter starts timing before `Doer.Do` reserves an Attempt; database lock
+waits before reservation can therefore make Adapter elapsed time exceed the
+persisted `Attempt.started_at` to `finished_at` interval. These are different
+origins, not a containment relationship or a database timestamp tolerance.
+Each interval retains the 180-second development ceiling. Verified Manifest
+binding additionally bounds Adapter timing by the frozen target request timeout
+(strictly 1–180 seconds) and total Run budget. A tighter server-side request
+override is not recorded here and is not reconstructed. The original database
+time ordering and TTFB/TTFT/event-relative timing checks remain enforced; no
+production timestamps, parser measurements or publication bytes are rewritten.
 Tokenizer quality and counts come from locally recounting parsed Content;
 reported Usage remains separate. The candidate runtime never rewrites the
 source Manifest's builtin execution version. All outputs remain development,

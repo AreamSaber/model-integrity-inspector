@@ -164,6 +164,110 @@ func TestReplayAttachesOnlyBoundedCaptureObservedTiming(t *testing.T) {
 	t.Fatal("missing stream fixture")
 }
 
+func TestReplayTimingUsesFrozenRequestAndRunBudgets(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		targetSeconds int
+		runSeconds    int64
+		limitMillis   int64
+	}{
+		{"frozen-target-request-not-run-budget", 1, 600, 1000},
+		{"frozen-run-budget-not-target-request", 180, 2, 2000},
+		{"development-hard-ceiling", 180, 600, 180000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "gpt-4o", false)
+			regenerateTimingFixture(t, &f, tc.targetSeconds, tc.runSeconds)
+			a := &f.draft.Samples[0].Attempts[0]
+			a.Response.Timing.DurationMillis = tc.limitMillis
+			if a.Response.Timing.DurationMillis <= a.FinishedAt.Sub(a.StartedAt).Milliseconds() {
+				t.Fatal("fixture did not separate adapter and reservation origins")
+			}
+			if _, err := f.engine.Replay(t.Context(), bytes.NewReader(sealed(t, f))); err != nil {
+				t.Fatal("valid independent timing intervals rejected", err)
+			}
+			a.Response.Timing.DurationMillis++
+			if _, err := f.engine.Replay(t.Context(), bytes.NewReader(unsafeSeal(t, f))); !errors.Is(err, ErrIntegrity) {
+				t.Fatal("adapter timing exceeded authenticated frozen budget", err)
+			}
+		})
+	}
+	for _, seconds := range []int{0, 181} {
+		f := newFixture(t, "gpt-4o", false)
+		regenerateTimingFixture(t, &f, seconds, 600)
+		if _, err := f.engine.Replay(t.Context(), bytes.NewReader(sealed(t, f))); !errors.Is(err, ErrIntegrity) {
+			t.Fatal("target timeout unsupported by actual Worker accepted", err)
+		}
+	}
+}
+
+// Generate a fresh authenticated Manifest through the real compiler instead of
+// trusting a caller-supplied Plan or editing a signed timeout. Rebuild the exact
+// request bindings and reparse synthetic bodies; this is not a Worker receipt.
+func regenerateTimingFixture(t *testing.T, f *fixture, targetSeconds int, runSeconds int64) {
+	t.Helper()
+	m, err := f.generator.Verify(f.draft.Manifest, f.draft.ManifestHash, f.draft.OrganizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := m.Options
+	o.Target.TimeoutSeconds, o.Budget.TimeoutSeconds = targetSeconds, runSeconds
+	m, err = f.generator.Generate(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.draft.Manifest, f.draft.ManifestHash, err = m.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.generator.ExecutionPlan(f.draft.Manifest, f.draft.ManifestHash, f.draft.OrganizationID)
+	if err != nil || len(p.Probes) != len(f.draft.Samples) {
+		t.Fatal("fresh signed timing fixture is not bound")
+	}
+	adapter, err := openaichat.New(openaichat.Config{Endpoint: "https://replay.invalid/v1", MaxOutputParameter: p.Target.MaxOutputParameter, Doer: &recordedDoer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, probe := range p.Probes {
+		request := probe.Samples[0].Request
+		_, snap, err := adapter.BuildRequest(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := &f.draft.Samples[i]
+		s.PairID = probe.Samples[0].PairID
+		a := &s.Attempts[0]
+		a.WirePayload, a.RequestHash = snap.Payload, snap.RequestHash
+		media, end := "application/json", "eof"
+		if request.Stream {
+			media, end = "text/event-stream", "done"
+		}
+		a.Response.Headers, a.Response.End = []Header{{"Content-Type", []string{media}}}, end
+		recaptureSynthetic(t, f, i, responseBody(t, f.model, "hello", 1, request.Stream, false))
+	}
+}
+
+func TestCaptureRetainsInternalTimingConstraints(t *testing.T) {
+	base := newFixture(t, "gpt-4o", false)
+	for name, timing := range map[string]ObservedTiming{
+		"negative-duration":                {DurationMillis: -1},
+		"first-byte-after-duration":        {DurationMillis: 10, FirstByteMillis: 11},
+		"first-token-before-first-byte":    {DurationMillis: 10, FirstByteMillis: 2, FirstTokenMillis: new(int64(1))},
+		"first-token-after-duration":       {DurationMillis: 10, FirstTokenMillis: new(int64(11))},
+		"event-after-duration":             {DurationMillis: 10, Events: []EventTiming{{Sequence: 1, ArrivalMillis: 11}}},
+		"event-sequence-regression":        {DurationMillis: 10, Events: []EventTiming{{Sequence: 2, ArrivalMillis: 1, IntervalMillis: 1}, {Sequence: 1, ArrivalMillis: 2, IntervalMillis: 1}}},
+		"adjacent-event-interval-mismatch": {DurationMillis: 10, Events: []EventTiming{{Sequence: 1, ArrivalMillis: 1, IntervalMillis: 1}, {Sequence: 2, ArrivalMillis: 3, IntervalMillis: 1}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := cloneFixture(t, base)
+			f.draft.Samples[0].Attempts[0].Response.Timing = timing
+			if _, err := f.engine.Replay(t.Context(), bytes.NewReader(unsafeSeal(t, f))); !errors.Is(err, ErrIntegrity) {
+				t.Fatal("invalid internal adapter timing accepted", err)
+			}
+		})
+	}
+}
+
 func TestCaptureLimitsConfigurationAndSafeErrors(t *testing.T) {
 	f := newFixture(t, "gpt-4o", false)
 	for name, mutate := range map[string]func(*CaptureDraft){
