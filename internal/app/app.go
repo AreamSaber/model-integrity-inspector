@@ -12,9 +12,11 @@ import (
 
 	"model-integrity-inspector.local/mii/internal/identity"
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
+	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
+	"model-integrity-inspector.local/mii/internal/integrity/worker"
 	webui "model-integrity-inspector.local/mii/web"
 )
 
@@ -23,6 +25,7 @@ var ErrStartup = errors.New("MI_STARTUP_FAILED")
 type application struct {
 	store   *repository.Store
 	handler http.Handler
+	worker  *worker.Runner
 }
 
 // prepare validates keys and schema before opening a listening socket. Workers
@@ -79,9 +82,22 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		return nil, err
 	}
 	app := &application{store: store}
+	secretService, err := secret.NewService(store, key)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Role.Components().Worker {
+		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService})
+		if err != nil {
+			return nil, err
+		}
+		app.worker, err = worker.New(worker.Config{Store: store, Handlers: map[repository.JobType]worker.Handler{repository.JobTargetPrecheck: precheck}})
+		if err != nil {
+			return nil, err
+		}
+	}
 	readiness := func(ctx context.Context) bool {
-		// Worker execution is connected in M2-07; do not report a scaffold as ready.
-		if cfg.Role.Components().Worker {
+		if cfg.Role.Components().Worker && (app.worker == nil || !app.worker.Ready()) {
 			return false
 		}
 		return store.VerifyAllAudit(ctx, false) == nil
@@ -91,15 +107,15 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		if err != nil {
 			return nil, err
 		}
-		secretService, err := secret.NewService(store, key)
-		if err != nil {
-			return nil, err
-		}
 		targets, err := target.NewService(target.Config{Store: store, Secrets: secretService})
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Frontend: webui.Handler()})
+		catalogService, err := catalog.NewService(store, service)
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}
@@ -126,23 +142,48 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
 }
 
 func (a *application) serve(ctx context.Context, cfg Config, listener net.Listener, logger *slog.Logger) error {
+	workCtx, stopWorker := context.WithCancel(ctx)
+	defer stopWorker()
+	var workerDone chan error
+	if a.worker != nil {
+		workerDone = make(chan error, 1)
+		go func() { workerDone <- a.worker.Run(workCtx) }()
+	}
 	server := &http.Server{Handler: a.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
 	logger.Info("control listener started", "role", string(cfg.Role))
+	var result error
+	workerStopped := false
 	select {
 	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdown); err != nil {
-			_ = server.Close()
-			return ErrStartup
-		}
-		return nil
 	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+		if !errors.Is(err, http.ErrServerClosed) {
+			result = ErrStartup
 		}
-		return ErrStartup
+	case <-workerDone:
+		workerStopped = true
+		if ctx.Err() == nil {
+			// A required consumer exiting is not a healthy server-only fallback.
+			result = ErrStartup
+		}
 	}
+	stopWorker()
+	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdown); err != nil {
+		_ = server.Close()
+		result = ErrStartup
+	}
+	if workerDone != nil && !workerStopped {
+		select {
+		case err := <-workerDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				result = ErrStartup
+			}
+		case <-shutdown.Done():
+			result = ErrStartup
+		}
+	}
+	return result
 }

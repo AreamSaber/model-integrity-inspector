@@ -28,6 +28,7 @@ const (
 	JobReportGenerate   JobType = "integrity.report.generate"
 	JobRetentionDelete  JobType = "integrity.retention.delete"
 	JobNotificationSend JobType = "integrity.notification.send"
+	JobTargetPrecheck   JobType = "integrity.target.precheck"
 )
 
 // JobSpec deliberately has no JSON payload, headers, credentials or body fields.
@@ -44,11 +45,14 @@ type JobSpec struct {
 // Future run/sample persistence methods can be added here so business state and
 // its initial/dependent job commit together. It must not escape the callback.
 type TenantTransaction struct {
-	store  *Store
-	db     *gorm.DB
-	ctx    context.Context
-	orgID  int64
-	closed atomic.Bool
+	store           *Store
+	db              *gorm.DB
+	ctx             context.Context
+	orgID           int64
+	closed          atomic.Bool
+	leaseJobID      int64
+	leaseGeneration int
+	completing      bool
 }
 
 func (t *Tenant) InTransaction(fn func(*TenantTransaction) error) error {
@@ -133,6 +137,8 @@ func validateJobObject(tx *gorm.DB, organizationID int64, jobType JobType, objec
 	}
 	var table string
 	switch jobType {
+	case JobTargetPrecheck:
+		table = "integrity_target_prechecks"
 	case JobRunPlan, JobRunAnalyze:
 		table = "integrity_runs"
 	case JobSampleExecute:

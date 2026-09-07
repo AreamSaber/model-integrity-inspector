@@ -147,7 +147,7 @@ func TestTargetHTTPRejectsAmbiguousUnsafeAndUnknownInputs(t *testing.T) {
 	for _, patch := range []string{`{"version":1,"status":null}`, `{"version":1,"auth":{}}`, `{"version":1,"options":{"RPM":2}}`, `{"version":1,"version":1}`, `{"version":1,"name":null}`, `{"name":"missing version"}`} {
 		expectControl(t, f.request(t, "PATCH", path, patch, headers, cookie), 400, "MI_INVALID_REQUEST")
 	}
-	for _, route := range []string{path + "?ignored=1", "/api/v1/targets?q=unsupported", "/api/v1/targets?limit=1&limit=2"} {
+	for _, route := range []string{path + "?ignored=1", "/api/v1/targets?unknown=unsupported", "/api/v1/targets?limit=1&limit=2"} {
 		expectControl(t, f.request(t, "GET", route, "", headers, cookie), 400, "MI_INVALID_REQUEST")
 	}
 	r := httptest.NewRequestWithContext(t.Context(), "GET", path, nil)
@@ -166,5 +166,50 @@ func TestTargetHTTPRejectsAmbiguousUnsafeAndUnknownInputs(t *testing.T) {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(w.Body.Bytes(), &raw) != nil {
 		t.Fatal("invalid JSON")
+	}
+}
+
+func TestTargetHTTPFiltersBoundToCursorAndLiteralSearch(t *testing.T) {
+	f := newControlFixture(t, nil)
+	f.initialize(t)
+	cookie, csrf, org := f.login(t)
+	headers := map[string]string{"X-CSRF-Token": csrf, "X-Organization-ID": org}
+	for _, name := range []string{"Percent% Literal One", "Percent% Literal Two", "Unrelated"} {
+		body := strings.Replace(targetHTTPBody, "Synthetic target", name, 1)
+		body = strings.Replace(body, `"protocol":`, `"environment":"staging","channel_id":"channel-one","protocol":`, 1)
+		expectControl(t, f.request(t, "POST", "/api/v1/targets", body, headers, cookie), 201, "")
+	}
+	var page struct {
+		Items []targetHTTPView `json:"items"`
+		Next  *string          `json:"next_cursor"`
+	}
+	base := "/api/v1/targets?q=%25&model=synthetic-model&environment=staging&status=active&limit=1"
+	w := f.request(t, "GET", base, "", headers, cookie)
+	expectControl(t, w, 200, "")
+	targetHTTPData(t, w, &page)
+	if len(page.Items) != 1 || page.Next == nil || !strings.Contains(page.Items[0].Name, "%") {
+		t.Fatal("literal filter did not produce a paginated match")
+	}
+	cursor := url.QueryEscape(*page.Next)
+	w = f.request(t, "GET", base+"&cursor="+cursor, "", headers, cookie)
+	expectControl(t, w, 200, "")
+	targetHTTPData(t, w, &page)
+	if len(page.Items) != 1 || page.Next != nil || !strings.Contains(page.Items[0].Name, "%") {
+		t.Fatal("filter pagination leaked unmatched rows")
+	}
+	for _, modified := range []string{strings.Replace(base, "staging", "production", 1), strings.Replace(base, "active", "disabled", 1), strings.Replace(base, "synthetic-model", "other-model", 1), strings.Replace(base, "q=%25", "q=changed", 1)} {
+		expectControl(t, f.request(t, "GET", modified+"&cursor="+cursor, "", headers, cookie), 400, "MI_INVALID_REQUEST")
+	}
+	for _, query := range []string{"status=deleted", "model=one&model=two", "environment=%00", "q=%27%20OR%201%3D1%20--"} {
+		w = f.request(t, "GET", "/api/v1/targets?"+query, "", headers, cookie)
+		if strings.HasPrefix(query, "q=") {
+			expectControl(t, w, 200, "")
+			targetHTTPData(t, w, &page)
+			if len(page.Items) != 0 {
+				t.Fatal("SQL parameter escaped scope")
+			}
+		} else {
+			expectControl(t, w, 400, "MI_INVALID_REQUEST")
+		}
 	}
 }

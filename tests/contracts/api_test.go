@@ -112,3 +112,74 @@ func TestPrototypeCoverage(t *testing.T) {
 		t.Fatal("prototype must not claim working product")
 	}
 }
+
+func TestImplementedManagementTargetContractGuards(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/api/openapi-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name     string `json:"name"`
+				In       string `json:"in"`
+				Required bool   `json:"required"`
+			} `json:"parameters"`
+			RequestBody struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `json:"$ref"`
+					} `json:"schema"`
+				} `json:"content"`
+			} `json:"requestBody"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+				Required   []string                   `json:"required"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if json.Unmarshal(raw, &spec) != nil {
+		t.Fatal("invalid API contract")
+	}
+	for _, name := range []string{"UserPatch", "OrganizationPatch", "MemberPatch", "TargetPatch", "TargetSecretRotation", "VersionedRequest", "UserPasswordReset"} {
+		found := false
+		for _, required := range spec.Components.Schemas[name].Required {
+			if required == "version" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s lost required CAS version", name)
+		}
+	}
+	for _, path := range []string{"/organizations/{id}", "/organizations/{id}/members", "/organizations/{id}/members/{memberId}"} {
+		for method, op := range spec.Paths[path] {
+			found := false
+			for _, param := range op.Parameters {
+				if param.Name == "X-Organization-ID" && param.In == "header" && param.Required {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s %s lost organization scope", method, path)
+			}
+		}
+	}
+	for path, want := range map[string]string{"/users/{id}/unlock": "VersionedRequest", "/users/{id}/reset-password": "UserPasswordReset", "/targets/{id}/rotate-secret": "TargetSecretRotation", "/targets/{id}/precheck": "VersionedRequest"} {
+		if spec.Paths[path]["post"].RequestBody.Content["application/json"].Schema.Ref != "#/components/schemas/"+want {
+			t.Errorf("%s body drifted", path)
+		}
+	}
+	for schema, fields := range map[string][]string{"Member": {"org_id", "version"}, "User": {"must_change_password", "version"}, "Precheck": {"id", "job_id", "target_id", "target_version", "request_count"}} {
+		for _, field := range fields {
+			if spec.Components.Schemas[schema].Properties[field] == nil {
+				t.Errorf("%s missing %s", schema, field)
+			}
+		}
+	}
+	if spec.Paths["/targets/{id}/prechecks/{precheckId}"] == nil {
+		t.Fatal("missing precise precheck polling route")
+	}
+}

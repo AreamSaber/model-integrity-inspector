@@ -225,6 +225,9 @@ func (q *JobQueue) reconcile(tx *gorm.DB, now time.Time) error {
 			Updates(map[string]any{"status": status, "last_error_code": errorCode, "lease_owner": nil, "lease_until": nil, "completed_at": now, "updated_at": now}).Error; err != nil {
 			return err
 		}
+		if err := q.reconcilePrecheck(tx, job, status, errorCode, now); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -282,7 +285,7 @@ func (q *JobQueue) CompleteWith(ctx context.Context, lease JobLease, fn func(*Te
 		if locked.RowsAffected != 1 {
 			return ErrJobLeaseLost
 		}
-		capability := &TenantTransaction{store: q.store, db: tx, ctx: ctx, orgID: lease.Job.OrganizationID}
+		capability := &TenantTransaction{store: q.store, db: tx, ctx: ctx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, completing: true}
 		defer capability.closed.Store(true)
 		if fn != nil {
 			if err := fn(capability); err != nil {

@@ -73,6 +73,7 @@ type Provider struct {
 	Description    string
 	Contact        string
 	Status         string
+	Version        int `gorm:"default:1"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
@@ -97,6 +98,7 @@ type ModelProfileSummary struct {
 	InputPriceMicros  *int64
 	OutputPriceMicros *int64
 	Status            string
+	Version           int `gorm:"default:1"`
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time

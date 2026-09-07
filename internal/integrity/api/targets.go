@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
@@ -43,6 +45,9 @@ func (c *control) registerTargetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/targets/{id}", c.updateTarget)
 	mux.HandleFunc("POST /api/v1/targets/{id}/rotate-secret", c.rotateTarget)
 	mux.HandleFunc("DELETE /api/v1/targets/{id}", c.deleteTarget)
+	mux.HandleFunc("POST /api/v1/targets/{id}/precheck", c.enqueuePrecheck)
+	mux.HandleFunc("GET /api/v1/targets/{id}/precheck", c.latestPrecheck)
+	mux.HandleFunc("GET /api/v1/targets/{id}/prechecks/{precheckId}", c.getPrecheck)
 }
 
 func (c *control) targetError(w http.ResponseWriter, r *http.Request, err error) {
@@ -184,12 +189,18 @@ func (c *control) listTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := "org:" + strconv.FormatInt(orgID, 10) + "/targets"
-	page, err := c.parsePage(r, scope)
-	if err != nil || page.Query != "" {
+	filters, pageRequest, scope, err := targetListRequest(r, scope)
+	if err != nil {
+		c.targetError(w, r, err)
+		return
+	}
+	page, err := c.parsePage(pageRequest, scope)
+	if err != nil {
 		c.targetError(w, r, ErrPagination)
 		return
 	}
-	rows, err := c.cfg.Targets.List(ctx, orgID, repository.ListOptions{AfterID: page.AfterID, Limit: page.Limit})
+	filters.Query = page.Query
+	rows, err := c.cfg.Targets.ListFiltered(ctx, orgID, repository.ListOptions{AfterID: page.AfterID, Limit: page.Limit}, filters)
 	if err != nil {
 		c.targetError(w, r, err)
 		return
@@ -202,19 +213,44 @@ func (c *control) listTargets(w http.ResponseWriter, r *http.Request) {
 	}
 	more := false
 	if len(rows) == page.Limit {
-		next, err := c.cfg.Targets.List(ctx, orgID, repository.ListOptions{AfterID: last, Limit: 1})
+		next, err := c.cfg.Targets.ListFiltered(ctx, orgID, repository.ListOptions{AfterID: last, Limit: 1}, filters)
 		if err != nil {
 			c.targetError(w, r, err)
 			return
 		}
 		more = len(next) > 0
 	}
-	result, err := c.pageResult(items, last, more, scope, "")
+	result, err := c.pageResult(items, last, more, scope, page.Query)
 	if err != nil {
 		c.targetError(w, r, err)
 		return
 	}
 	c.success(w, r, 200, result)
+}
+
+// Bind every non-page filter into the signed cursor scope. The copied request
+// allows the common pagination parser to continue rejecting unknown parameters.
+func targetListRequest(r *http.Request, scope string) (repository.TargetFilters, *http.Request, string, error) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return repository.TargetFilters{}, nil, "", ErrPagination
+	}
+	filters := repository.TargetFilters{}
+	values := url.Values{}
+	for name, dest := range map[string]*string{"model": &filters.Model, "environment": &filters.Environment, "status": &filters.Status} {
+		if len(query[name]) > 1 {
+			return filters, nil, "", ErrPagination
+		}
+		*dest = strings.TrimSpace(query.Get(name))
+		values.Set(name, *dest)
+		query.Del(name)
+	}
+	if !filters.Valid() {
+		return filters, nil, "", ErrPagination
+	}
+	copyRequest := r.Clone(r.Context())
+	copyRequest.URL.RawQuery = query.Encode()
+	return filters, copyRequest, scope + "/filters:" + values.Encode(), nil
 }
 
 func (c *control) updateTarget(w http.ResponseWriter, r *http.Request) {

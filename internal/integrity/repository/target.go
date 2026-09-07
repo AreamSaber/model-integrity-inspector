@@ -111,18 +111,32 @@ func (t *Tenant) targetActor() (int64, error) {
 }
 
 func (t *Tenant) checkTargetReferences(tx *gorm.DB, record TargetRecord) error {
-	if record.ProviderID != nil {
-		var provider Provider
-		if err := tx.Where("organization_id = ? AND id = ? AND status = 'active' AND deleted_at IS NULL", t.orgID, *record.ProviderID).First(&provider).Error; err != nil {
+	providerID := record.ProviderID
+	// Discover a profile's parent before taking locks, then recheck it after
+	// provider -> model SHARE locks. An intervening parent edit fails closed.
+	if record.ModelProfileID != nil {
+		var parent struct{ ProviderID int64 }
+		if err := tx.Model(&ModelProfile{}).Select("provider_id").Where("organization_id = ? AND id = ? AND deleted_at IS NULL", t.orgID, *record.ModelProfileID).Take(&parent).Error; err != nil {
+			return err
+		}
+		if providerID == nil {
+			providerID = &parent.ProviderID
+		}
+	}
+	if providerID != nil {
+		if _, err := t.store.catalogProviderLock(tx, t.orgID, *providerID, true, "SHARE"); err != nil {
 			return err
 		}
 	}
 	if record.ModelProfileID != nil {
-		var profile ModelProfile
-		if err := tx.Where("organization_id = ? AND id = ? AND status = 'active' AND deleted_at IS NULL", t.orgID, *record.ModelProfileID).First(&profile).Error; err != nil {
+		profile, err := t.store.catalogModelLock(tx, t.orgID, *record.ModelProfileID, "SHARE")
+		if err != nil {
 			return err
 		}
-		if profile.Protocol != record.Protocol || (record.ProviderID != nil && profile.ProviderID != *record.ProviderID) {
+		if profile.Status != "active" {
+			return ErrNotFound
+		}
+		if profile.Protocol != record.Protocol || profile.ProviderID != *providerID {
 			return ErrConflict
 		}
 	}
@@ -314,8 +328,9 @@ func (t *Tenant) DeleteTarget(id, expectedVersion int64) error {
 		var activeJobs int64
 		if err := tx.Table("integrity_jobs AS job").Where("job.organization_id = ? AND job.status IN ('pending', 'running')", t.orgID).
 			Where(`(job.type IN (?, ?) AND EXISTS (SELECT 1 FROM integrity_runs AS run WHERE run.organization_id = job.organization_id AND run.id = job.object_id AND run.target_id = ?)) OR
-				(job.type = ? AND EXISTS (SELECT 1 FROM integrity_logical_samples AS sample JOIN integrity_runs AS run ON run.organization_id = sample.organization_id AND run.id = sample.run_id WHERE sample.organization_id = job.organization_id AND sample.id = job.object_id AND run.target_id = ?))`,
-				string(JobRunPlan), string(JobRunAnalyze), id, string(JobSampleExecute), id).Count(&activeJobs).Error; err != nil {
+				(job.type = ? AND EXISTS (SELECT 1 FROM integrity_logical_samples AS sample JOIN integrity_runs AS run ON run.organization_id = sample.organization_id AND run.id = sample.run_id WHERE sample.organization_id = job.organization_id AND sample.id = job.object_id AND run.target_id = ?)) OR
+				(job.type = ? AND EXISTS (SELECT 1 FROM integrity_target_prechecks AS precheck WHERE precheck.organization_id = job.organization_id AND precheck.id = job.object_id AND precheck.target_id = ?))`,
+				string(JobRunPlan), string(JobRunAnalyze), id, string(JobSampleExecute), id, string(JobTargetPrecheck), id).Count(&activeJobs).Error; err != nil {
 			return err
 		}
 		if activeJobs != 0 {

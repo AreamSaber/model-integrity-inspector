@@ -807,7 +807,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -947,7 +947,7 @@
           }
         },
         "x-permission": "system.users",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createUser",
@@ -1075,7 +1075,7 @@
           }
         },
         "x-permission": "system.users",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -1223,7 +1223,7 @@
           }
         },
         "x-permission": "system.users",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -1261,7 +1261,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -1401,7 +1401,7 @@
           }
         },
         "x-permission": "organizations.list",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createOrganization",
@@ -1529,7 +1529,7 @@
           }
         },
         "x-permission": "system.organizations",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -1555,6 +1555,14 @@
           {
             "name": "id",
             "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/ID"
@@ -1668,7 +1676,7 @@
           }
         },
         "x-permission": "organization.read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "patch": {
         "operationId": "updateOrganization",
@@ -1694,6 +1702,14 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
             }
           }
         ],
@@ -1804,7 +1820,7 @@
           }
         },
         "x-permission": "system.organizations",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -1850,7 +1866,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -1990,7 +2006,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createProvider",
@@ -2126,7 +2142,7 @@
           }
         },
         "x-permission": "catalog.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -2273,7 +2289,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "patch": {
         "operationId": "updateProvider",
@@ -2417,7 +2433,7 @@
           }
         },
         "x-permission": "catalog.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -2463,7 +2479,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -2603,7 +2619,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createModelProfile",
@@ -2739,7 +2755,7 @@
           }
         },
         "x-permission": "catalog.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -2886,7 +2902,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "patch": {
         "operationId": "updateModelProfile",
@@ -3030,7 +3046,7 @@
           }
         },
         "x-permission": "catalog.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -3076,7 +3092,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -3240,7 +3256,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createTarget",
@@ -3376,7 +3392,7 @@
           }
         },
         "x-permission": "target.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -3523,7 +3539,7 @@
           }
         },
         "x-permission": "read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "patch": {
         "operationId": "updateTarget",
@@ -3667,7 +3683,7 @@
           }
         },
         "x-permission": "target.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -3821,13 +3837,13 @@
           }
         },
         "x-permission": "target.delete",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Reason"
+                "$ref": "#/components/schemas/VersionedRequest"
               }
             }
           }
@@ -3867,7 +3883,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -4480,7 +4496,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -4489,6 +4505,14 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
             }
           }
         ],
@@ -4620,7 +4644,7 @@
           }
         },
         "x-permission": "member.read",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       },
       "post": {
         "operationId": "createMember",
@@ -4646,6 +4670,14 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
             }
           }
         ],
@@ -4756,7 +4788,7 @@
           }
         },
         "x-permission": "member.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -4802,6 +4834,14 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
             }
           }
         ],
@@ -4912,7 +4952,7 @@
           }
         },
         "x-permission": "member.write",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
@@ -4958,7 +4998,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -5098,7 +5138,7 @@
           }
         },
         "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       }
     },
     "/targets/{id}/rotate-secret": {
@@ -5147,7 +5187,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/SecretMetadata"
+                      "$ref": "#/components/schemas/Target"
                     },
                     "request_id": {
                       "type": "string",
@@ -5244,13 +5284,13 @@
           }
         },
         "x-permission": "secret.replace",
-        "x-development-status": "contract-only",
+        "x-development-status": "implemented-local-tests",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Credentials"
+                "$ref": "#/components/schemas/TargetSecretRotation"
               }
             }
           }
@@ -5290,6 +5330,16 @@
             "schema": {
               "type": "string",
               "maxLength": 128
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
             }
           }
         ],
@@ -5400,7 +5450,17 @@
           }
         },
         "x-permission": "target.precheck",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionedRequest"
+              }
+            }
+          }
+        }
       },
       "get": {
         "operationId": "getPrecheck",
@@ -5535,7 +5595,7 @@
           }
         },
         "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-development-status": "implemented-local-tests"
       }
     },
     "/runs/estimate": {
@@ -5865,7 +5925,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -6830,7 +6890,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -7014,7 +7074,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -7343,7 +7403,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -7681,7 +7741,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -8522,7 +8582,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -9312,7 +9372,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -9752,7 +9812,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 512
+              "maxLength": 1024
             }
           },
           {
@@ -10277,6 +10337,447 @@
         "x-permission": "system.backup",
         "x-development-status": "contract-only"
       }
+    },
+    "/users/{id}/unlock": {
+      "post": {
+        "operationId": "unlockUser",
+        "summary": "解除账号临时锁定",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；只包含授权且脱敏的数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "system.users",
+        "x-development-status": "implemented-local-tests",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionedRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{id}/reset-password": {
+      "post": {
+        "operationId": "resetUserPassword",
+        "summary": "设置必须修改的临时密码并撤销已有会话",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；只包含授权且脱敏的数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "system.users",
+        "x-development-status": "implemented-local-tests",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasswordReset"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/targets/{id}/prechecks/{precheckId}": {
+      "get": {
+        "operationId": "getPrecheckByID",
+        "summary": "读取目标的指定预检记录",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "precheckId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；只包含授权且脱敏的数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Precheck"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "authenticated",
+        "x-development-status": "implemented-local-tests"
+      }
     }
   },
   "components": {
@@ -10344,7 +10845,18 @@
                   "MI_ANALYSIS_FAILED",
                   "MI_SECRET_UNAVAILABLE",
                   "MI_PERMISSION_DENIED",
-                  "MI_SERVICE_UNAVAILABLE"
+                  "MI_SERVICE_UNAVAILABLE",
+                  "MI_PASSWORD_CHANGE_REQUIRED",
+                  "MI_VERSION_CONFLICT",
+                  "MI_LAST_ADMINISTRATOR",
+                  "MI_SELF_LOCKOUT_FORBIDDEN",
+                  "MI_PRECHECK_STALE",
+                  "MI_PRECHECK_EXPIRED",
+                  "MI_PRECHECK_CANCELLED",
+                  "MI_UNCERTAIN_ATTEMPT",
+                  "MI_PRECHECK_BUDGET_EXCEEDED",
+                  "MI_NETWORK_FAILED",
+                  "MI_TIMEOUT"
                 ]
               },
               "message": {
@@ -10498,9 +11010,14 @@
           },
           "version": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 2147483647
           },
           "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
             "type": "string",
             "format": "date-time"
           }
@@ -10551,9 +11068,16 @@
               "active",
               "disabled"
             ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
           }
         },
-        "required": []
+        "required": [
+          "version"
+        ]
       },
       "Organization": {
         "type": "object",
@@ -10585,13 +11109,23 @@
           },
           "version": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "id",
           "name",
-          "status"
+          "status",
+          "version"
         ]
       },
       "OrganizationCreate": {
@@ -10628,9 +11162,23 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 180
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
           }
         },
-        "required": []
+        "required": [
+          "version"
+        ]
       },
       "Member": {
         "type": "object",
@@ -10641,10 +11189,6 @@
             "pattern": "^[1-9][0-9]{0,18}$"
           },
           "user_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
-          "organization_id": {
             "type": "string",
             "pattern": "^[1-9][0-9]{0,18}$"
           },
@@ -10674,13 +11218,31 @@
               "active",
               "disabled"
             ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "org_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$"
           }
         },
         "required": [
           "id",
           "user_id",
-          "organization_id",
-          "roles"
+          "org_id",
+          "roles",
+          "version"
         ]
       },
       "MemberCreate": {
@@ -10740,9 +11302,16 @@
               "active",
               "disabled"
             ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
           }
         },
-        "required": []
+        "required": [
+          "version"
+        ]
       },
       "Role": {
         "type": "object",
@@ -10830,6 +11399,18 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2147483647
+          },
+          "contact": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10858,6 +11439,10 @@
               "active",
               "disabled"
             ]
+          },
+          "contact": {
+            "type": "string",
+            "maxLength": 256
           }
         },
         "required": [
@@ -10887,6 +11472,10 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2147483647
+          },
+          "contact": {
+            "type": "string",
+            "maxLength": 256
           }
         },
         "required": [
@@ -10971,6 +11560,21 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2147483647
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
           }
         },
         "required": [
@@ -11050,6 +11654,13 @@
             ],
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
           }
         },
         "required": [
@@ -11132,6 +11743,13 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 2147483647
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
           }
         },
         "required": [
@@ -11226,7 +11844,10 @@
             "maxLength": 32
           },
           "rotated_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           }
         },
@@ -11475,6 +12096,20 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "job_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "target_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "target_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -11484,9 +12119,15 @@
               "failed"
             ]
           },
-          "job_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "request_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
           },
           "checks": {
             "type": "array",
@@ -11536,7 +12177,18 @@
                     "MI_ANALYSIS_FAILED",
                     "MI_SECRET_UNAVAILABLE",
                     "MI_PERMISSION_DENIED",
-                    "MI_SERVICE_UNAVAILABLE"
+                    "MI_SERVICE_UNAVAILABLE",
+                    "MI_PASSWORD_CHANGE_REQUIRED",
+                    "MI_VERSION_CONFLICT",
+                    "MI_LAST_ADMINISTRATOR",
+                    "MI_SELF_LOCKOUT_FORBIDDEN",
+                    "MI_PRECHECK_STALE",
+                    "MI_PRECHECK_EXPIRED",
+                    "MI_PRECHECK_CANCELLED",
+                    "MI_UNCERTAIN_ATTEMPT",
+                    "MI_PRECHECK_BUDGET_EXCEEDED",
+                    "MI_NETWORK_FAILED",
+                    "MI_TIMEOUT"
                   ]
                 }
               },
@@ -11545,22 +12197,49 @@
                 "status"
               ]
             },
-            "maxItems": 1000
+            "maxItems": 6
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 64
           },
           "max_output_parameter": {
             "type": "string",
             "enum": [
+              "",
               "max_tokens",
               "max_completion_tokens"
             ]
           },
-          "checked_at": {
+          "created_at": {
             "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           }
         },
         "required": [
-          "status"
+          "id",
+          "job_id",
+          "target_id",
+          "target_version",
+          "status",
+          "version",
+          "request_count",
+          "checks",
+          "created_at"
         ]
       },
       "RunOptions": {
@@ -11862,7 +12541,18 @@
                     "MI_ANALYSIS_FAILED",
                     "MI_SECRET_UNAVAILABLE",
                     "MI_PERMISSION_DENIED",
-                    "MI_SERVICE_UNAVAILABLE"
+                    "MI_SERVICE_UNAVAILABLE",
+                    "MI_PASSWORD_CHANGE_REQUIRED",
+                    "MI_VERSION_CONFLICT",
+                    "MI_LAST_ADMINISTRATOR",
+                    "MI_SELF_LOCKOUT_FORBIDDEN",
+                    "MI_PRECHECK_STALE",
+                    "MI_PRECHECK_EXPIRED",
+                    "MI_PRECHECK_CANCELLED",
+                    "MI_UNCERTAIN_ATTEMPT",
+                    "MI_PRECHECK_BUDGET_EXCEEDED",
+                    "MI_NETWORK_FAILED",
+                    "MI_TIMEOUT"
                   ]
                 },
                 "count": {
@@ -11980,7 +12670,18 @@
               "MI_ANALYSIS_FAILED",
               "MI_SECRET_UNAVAILABLE",
               "MI_PERMISSION_DENIED",
-              "MI_SERVICE_UNAVAILABLE"
+              "MI_SERVICE_UNAVAILABLE",
+              "MI_PASSWORD_CHANGE_REQUIRED",
+              "MI_VERSION_CONFLICT",
+              "MI_LAST_ADMINISTRATOR",
+              "MI_SELF_LOCKOUT_FORBIDDEN",
+              "MI_PRECHECK_STALE",
+              "MI_PRECHECK_EXPIRED",
+              "MI_PRECHECK_CANCELLED",
+              "MI_UNCERTAIN_ATTEMPT",
+              "MI_PRECHECK_BUDGET_EXCEEDED",
+              "MI_NETWORK_FAILED",
+              "MI_TIMEOUT"
             ]
           }
         },
@@ -13276,6 +13977,66 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "VersionedRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "UserPasswordReset": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 12,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "version",
+          "password"
+        ]
+      },
+      "TargetSecretRotation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "secret_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "auth": {
+            "$ref": "#/components/schemas/Credentials",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "version",
+          "secret_version",
+          "auth"
         ]
       }
     }

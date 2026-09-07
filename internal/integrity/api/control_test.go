@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"model-integrity-inspector.local/mii/internal/identity"
+	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
@@ -91,6 +92,10 @@ func newControlFixture(t *testing.T, change func(*ControlConfig)) controlFixture
 		t.Fatal(err)
 	}
 	cfg := ControlConfig{Identity: service, Store: db, PublicOrigin: localOrigin, AllowInsecureLoopback: true, CursorSigner: key, Readiness: func(context.Context) bool { return true }}
+	cfg.Catalog, err = catalog.NewService(db, service)
+	if err != nil {
+		t.Fatal(err)
+	}
 	secretService, err := secret.NewService(db, key)
 	if err != nil {
 		t.Fatal(err)
@@ -351,6 +356,13 @@ func TestLoginLimiterExpiryAndCapacity(t *testing.T) {
 
 func TestControlRejectsUnsafeOriginConfiguration(t *testing.T) {
 	f := newControlFixture(t, nil)
+	for _, length := range []int{1, 31, 257, 1024} {
+		cfg := f.cfg
+		cfg.SetupToken = strings.Repeat("x", length)
+		if _, err := NewControlHandler(cfg); err == nil {
+			t.Fatal("out-of-contract setup token accepted")
+		}
+	}
 	for _, origin := range []string{"http://mii.test", "http://localhost:8080", "https://user:pass@mii.test", "https://mii.test/subpath", "https://mii.test?token=x", "file:///etc/passwd"} {
 		cfg := f.cfg
 		cfg.PublicOrigin = origin

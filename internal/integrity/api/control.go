@@ -21,6 +21,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/buildinfo"
 	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
+	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
 )
@@ -30,6 +31,7 @@ const sessionCookie = "mii_session"
 var ErrControlConfig = errors.New("MI_CONTROL_CONFIGURATION_INVALID")
 
 type ControlConfig struct {
+	Catalog               *catalog.Service
 	Identity              *identity.Service
 	Store                 *repository.Store
 	Build                 buildinfo.Info
@@ -64,7 +66,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	if !secure && (u.Scheme != "http" || !cfg.AllowInsecureLoopback || !loopbackHost(u.Hostname())) {
 		return nil, ErrControlConfig
 	}
-	if cfg.SetupToken != "" && len(cfg.SetupToken) < 32 {
+	if cfg.SetupToken != "" && (len(cfg.SetupToken) < 32 || len(cfg.SetupToken) > 256) {
 		return nil, ErrControlConfig
 	}
 	c := &control{cfg: cfg, origin: u.Scheme + "://" + u.Host, secure: secure, hasSetupToken: cfg.SetupToken != "", setupHash: sha256.Sum256([]byte(cfg.SetupToken)), limiter: &loginLimiter{windows: map[string]loginWindow{}, now: time.Now}}
@@ -82,6 +84,9 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	mux.HandleFunc("POST /api/v1/auth/logout", c.logout)
 	mux.HandleFunc("POST /api/v1/auth/change-password", c.changePassword)
 	c.registerManagementRoutes(mux)
+	if cfg.Catalog != nil {
+		c.registerCatalogRoutes(mux)
+	}
 	if cfg.Targets != nil {
 		c.registerTargetRoutes(mux)
 	}

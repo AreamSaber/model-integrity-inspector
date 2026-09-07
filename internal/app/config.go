@@ -204,7 +204,7 @@ func (c Config) Validate() error {
 			return ErrConfig
 		}
 	}
-	if c.SetupToken != "" && len(c.SetupToken) < 32 {
+	if c.SetupToken != "" && (len(c.SetupToken) < 32 || len(c.SetupToken) > 256) {
 		return ErrConfig
 	}
 	return nil
