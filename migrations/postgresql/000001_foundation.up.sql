@@ -1,0 +1,21 @@
+-- PostgreSQL partial indexes protect management queries from large payload reads.
+CREATE INDEX idx_sessions_user_active ON user_sessions(user_id, expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX idx_members_user ON organization_members(user_id, status);
+CREATE INDEX idx_providers_org_status ON providers(organization_id, status, id);
+CREATE INDEX idx_models_org_provider ON model_profiles(organization_id, provider_id, id);
+CREATE INDEX idx_targets_org_status ON integrity_targets(organization_id, status, id);
+CREATE INDEX idx_targets_org_endpoint ON integrity_targets(organization_id, endpoint_fingerprint);
+CREATE INDEX idx_runs_org_created ON integrity_runs(organization_id, created_at DESC, id);
+CREATE INDEX idx_runs_target_created ON integrity_runs(organization_id, target_id, created_at DESC, id);
+CREATE INDEX idx_runs_status_lease ON integrity_runs(status, lease_until);
+CREATE INDEX idx_samples_run ON integrity_logical_samples(organization_id, run_id, id);
+CREATE INDEX idx_attempts_expiry ON integrity_sample_attempts(organization_id, response_expires_at, id) WHERE response_expires_at IS NOT NULL;
+CREATE INDEX idx_findings_revision ON integrity_findings(organization_id, run_id, analysis_revision, id);
+CREATE INDEX idx_audit_org_created ON integrity_audit_logs(organization_id, created_at DESC, id);
+CREATE INDEX idx_jobs_claim ON integrity_jobs(available_at, priority DESC, id) WHERE status = 'pending';
+CREATE INDEX idx_jobs_reclaim ON integrity_jobs(lease_until) WHERE status = 'running';
+CREATE INDEX idx_jobs_org_status ON integrity_jobs(organization_id, status, id);
+CREATE INDEX idx_outbox_pending ON integrity_outbox(available_at, id) WHERE status = 'pending';
+ALTER TABLE integrity_logical_samples ADD CONSTRAINT fk_sample_final_attempt FOREIGN KEY (organization_id, id, final_attempt_id) REFERENCES integrity_sample_attempts(organization_id, logical_sample_id, id);
+CREATE FUNCTION mii_guard_run_target() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.target_id != OLD.target_id OR NEW.organization_id != OLD.organization_id THEN RAISE EXCEPTION 'run target is immutable'; END IF; RETURN NEW; END; $$;
+CREATE TRIGGER guard_run_target_update BEFORE UPDATE OF target_id, organization_id ON integrity_runs FOR EACH ROW EXECUTE FUNCTION mii_guard_run_target();

@@ -1,0 +1,23 @@
+-- SQLite's portable index definitions deliberately exclude JSON/body columns.
+CREATE INDEX idx_sessions_user_active ON user_sessions(user_id, revoked_at, expires_at);
+CREATE INDEX idx_members_user ON organization_members(user_id, status);
+CREATE INDEX idx_providers_org_status ON providers(organization_id, status, id);
+CREATE INDEX idx_models_org_provider ON model_profiles(organization_id, provider_id, id);
+CREATE INDEX idx_targets_org_status ON integrity_targets(organization_id, status, id);
+CREATE INDEX idx_targets_org_endpoint ON integrity_targets(organization_id, endpoint_fingerprint);
+CREATE INDEX idx_runs_org_created ON integrity_runs(organization_id, created_at, id);
+CREATE INDEX idx_runs_target_created ON integrity_runs(organization_id, target_id, created_at, id);
+CREATE INDEX idx_runs_status_lease ON integrity_runs(status, lease_until);
+CREATE INDEX idx_samples_run ON integrity_logical_samples(organization_id, run_id, id);
+CREATE INDEX idx_attempts_expiry ON integrity_sample_attempts(organization_id, response_expires_at, id);
+CREATE INDEX idx_findings_revision ON integrity_findings(organization_id, run_id, analysis_revision, id);
+CREATE INDEX idx_audit_org_created ON integrity_audit_logs(organization_id, created_at, id);
+CREATE INDEX idx_jobs_claim ON integrity_jobs(status, available_at, priority, id);
+CREATE INDEX idx_jobs_reclaim ON integrity_jobs(status, lease_until);
+CREATE INDEX idx_jobs_org_status ON integrity_jobs(organization_id, status, id);
+CREATE INDEX idx_outbox_pending ON integrity_outbox(status, available_at, id);
+CREATE TRIGGER guard_final_attempt_insert BEFORE INSERT ON integrity_logical_samples WHEN NEW.final_attempt_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM integrity_sample_attempts WHERE organization_id = NEW.organization_id AND logical_sample_id = NEW.id AND id = NEW.final_attempt_id) BEGIN SELECT RAISE(ABORT, 'final attempt scope mismatch'); END;
+CREATE TRIGGER guard_final_attempt_update BEFORE UPDATE OF final_attempt_id ON integrity_logical_samples WHEN NEW.final_attempt_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM integrity_sample_attempts WHERE organization_id = NEW.organization_id AND logical_sample_id = NEW.id AND id = NEW.final_attempt_id) BEGIN SELECT RAISE(ABORT, 'final attempt scope mismatch'); END;
+CREATE TRIGGER guard_final_attempt_delete BEFORE DELETE ON integrity_sample_attempts WHEN EXISTS (SELECT 1 FROM integrity_logical_samples WHERE organization_id = OLD.organization_id AND id = OLD.logical_sample_id AND final_attempt_id = OLD.id) BEGIN SELECT RAISE(ABORT, 'final attempt is referenced'); END;
+CREATE TRIGGER guard_final_attempt_reassign BEFORE UPDATE OF id, organization_id, logical_sample_id ON integrity_sample_attempts WHEN EXISTS (SELECT 1 FROM integrity_logical_samples WHERE organization_id = OLD.organization_id AND id = OLD.logical_sample_id AND final_attempt_id = OLD.id) AND (NEW.id != OLD.id OR NEW.organization_id != OLD.organization_id OR NEW.logical_sample_id != OLD.logical_sample_id) BEGIN SELECT RAISE(ABORT, 'final attempt is referenced'); END;
+CREATE TRIGGER guard_run_target_update BEFORE UPDATE OF target_id, organization_id ON integrity_runs WHEN NEW.target_id != OLD.target_id OR NEW.organization_id != OLD.organization_id BEGIN SELECT RAISE(ABORT, 'run target is immutable'); END;
