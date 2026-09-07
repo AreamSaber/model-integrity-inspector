@@ -39,6 +39,7 @@ if ($syntaxErrors.Count -gt 0) {
 }
 
 & (Join-Path $PSScriptRoot 'tests/test-m0-04-policy.ps1')
+& (Join-Path $PSScriptRoot 'tests/test-race-shards.ps1')
 
 & $actionlint (Join-Path $workspaceRoot '.github\workflows\ci.yml')
 if ($LASTEXITCODE -ne 0) { throw 'GitHub Actions workflow lint failed.' }

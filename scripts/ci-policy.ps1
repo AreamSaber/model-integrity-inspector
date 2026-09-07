@@ -146,6 +146,7 @@ function Assert-MIICIVersions {
     param([Parameter(Mandatory)][hashtable]$Sources)
     $workflow = $Sources['.github/workflows/ci.yml']
     if ([string]::IsNullOrWhiteSpace($workflow)) { throw 'CI workflow version source is missing.' }
+    Assert-MIIRaceWorkflow -Workflow $workflow
     $environment = [regex]::Matches($workflow, '(?m)^env:\s*\r?\n(?<body>(?:^  [^\r\n]*\r?\n)+)')
     if ($environment.Count -ne 1) { throw 'CI must have one explicit root env block.' }
     foreach ($pin in @{ GO_VERSION = '1.26.7'; NODE_VERSION = '24.19.0'; PNPM_VERSION = '11.19.0' }.GetEnumerator()) {
@@ -162,7 +163,7 @@ function Assert-MIICIVersions {
     foreach ($pin in @(
         @{ Action = 'aquasecurity/trivy-action'; Input = 'version'; Version = 'v0.74.0'; Count = 2 },
         @{ Action = 'anchore/sbom-action'; Input = 'syft-version'; Version = 'v1.51.1'; Count = 2 },
-        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 3 },
+        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 4 },
         @{ Action = 'actions/setup-node'; Input = 'node-version'; Version = '${{ env.NODE_VERSION }}'; Count = 3 }
     )) {
         $matches = @($actions | Where-Object { $_.Action -ceq $pin.Action })
@@ -195,4 +196,37 @@ function Assert-MIICIVersions {
         $installCommands[0].CommandElements[2].Extent.Text -cne 'golang.org/x/vuln/cmd/govulncheck@v1.7.0') {
         throw 'govulncheck install command must pin golang.org/x/vuln/cmd/govulncheck@v1.7.0.'
     }
+}
+
+function Get-MIIExplicitWorkflowJob {
+    param([Parameter(Mandatory)][string]$Workflow, [Parameter(Mandatory)][string]$Name)
+    $matches = [regex]::Matches($Workflow, ('(?ms)^  ' + [regex]::Escape($Name) + ':\r?\n(?<body>.*?)(?=^  [a-zA-Z][a-zA-Z0-9_-]*:|\z)'))
+    if ($matches.Count -ne 1) { throw "CI requires one explicit $Name job." }
+    return $matches[0].Groups['body'].Value
+}
+
+function Assert-MIIRaceWorkflow {
+    param([Parameter(Mandatory)][string]$Workflow)
+    $quality = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'quality'
+    $repository = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'repository-race'
+    $required = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'required'
+    if ($Workflow -match '(?m)^\s*continue-on-error:') { throw 'Required CI work must not ignore failures.' }
+    if ($quality -cnotmatch '(?m)^        run: \./scripts/test-race\.ps1 -Group Other\s*$') { throw 'Quality must run the complete non-repository race regression.' }
+    if ($repository -cnotmatch '(?m)^    name: repository-race-\$\{\{ matrix\.shard \}\}\s*$' -or
+        $repository -cnotmatch '(?m)^    strategy:\r?\n      fail-fast: false\r?\n      matrix:\r?\n        shard: \[0, 1, 2, 3, 4, 5\]\r?\n    runs-on: ubuntu-24\.04\s*$' -or
+        $repository -match '(?m)^\s*(include|exclude):' -or
+        $repository -cnotmatch '(?m)^        run: \./scripts/test-race\.ps1 -Group Repository -Shard \$\{\{ matrix\.shard \}\}\s*$') { throw 'All six repository race shards must be explicit and independently executed.' }
+    foreach ($job in @($quality, $repository)) {
+        if ($job -cnotmatch '(?m)^          MII_TEST_POSTGRES_DSN: postgres://[^\r\n]+$') { throw 'Every race job requires its real isolated PostgreSQL service.' }
+    }
+    if ($required -cnotmatch '(?m)^    name: m0-04-required\s*$' -or
+        $required -cnotmatch '(?m)^    if: always\(\)\s*$' -or
+        $required -cnotmatch '(?m)^    needs: \[quality, repository-race, dependency-scan, package, image\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
+    foreach ($binding in @(
+        'QUALITY: ${{ needs.quality.result }}', 'REPOSITORY_RACE: ${{ needs.repository-race.result }}',
+        'DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}', 'PACKAGE: ${{ needs.package.result }}', 'IMAGE: ${{ needs.image.result }}'
+    )) {
+        if ([regex]::Matches($required, ('(?m)^          ' + [regex]::Escape($binding) + '\s*$')).Count -ne 1) { throw 'Every required job result must be bound exactly once.' }
+    }
+    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$REPOSITORY_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
 }

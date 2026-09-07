@@ -16,6 +16,29 @@ function Test-MIIPolicyCase {
 
 $sources = Get-MIICIVersionSources -WorkspaceRoot $workspaceRoot
 Test-MIIPolicyCase 'actual repository tool sources' { Assert-MIICIVersions -Sources $sources }
+foreach ($case in @(
+    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, repository-race, dependency-scan, package, image]'; New = 'needs: [quality, dependency-scan, package, image]' },
+    @{ Name = 'one missing race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
+    @{ Name = 'duplicate race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
+    @{ Name = 'race matrix cancels siblings on failure'; Old = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: false"; New = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: true" },
+    @{ Name = 'race matrix can exclude shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" },
+    @{ Name = 'quality omits remaining race packages'; Old = 'run: ./scripts/test-race.ps1 -Group Other'; New = 'run: echo omitted' },
+    @{ Name = 'repository matrix always executes one shard'; Old = 'run: ./scripts/test-race.ps1 -Group Repository -Shard ${{ matrix.shard }}'; New = 'run: ./scripts/test-race.ps1 -Group Repository -Shard 0' },
+    @{ Name = 'required gate may be skipped after failure'; Old = 'if: always()'; New = 'if: success()' },
+    @{ Name = 'required gate ignores matrix result'; Old = '"$QUALITY" "$REPOSITORY_RACE" "$DEPENDENCY_SCAN"'; New = '"$QUALITY" "$DEPENDENCY_SCAN"' },
+    @{ Name = 'required gate ignores failed result'; Old = 'test "$result" = "success" || exit 1'; New = 'test "$result" = "success" || exit 0' },
+    @{ Name = 'required gate bound to literal success'; Old = 'REPOSITORY_RACE: ${{ needs.repository-race.result }}'; New = 'REPOSITORY_RACE: success' },
+    @{ Name = 'failed matrix is marked nonfatal'; Old = 'name: repository-race-${{ matrix.shard }}'; New = "name: repository-race-`${{ matrix.shard }}`n    continue-on-error: true" }
+)) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $old = $case.Old -replace '\r\n', "`n"
+    $offset = $workflow.IndexOf($old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Mutation target missing: $($case.Name)" }
+    $changedWorkflow = $workflow.Remove($offset, $old.Length).Insert($offset, ($case.New -replace '\r\n', "`n"))
+    Test-MIIPolicyCase $case.Name -MustFail -ErrorPattern 'race|Race|Required|required|six|six|success|CI' {
+        Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+    }
+}
 Test-MIIPolicyCase 'verifier literals cannot replace tool sources' -MustFail {
     Assert-MIICIVersions -Sources @{ 'scripts/verify-m0-04.ps1' = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'verify-m0-04.ps1') }
 }

@@ -63,9 +63,52 @@ jobs:
       - name: SQLite and PostgreSQL race regression
         env:
           MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
+        shell: pwsh
+        run: ./scripts/test-race.ps1 -Group Other
+
+  repository-race:
+    name: repository-race-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_DB: mii_ci
+          POSTGRES_USER: mii_test_owner
+          # Disposable isolated database per shard; never a deployment credential.
+          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Download pinned Go dependencies before strict enumeration
+        run: go mod download
+      - name: Verify race shard coverage and policy
+        shell: pwsh
         run: |
-          go test -race -count=1 ./...
-          MII_IDENTITY_TEST_DRIVER=postgres go test -race -count=1 ./internal/identity ./internal/integrity/api
+          ./scripts/tests/test-m0-04-policy.ps1
+          ./scripts/tests/test-race-shards.ps1 -NativeGo
+      - name: SQLite and PostgreSQL repository race shard
+        env:
+          MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
+        shell: pwsh
+        run: ./scripts/test-race.ps1 -Group Repository -Shard ${{ matrix.shard }}
 
   dependency-scan:
     name: dependency-scan
@@ -198,17 +241,18 @@ jobs:
   required:
     name: m0-04-required
     if: always()
-    needs: [quality, dependency-scan, package, image]
+    needs: [quality, repository-race, dependency-scan, package, image]
     runs-on: ubuntu-24.04
     steps:
       - name: Enforce all CI results
         shell: bash
         env:
           QUALITY: ${{ needs.quality.result }}
+          REPOSITORY_RACE: ${{ needs.repository-race.result }}
           DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}
           PACKAGE: ${{ needs.package.result }}
           IMAGE: ${{ needs.image.result }}
         run: |
-          for result in "$QUALITY" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE"; do
+          for result in "$QUALITY" "$REPOSITORY_RACE" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE"; do
             test "$result" = "success" || exit 1
           done
