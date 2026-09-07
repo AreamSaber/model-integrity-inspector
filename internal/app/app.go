@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"log/slog"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
+	"model-integrity-inspector.local/mii/internal/integrity/safehttp"
 	"model-integrity-inspector.local/mii/internal/integrity/scheduler"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
@@ -39,6 +41,19 @@ type application struct {
 // prepare validates keys and schema before opening a listening socket. Workers
 // only check schema; only server/all may migrate. Audit corruption fails closed.
 func prepare(ctx context.Context, cfg Config) (*application, error) {
+	return prepareWithNetwork(ctx, cfg, outboundNetwork{})
+}
+
+// Internal dependency injection for controlled TLS integration tests. Operator
+// configuration and HTTP input cannot replace DNS, sockets or certificate roots.
+// Production prepare always uses SafeHTTP's normal system networking defaults.
+type outboundNetwork struct {
+	resolver    safehttp.Resolver
+	dialContext safehttp.DialContextFunc
+	rootCAs     *x509.CertPool
+}
+
+func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork) (*application, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -117,11 +132,11 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		return nil, err
 	}
 	if cfg.Role.Components().Worker {
-		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService})
+		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs})
 		if err != nil {
 			return nil, err
 		}
-		handlers, err := worker.NewRunHandlers(worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, Tokenizer: engine})
+		handlers, err := worker.NewRunHandlers(worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, Tokenizer: engine, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs})
 		if err != nil {
 			return nil, err
 		}
@@ -160,10 +175,10 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Runtime now has verified development artifacts and a real analysis
-		// handler. Confirmation remains fail-closed until result/history access
-		// and the user-visible uncalibrated disclosure are connected end to end.
-		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version})
+		// The actual analysis handler, immutable bundle admission and authorized
+		// result routes are registered together. Availability never upgrades the
+		// development/uncalibrated evidence grade or substitutes for cost consent.
+		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version, ExecutionReady: readiness})
 		if err != nil {
 			return nil, err
 		}

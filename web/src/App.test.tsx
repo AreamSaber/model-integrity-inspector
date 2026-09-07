@@ -120,12 +120,15 @@ describe('real API interaction boundary', () => {
 
   it('recovers an existing session without submitting credentials and preserves safe navigation', async () => {
     window.history.replaceState(null, '', '/#/reports')
-    const calls = network(undefined, true)
+    const calls = network((url) => url === '/api/v1/runs?limit=25' ? ok({ items: [], next_cursor: null }) : undefined, true)
     render(<App />)
     await screen.findByRole('heading', { name: '结果与报告' })
-    expect(screen.getByText('结果与报告正在开发中')).toBeTruthy()
-    expect(screen.getAllByText('尚未接入').length).toBeGreaterThan(0)
-    expect(calls).toHaveBeenCalledTimes(2)
+    await screen.findByText(/没有符合条件的检测任务/)
+    expect(screen.getByText(/报告生成、导出和正式审核尚未接入/)).toBeTruthy()
+    expect(calls).toHaveBeenCalledTimes(3)
+    const read = calls.mock.calls.find(([url]) => String(url).startsWith('/api/v1/runs?'))![1]!
+    expect(read.method).toBe('GET')
+    expect(new Headers(read.headers).get('X-Organization-ID')).toBe(session.organizations[0].id)
   })
 
   it('sanitizes login failures, clears the password, and displays retry-after', async () => {

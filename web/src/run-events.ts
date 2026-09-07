@@ -177,8 +177,9 @@ export async function watchRun(options: WatchRunOptions): Promise<RunWatchResult
   const timer = setTimeout(() => lifetime.abort(), maximumLifetime)
   options = { ...options, signal: AbortSignal.any([externalSignal, lifetime.signal]) }
   let current = options.initial
+  let visible = options.initial
   const deadline = Date.now() + maximumLifetime
-  const publish = (value: Run) => { checkSignal(options.signal); validateRunProgress(options.initial, current, value); current = value; options.onSnapshot(value) }
+  const publish = (value: Run) => { checkSignal(options.signal); validateRunProgress(options.initial, current, value); current = value; visible = value; options.onSnapshot(value) }
   const read = async () => { options.onConnection?.('checking'); publish(await runsApi.get(options.organizationID, options.initial.id, options.signal)) }
   try {
   await read()
@@ -188,7 +189,14 @@ export async function watchRun(options: WatchRunOptions): Promise<RunWatchResult
     options.onConnection?.(attempt === 0 ? 'connecting' : 'reconnecting')
     let failure: ApiError | undefined
     try {
-      await connection(options, () => current, (value) => { publish(value); lastEvent = `${value.id}:${value.version}` }, lastEvent)
+      await connection(options, () => current, (value) => {
+        validateRunProgress(options.initial, current, value)
+        // A terminal event is provisional until exact-ID GET confirms it. It
+        // advances internal fencing but cannot expose results through callbacks.
+        if (terminal(value)) current = value
+        else publish(value)
+        lastEvent = `${value.id}:${value.version}`
+      }, lastEvent)
     } catch (error) {
       checkSignal(options.signal)
       if (!(error instanceof ApiError) || [401, 403, 404].includes(error.status)) throw error
@@ -203,10 +211,10 @@ export async function watchRun(options: WatchRunOptions): Promise<RunWatchResult
     if (attempt + 1 >= maximumConnections || Date.now() + delay >= deadline) break
     await pause(delay, options.signal)
   }
-  return { record: current, reason: 'limit' }
+  return { record: visible, reason: 'limit' }
   } catch (error) {
     checkSignal(externalSignal)
-    if (lifetime.signal.aborted) return { record: current, reason: 'limit' }
+    if (lifetime.signal.aborted) return { record: visible, reason: 'limit' }
     throw error
   } finally { clearTimeout(timer) }
 }

@@ -5897,7 +5897,7 @@
       },
       "get": {
         "operationId": "listRuns",
-        "summary": "listRuns",
+        "summary": "List persisted Run history, newest created_at/id first",
         "security": [
           {
             "SessionCookie": []
@@ -5942,16 +5942,14 @@
             "name": "target_id",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
+              "$ref": "#/components/schemas/ID"
             }
           },
           {
             "name": "status",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
+              "$ref": "#/components/schemas/RunStatus"
             }
           },
           {
@@ -5959,7 +5957,12 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 128
+              "enum": [
+                "quick",
+                "standard",
+                "deep",
+                "custom"
+              ]
             }
           },
           {
@@ -5983,7 +5986,14 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 128
+              "enum": [
+                "low",
+                "watch",
+                "medium",
+                "high",
+                "critical",
+                "insufficient"
+              ]
             }
           },
           {
@@ -5991,7 +6001,8 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 128
+              "format": "date-time",
+              "maxLength": 64
             }
           },
           {
@@ -5999,13 +6010,14 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "maxLength": 128
+              "format": "date-time",
+              "maxLength": 64
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "Bounded S1 history page, not a full Run execution snapshot. Current target name/model/channel metadata is explicitly live metadata, nullable after deletion; target_id and published revision summary remain. Signed cursor binds user, organization, resource and normalized filters. Changes in an anchor Run's status do not change its immutable created_at/id position.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6019,16 +6031,16 @@
                         "items": {
                           "type": "array",
                           "items": {
-                            "$ref": "#/components/schemas/Run"
+                            "$ref": "#/components/schemas/RunHistoryItem"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -6130,8 +6142,8 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}": {
@@ -6718,7 +6730,7 @@
     "/runs/{id}/result": {
       "get": {
         "operationId": "getRunResult",
-        "summary": "getRunResult",
+        "summary": "Read the immutable published development result",
         "security": [
           {
             "SessionCookie": []
@@ -6740,11 +6752,33 @@
             "schema": {
               "$ref": "#/components/schemas/ID"
             }
+          },
+          {
+            "name": "analysis_revision",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "default": 1
+            },
+            "description": "Pins an immutable published revision. Only revision 1 is currently implemented; an unpublished/unavailable revision returns 404."
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "statistics"
+              ]
+            },
+            "description": "Optional token_analysis and behavior_analysis; requires evidence.read in addition to run.read. Without it, no per-sample statistical evidence is returned."
           }
         ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "S1 summary of the exact persisted analysis revision. Development=true/calibrated=false, grade C/D, no automatic human review or approved calibration. Published means machine-available, not independently approved. Optional statistics are typed projections, never raw conclusion_json. Corrupt, unsupported-version or oversized stored documents return 503 MI_ANALYSIS_RESULT_INVALID.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6848,14 +6882,14 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}/findings": {
       "get": {
         "operationId": "getRunFinding",
-        "summary": "getRunFinding",
+        "summary": "List closed-rule findings for a published revision",
         "security": [
           {
             "SessionCookie": []
@@ -6897,17 +6931,20 @@
             }
           },
           {
-            "name": "q",
+            "name": "analysis_revision",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "default": 1
+            },
+            "description": "Pins an immutable published revision. Only revision 1 is currently implemented; an unpublished/unavailable revision returns 404."
           }
         ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "Requires current run.read and evidence.read. Explicit validated S1 projection only: no private prompt/nonce/request snapshot, upstream text, ciphertext or credential. Body access/export is not implemented by this route. Sample references and attempts remain bound to the selected organization/Run/revision.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6923,14 +6960,14 @@
                           "items": {
                             "$ref": "#/components/schemas/Finding"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -7032,14 +7069,14 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read + evidence.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}/samples": {
       "get": {
         "operationId": "getRunSample",
-        "summary": "getRunSample",
+        "summary": "List S1 samples for a published revision",
         "security": [
           {
             "SessionCookie": []
@@ -7081,17 +7118,20 @@
             }
           },
           {
-            "name": "q",
+            "name": "analysis_revision",
             "in": "query",
             "schema": {
-              "type": "string",
-              "maxLength": 128
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "default": 1
+            },
+            "description": "Pins an immutable published revision. Only revision 1 is currently implemented; an unpublished/unavailable revision returns 404."
           }
         ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "Requires current run.read and evidence.read. Explicit validated S1 projection only: no private prompt/nonce/request snapshot, upstream text, ciphertext or credential. Body access/export is not implemented by this route. Sample references and attempts remain bound to the selected organization/Run/revision.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7107,14 +7147,14 @@
                           "items": {
                             "$ref": "#/components/schemas/Sample"
                           },
-                          "maxItems": 1000
+                          "maxItems": 100
                         },
                         "next_cursor": {
                           "type": [
                             "string",
                             "null"
                           ],
-                          "maxLength": 512
+                          "maxLength": 1024
                         }
                       },
                       "required": [
@@ -7216,14 +7256,14 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read + evidence.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}/samples/{sampleId}": {
       "get": {
         "operationId": "getRunSampleDetail",
-        "summary": "getRunSampleDetail",
+        "summary": "Read authorized S1 sample/attempt evidence",
         "security": [
           {
             "SessionCookie": []
@@ -7253,11 +7293,22 @@
             "schema": {
               "$ref": "#/components/schemas/ID"
             }
+          },
+          {
+            "name": "analysis_revision",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "default": 1
+            },
+            "description": "Pins an immutable published revision. Only revision 1 is currently implemented; an unpublished/unavailable revision returns 404."
           }
         ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "Requires current run.read and evidence.read. Explicit validated S1 projection only: no private prompt/nonce/request snapshot, upstream text, ciphertext or credential. Body access/export is not implemented by this route. Sample references and attempts remain bound to the selected organization/Run/revision.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7361,8 +7412,8 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read + evidence.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}/reviews": {
@@ -12610,24 +12661,27 @@
         "description": "仅计划首次Attempt；input_tokens为保守预算估算。重试独立预留，费用不是上游账单保证。"
       },
       "Versions": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
           "rule_bundle": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "template_bundle": {
-            "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
           },
           "scoring": {
-            "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "template_bundle": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
           },
           "tokenizer_bundle": {
-            "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
           }
         },
         "required": [
@@ -12635,7 +12689,8 @@
           "template_bundle",
           "scoring",
           "tokenizer_bundle"
-        ]
+        ],
+        "type": "object"
       },
       "Run": {
         "type": "object",
@@ -13000,57 +13055,137 @@
         ]
       },
       "Result": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "algorithm_risk_level": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "analysis_revision": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2147483647
-          },
-          "versions": {
-            "$ref": "#/components/schemas/Versions"
-          },
-          "overall_risk": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "const": 1,
+            "maximum": 9007199254740991,
             "minimum": 0,
-            "maximum": 100
+            "type": "integer"
           },
-          "prompt_risk": {
-            "$ref": "#/components/schemas/Score"
+          "behavior_analysis": {
+            "$ref": "#/components/schemas/BehaviorAnalysis"
           },
-          "token_risk": {
-            "$ref": "#/components/schemas/Score"
+          "calibrated": {
+            "const": false,
+            "type": "boolean"
           },
-          "response_risk": {
-            "$ref": "#/components/schemas/Score"
-          },
-          "evidence_risk": {
-            "$ref": "#/components/schemas/Score"
+          "completeness": {
+            "enum": [
+              "full",
+              "partial",
+              "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
           },
           "confidence": {
-            "type": "integer",
+            "maximum": 74,
             "minimum": 0,
-            "maximum": 100
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "development": {
+            "const": true,
+            "type": "boolean"
           },
           "evidence_grade": {
-            "type": "string",
             "enum": [
-              "A",
-              "B",
               "C",
               "D"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "evidence_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "observation_mode": {
+            "enum": [
+              "blackbox"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "overall_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published": {
+            "const": true,
+            "type": "boolean"
+          },
+          "recommendations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "response_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "risk_level": {
-            "type": "string",
             "enum": [
               "low",
               "watch",
@@ -13058,42 +13193,35 @@
               "high",
               "critical",
               "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "token_analysis": {
+            "$ref": "#/components/schemas/TokenAnalysis"
+          },
+          "token_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "completeness": {
-            "type": "string",
-            "enum": [
-              "full",
-              "partial",
-              "insufficient"
-            ]
+          "valid_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
-          "observation_mode": {
-            "type": "string",
-            "enum": [
-              "blackbox",
-              "compare",
-              "gateway"
-            ]
-          },
-          "limitations": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1024
-            },
-            "maxItems": 1000
-          },
-          "recommendations": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1024
-            },
-            "maxItems": 1000
-          },
-          "published": {
-            "type": "boolean"
+          "versions": {
+            "$ref": "#/components/schemas/Versions"
           }
         },
         "required": [
@@ -13102,396 +13230,507 @@
           "overall_risk",
           "confidence",
           "evidence_grade",
+          "risk_level",
           "completeness",
-          "limitations"
-        ]
+          "versions",
+          "expected_samples",
+          "valid_samples",
+          "prompt_risk",
+          "token_risk",
+          "response_risk",
+          "evidence_risk",
+          "algorithm_risk_level",
+          "observation_mode",
+          "published",
+          "development",
+          "calibrated",
+          "created_at",
+          "limitations",
+          "recommendations"
+        ],
+        "type": "object"
       },
       "Statistic": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 64
-          },
           "actual": {
-            "type": [
-              "number",
-              "null"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "threshold": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "effect_size": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "lower": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "upper": {
-            "type": [
-              "number",
-              "null"
-            ]
+          "name": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "unit": {
-            "type": "string",
-            "maxLength": 64
+            "maxLength": 4096,
+            "type": "string"
           }
         },
         "required": [
           "name",
-          "actual"
-        ]
+          "actual",
+          "unit"
+        ],
+        "type": "object"
       },
       "Finding": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
-          "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "alternative_explanations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
           },
           "analysis_revision": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2147483647
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "category": {
-            "type": "string",
-            "enum": [
-              "prompt",
-              "token",
-              "response",
-              "evidence"
-            ]
-          },
-          "rule_id": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "rule_version": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "summary": {
-            "type": "string",
-            "maxLength": 2048
-          },
-          "severity": {
-            "type": "string",
-            "enum": [
-              "info",
-              "low",
-              "medium",
-              "high",
-              "critical"
-            ]
-          },
-          "risk_score": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
+            "maxLength": 4096,
+            "type": "string"
           },
           "confidence": {
-            "type": "integer",
+            "maximum": 74,
             "minimum": 0,
-            "maximum": 100
+            "type": "integer"
           },
           "evidence_grade": {
-            "type": "string",
             "enum": [
-              "A",
-              "B",
               "C",
               "D"
-            ]
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "risk_score": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "rule_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "rule_version": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "severity": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "statistics": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/Statistic"
             },
-            "maxItems": 1000
+            "maxItems": 1000,
+            "type": "array"
           },
-          "alternative_explanations": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1024
-            },
-            "maxItems": 1000
+          "summary": {
+            "maxLength": 4096,
+            "type": "string"
           },
-          "sample_refs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[1-9][0-9]{0,18}$"
-            },
-            "maxItems": 1000
+          "title": {
+            "maxLength": 4096,
+            "type": "string"
           }
         },
         "required": [
           "id",
           "run_id",
+          "analysis_revision",
+          "category",
           "rule_id",
           "rule_version",
+          "title",
+          "summary",
+          "severity",
+          "risk_score",
+          "confidence",
+          "evidence_grade",
           "statistics",
           "alternative_explanations",
           "sample_refs"
-        ]
+        ],
+        "type": "object"
       },
       "Sample": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "auxiliary_only": {
+            "type": "boolean"
           },
-          "probe_instance_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+          "content_state": {
+            "maxLength": 4096,
+            "type": "string"
           },
-          "run_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
-          "pair_id": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "ordinal": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "validity": {
-            "type": "string",
-            "enum": [
-              "VALID",
-              "VALID_WITH_WARNING",
-              "INVALID_RETRYABLE",
-              "INVALID_PROTOCOL",
-              "INVALID_SAFETY_LIMIT",
-              "NOT_APPLICABLE"
+          "contract": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ]
+          },
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
           },
           "final_attempt_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[1-9][0-9]{0,18}$"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ID"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "requested_max_tokens": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
+          "finish_reason": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hard_truncation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "identity_class": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "included": {
+            "type": "boolean"
+          },
+          "language": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
           },
           "local_completion_tokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ordinal": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probe_instance_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "refusal_class": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reported_completion_tokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "tokenizer_id": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "tokenizer_quality": {
-            "type": "string",
-            "enum": [
-              "exact",
-              "compatible",
-              "heuristic",
-              "unavailable"
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ]
+          },
+          "requested_max_tokens": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "response_hash": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
           },
           "stream": {
             "type": "boolean"
           },
-          "finish_reason": {
-            "type": "string",
-            "maxLength": 64
-          },
           "structure_complete": {
-            "type": "boolean"
-          },
-          "content_state": {
-            "type": "string",
-            "enum": [
-              "available",
-              "expired",
-              "not_retained",
-              "redacted",
-              "forbidden"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "response_hash": {
-            "type": "string",
-            "maxLength": 64
+          "tokenizer_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "tokenizer_quality": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "validity": {
+            "maxLength": 4096,
+            "type": "string"
           }
         },
         "required": [
           "id",
           "run_id",
           "probe_instance_id",
+          "ordinal",
+          "family",
+          "language",
           "validity",
-          "content_state"
-        ]
+          "final_attempt_id",
+          "included",
+          "auxiliary_only",
+          "requested_max_tokens",
+          "local_completion_tokens",
+          "reported_completion_tokens",
+          "tokenizer_id",
+          "tokenizer_quality",
+          "stream",
+          "finish_reason",
+          "structure_complete",
+          "hard_truncation",
+          "contract",
+          "refusal_class",
+          "identity_class",
+          "content_state",
+          "response_hash",
+          "limitations"
+        ],
+        "type": "object"
       },
       "Attempt": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
           "attempt_no": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2147483647
-          },
-          "error_code": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "http_status": {
-            "type": "integer",
-            "minimum": 100,
-            "maximum": 599
-          },
-          "provider_request_id": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "model_reported": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "prompt_tokens": {
-            "type": "integer",
+            "maximum": 9007199254740991,
             "minimum": 0,
-            "maximum": 2147483647
+            "type": "integer"
           },
           "completion_tokens": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "reasoning_tokens": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "total_tokens": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "duration_ms": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "first_byte_ms": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "first_token_ms": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "stream_terminated": {
-            "type": "boolean"
-          },
-          "stream_chunk_count": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
-          },
-          "request_redacted": {
-            "type": "string",
-            "maxLength": 200000
-          },
-          "response_redacted": {
-            "type": "string",
-            "maxLength": 200000
-          },
-          "response_content": {
-            "type": "string",
-            "maxLength": 200000
-          },
-          "content_state": {
-            "type": "string",
-            "enum": [
-              "available",
-              "expired",
-              "not_retained",
-              "redacted",
-              "forbidden"
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "response_hash": {
-            "type": "string",
-            "maxLength": 64
+          "content_state": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validity": {
+            "maxLength": 4096,
+            "type": "string"
           }
         },
         "required": [
           "id",
           "attempt_no",
+          "validity",
+          "error_code",
+          "http_status",
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "duration_ms",
+          "started_at",
+          "finished_at",
           "content_state"
-        ]
+        ],
+        "type": "object"
       },
       "SampleDetail": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {
-          "sample": {
-            "$ref": "#/components/schemas/Sample"
-          },
           "attempts": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/Attempt"
             },
-            "maxItems": 1000
+            "maxItems": 3,
+            "type": "array"
+          },
+          "sample": {
+            "$ref": "#/components/schemas/Sample"
           }
         },
         "required": [
           "sample",
           "attempts"
-        ]
+        ],
+        "type": "object"
       },
       "Baseline": {
         "type": "object",
@@ -14437,6 +14676,599 @@
           "expires_at",
           "budgets"
         ]
+      },
+      "BehaviorAnalysis": {
+        "additionalProperties": false,
+        "properties": {
+          "analyzed_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "auxiliary_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorDifference"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "patterns": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorPattern"
+            },
+            "maxItems": 2048,
+            "type": "array"
+          }
+        },
+        "required": [
+          "analyzed_samples",
+          "auxiliary_samples",
+          "patterns",
+          "differences",
+          "limitations"
+        ],
+        "type": "object"
+      },
+      "BehaviorDifference": {
+        "additionalProperties": false,
+        "properties": {
+          "adjusted_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effect_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metric": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pairs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "state",
+          "pairs",
+          "effect_size",
+          "p_value",
+          "adjusted_p"
+        ],
+        "type": "object"
+      },
+      "BehaviorPattern": {
+        "additionalProperties": false,
+        "properties": {
+          "family_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fingerprint": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "language_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "state": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "template_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "fingerprint",
+          "state",
+          "family_count",
+          "template_count",
+          "language_count",
+          "sample_refs"
+        ],
+        "type": "object"
+      },
+      "ResultSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completeness": {
+            "enum": [
+              "full",
+              "partial",
+              "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 74,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidence_grade": {
+            "enum": [
+              "C",
+              "D"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "overall_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_level": {
+            "enum": [
+              "low",
+              "watch",
+              "medium",
+              "high",
+              "critical",
+              "insufficient"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis_revision",
+          "overall_risk",
+          "confidence",
+          "evidence_grade",
+          "risk_level",
+          "completeness"
+        ],
+        "type": "object"
+      },
+      "RunHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "current_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_model": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_target_name": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimated_cost_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "package": {
+            "enum": [
+              "quick",
+              "standard",
+              "deep",
+              "custom"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "planned_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "request_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "PRECHECKING",
+              "QUEUED",
+              "RUNNING",
+              "ANALYZING",
+              "COMPLETED",
+              "PARTIAL",
+              "FAILED",
+              "REVIEW_REQUIRED",
+              "CANCELLING",
+              "CANCELLED"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "target_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "token_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "valid_sample_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/Versions"
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "created_by",
+          "package",
+          "status",
+          "version",
+          "versions",
+          "request_count",
+          "token_count",
+          "estimated_cost_micros",
+          "valid_sample_count",
+          "planned_samples",
+          "completed_samples",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "current_target_name",
+          "current_model",
+          "current_channel_id",
+          "result"
+        ],
+        "type": "object"
+      },
+      "TokenAnalysis": {
+        "additionalProperties": false,
+        "properties": {
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "plateaus": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPlateau"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "stream_median_relative_difference": {
+            "type": "number"
+          },
+          "stream_pairs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/TokenTier"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "usage_median_relative_error": {
+            "type": "number"
+          },
+          "usage_samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tiers",
+          "plateaus",
+          "usage_samples",
+          "usage_median_relative_error",
+          "stream_pairs",
+          "stream_median_relative_difference",
+          "limitations"
+        ],
+        "type": "object"
+      },
+      "TokenPlateau": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "type": "boolean"
+          },
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "growth_ratio": {
+            "type": "number"
+          },
+          "high_requested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "independent_groups": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "limited": {
+            "type": "boolean"
+          },
+          "low_requested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paired": {
+            "type": "boolean"
+          },
+          "sample_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "maxItems": 512,
+            "type": "array"
+          },
+          "series_id": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "strength": {
+            "type": "number"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "series_id",
+          "family",
+          "low_requested",
+          "high_requested",
+          "growth_ratio",
+          "strength",
+          "candidate",
+          "limited",
+          "lower",
+          "upper",
+          "paired",
+          "independent_groups",
+          "limitations",
+          "sample_refs"
+        ],
+        "type": "object"
+      },
+      "TokenTier": {
+        "additionalProperties": false,
+        "properties": {
+          "family": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "language": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "mad": {
+            "type": "number"
+          },
+          "median": {
+            "type": "number"
+          },
+          "requested_max_tokens": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "robust_cv": {
+            "type": "number"
+          },
+          "samples": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "series_id": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "family",
+          "language",
+          "requested_max_tokens",
+          "samples",
+          "median",
+          "mad",
+          "robust_cv"
+        ],
+        "type": "object"
       }
     }
   }

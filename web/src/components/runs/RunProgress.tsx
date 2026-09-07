@@ -6,6 +6,7 @@ import { useFailure } from '../management/shared'
 import type { TargetCallbacks } from '../targets/TargetForm'
 import { RunError } from './RunFeedback'
 import { cost, FrozenVersions } from './RunQuote'
+import { watchRun, type RunConnection } from '../../run-events'
 
 export const statusLabels: Record<RunStatus, string> = { DRAFT: '草稿', PRECHECKING: '预检阶段', QUEUED: '已排队', RUNNING: '采样执行中', ANALYZING: '分析中', COMPLETED: '已完成', PARTIAL: '部分完成', FAILED: '失败', REVIEW_REQUIRED: '需要人工复核', CANCELLING: '正在取消', CANCELLED: '已取消' }
 const terminal = (record: Run) => ['COMPLETED', 'PARTIAL', 'FAILED', 'REVIEW_REQUIRED', 'CANCELLED'].includes(record.status)
@@ -27,32 +28,30 @@ export function RunProgress({ initial, userID, initialPermissions, ...context }:
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
   const [cancelUncertain, setCancelUncertain] = useState(false)
+  const [connection, setConnection] = useState<RunConnection>('checking')
   const current = useRef(initial)
   const active = useRef(false)
   const mutation = useRef<AbortController | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus(); return () => mutation.current?.abort() }, [])
   useEffect(() => {
-    if (!polling || busy) return
+    if (!polling || busy || !permissions?.includes('run.read')) return
     const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let reads = 0
-    async function read() {
-      try {
-        const result = await runsApi.get(context.organizationID, initial.id, controller.signal)
-        if (controller.signal.aborted) return
-        validatePinned(initial, current.current, result)
-        current.current = result; setRecord(result); setCancelUncertain(false)
-        reads += 1
-        if (!terminal(result) && reads < 600) timer = setTimeout(() => void read(), 5000)
-        else { setPolling(false); setPaused(!terminal(result)) }
-      } catch (failure) {
-        if (!controller.signal.aborted && !onFailure(failure)) { setError(failure); setPolling(false); if (failure instanceof ApiError && failure.status === 403) setPermissions(null) }
-      }
-    }
-    void read()
-    return () => { controller.abort(); if (timer !== undefined) clearTimeout(timer) }
-  }, [context.organizationID, initial, onFailure, polling, busy, attempt])
+    void watchRun({ organizationID: context.organizationID, initial: current.current, signal: controller.signal, onConnection: (next) => { if (!controller.signal.aborted) setConnection(next) }, onSnapshot: (result) => {
+      if (controller.signal.aborted) return
+      validatePinned(initial, current.current, result)
+      // A terminal event is a notification, not the final authoritative GET.
+      // Keep the last nonterminal view until watchRun confirms it successfully.
+      if (terminal(result)) return
+      current.current = result; setRecord(result); setCancelUncertain(false)
+    } }).then((result) => { if (!controller.signal.aborted) {
+      if (result.reason === 'terminal') { validatePinned(initial, current.current, result.record); current.current = result.record; setRecord(result.record); setCancelUncertain(false) }
+      setPolling(false); setPaused(result.reason === 'limit')
+    } }).catch((failure: unknown) => {
+      if (!controller.signal.aborted && !onFailure(failure)) { setError(failure); setPolling(false); if (failure instanceof ApiError && failure.status === 403) setPermissions(null) }
+    })
+    return () => controller.abort()
+  }, [context.organizationID, initial, onFailure, polling, busy, attempt, permissions])
 
   async function cancel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -85,6 +84,7 @@ export function RunProgress({ initial, userID, initialPermissions, ...context }:
     catch (failure) { if (!controller.signal.aborted && !onFailure(failure)) { setError(failure); setPermissions(null) } }
     finally { active.current = false; if (!controller.signal.aborted) setBusy(false) }
   }
+  if (!permissions?.includes('run.read')) return <section aria-label="检测读取权限不可用"><RunError error={error} id="run-progress-error" /><p className="notice warning">当前任务读取权限不足或已撤销，已停止显示检测状态。后台任务不会因此自动取消。</p><button disabled={busy} onClick={() => void refreshPermissions()}>重新读取取消权限</button><a href="#/runs">返回检测历史</a></section>
   return <section aria-labelledby="run-progress-title">
     <h3 id="run-progress-title" ref={heading} tabIndex={-1} aria-live="polite" aria-atomic="true">本次检测：{statusLabels[record.status]}</h3>
     <p className="cell-detail">Run ID {record.id} · 记录版本 {record.version} · 创建人 ID {record.created_by}</p>
@@ -98,12 +98,12 @@ export function RunProgress({ initial, userID, initialPermissions, ...context }:
     <dl className="precheck-times"><dt>创建时间</dt><dd>{new Date(record.created_at).toLocaleString()}</dd><dt>开始时间</dt><dd>{record.started_at ? new Date(record.started_at).toLocaleString() : '尚未开始'}</dd><dt>完成时间</dt><dd>{record.finished_at ? new Date(record.finished_at).toLocaleString() : '尚未完成'}</dd></dl>
     <FrozenVersions versions={record.versions} hash={record.manifest_hash} />
     <RunError error={error} id="run-progress-error" />
-    {polling && !busy && <Loading>正在跟踪此固定 Run ID，每 5 秒读取状态；不会重新创建或执行检测…</Loading>}
+    {polling && !busy && <Loading>{`${connection === 'live' ? '已连接状态事件流' : connection === 'reconnecting' ? '状态事件流断开，正在只读核对并有限重连' : connection === 'connecting' ? '正在连接状态事件流' : '正在核对此固定 Run ID'}；不会重新创建或执行检测…`}</Loading>}
     {paused && <p className="empty-note">已达到本页自动读取上限，暂停更新；不代表后台检测失败。可手动继续读取。</p>}
     {Boolean(error) && <p className="empty-note">当前保留最后一次成功读取的状态，不会把读取错误当成检测失败或成功。</p>}
     {cancelUncertain && <p className="notice warning">取消请求结果不确定，正在只读核对同一 Run；不会自动重发取消请求。</p>}
     <div className="form-actions"><button disabled={polling || busy} onClick={() => { setError(null); setPaused(false); setPolling(true); setAttempt((value) => value + 1) }}>重新读取此检测</button><button disabled={busy} onClick={() => void refreshPermissions()}>重新读取取消权限</button></div>
     {permissions && canCancel(record, userID, permissions) ? <form aria-label="取消检测" onSubmit={cancel}><fieldset disabled={busy || cancelUncertain}><legend className="sr-only">停止采样确认</legend><label className="grant-option"><input type="checkbox" name="confirm_cancel" /><span>我确认停止后续采样；已有样本和可能产生的费用仍会保留。</span></label><button className="danger-button" type="submit" disabled={busy || cancelUncertain}>{busy ? '正在提交取消…' : '确认取消检测'}</button></fieldset></form> : <p className="field-help">当前状态或有效权限不允许取消；取消自己的任务与取消他人任务分别由服务端授权。</p>}
-    <div className="form-actions"><button disabled>分析结果（尚未接入）</button><button disabled>检测报告（尚未接入）</button></div>
+    <div className="form-actions">{permissions?.includes('run.read') && terminal(record) ? <a className="button-link" href={`#/results/${record.id}/1`}>读取已有分析修订 1</a> : <span className="field-help">结果入口将在任务终态与读取权限可用后显示；有无结果以服务端为准。</span>}<a href="#/runs">检测历史</a><button disabled>检测报告（尚未接入）</button></div>
   </section>
 }

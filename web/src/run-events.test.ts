@@ -39,7 +39,7 @@ describe('bounded authenticated Run SSE client', () => {
     vi.stubGlobal('fetch', fetcher)
     const config = options()
     expect(await watchRun(config)).toEqual({ record: finished, reason: 'terminal' })
-    expect(config.onSnapshot.mock.calls.map(([value]) => value.version)).toEqual([1, 2, 3, 3])
+    expect(config.onSnapshot.mock.calls.map(([value]) => value.version)).toEqual([1, 2, 3])
     const request = fetcher.mock.calls[1][1]!
     expect(request.method).toBe('GET'); expect(request.credentials).toBe('same-origin'); expect(request.redirect).toBe('error')
     const headers = new Headers(request.headers)
@@ -123,6 +123,21 @@ describe('bounded authenticated Run SSE client', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(initial)).mockRejectedValueOnce(new TypeError('PRIVATE URL')).mockResolvedValueOnce(json(finished))
     vi.stubGlobal('fetch', fetcher)
     expect((await watchRun(options())).reason).toBe('terminal')
+  })
+
+  it('withholds terminal events until GET has confirmed the persisted result state', async () => {
+    let confirm!: (value: Response) => void
+    const pending = new Promise<Response>((resolve) => { confirm = resolve })
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(initial)).mockResolvedValueOnce(stream(frame(finished))).mockReturnValueOnce(pending)
+    vi.stubGlobal('fetch', fetcher)
+    const config = options()
+    const result = watchRun(config)
+    await microtasks()
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(config.onSnapshot.mock.calls.map(([value]) => value.status)).toEqual(['QUEUED'])
+    confirm(json(finished))
+    expect((await result).reason).toBe('terminal')
+    expect(config.onSnapshot.mock.calls.map(([value]) => value.status)).toEqual(['QUEUED', 'PARTIAL'])
   })
 
   it('limits persistent disconnects to twelve connections and leaves the last real Run unchanged', async () => {

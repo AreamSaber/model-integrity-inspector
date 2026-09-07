@@ -96,31 +96,127 @@ async function accessibleOrganizations(signal?: AbortSignal): Promise<{ items: O
   return { items, next_cursor: null }
 }
 interface RequestOptions { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal }
-export async function request<T>(path: string, guard: (value: unknown) => value is T, options: RequestOptions = {}): Promise<T> {
-  const timeout = AbortSignal.timeout(45_000)
-  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
-  let response: Response
+// Fixed application limits, not caller-controlled overrides. Fetch exposes
+// decompressed bytes here; the result/statistics projection fits within 8 MiB.
+const maximumJSONBytes = 8 * 1024 * 1024
+const maximumErrorBytes = 64 * 1024
+const maximumReadOperations = 131072
+const requestTimeoutMS = 45000
+function cancelled() { return new DOMException('Request cancelled', 'AbortError') }
+function checkSignal(signal: AbortSignal) { if (signal.aborted) throw cancelled() }
+function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => { signal.removeEventListener('abort', abort); reject(cancelled()) }
+    signal.addEventListener('abort', abort, { once: true })
+    // Attach both handlers even after cancellation, so a late rejected fetch or
+    // read cannot become an unhandled rejection containing transport details.
+    operation.then((value) => { signal.removeEventListener('abort', abort); resolve(value) }, () => { signal.removeEventListener('abort', abort); reject(new ApiError('MI_NETWORK_ERROR')) })
+    if (signal.aborted) abort()
+  })
+}
+function cancelUnread(body: ReadableStream<Uint8Array> | null) {
+  // A remote/adapter cancellation promise is not trusted to settle.
+  try { void body?.cancel().catch(() => {}) } catch { /* already locked or closed */ }
+}
+async function boundedJSON(response: Response, signal: AbortSignal): Promise<unknown> {
+  const maximum = response.ok ? maximumJSONBytes : maximumErrorBytes
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let complete = false, received = 0, operations = 0, emptyReads = 0, decoded = ''
   try {
-    response = await fetch(`/api/v1${path}`, {
-      method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-      headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body), signal,
-    })
-  } catch {
-    if (options.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError')
-    throw new ApiError('MI_NETWORK_ERROR')
+    checkSignal(signal)
+    const contentType = response.headers.get('Content-Type') ?? ''
+    if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/i.test(contentType)) throw new ApiError('MI_INVALID_RESPONSE')
+    const encoding = response.headers.get('Content-Encoding')?.trim().toLowerCase()
+    const identityEncoding = !encoding || encoding === 'identity'
+    const length = response.headers.get('Content-Length')
+    let declared: number | undefined
+    if (length !== null) {
+      if (!/^[0-9]{1,16}$/.test(length) || !Number.isSafeInteger(Number(length))) throw new ApiError('MI_INVALID_RESPONSE')
+      declared = Number(length)
+      // Compressed Content-Length describes the wire representation, not the
+      // decompressed stream. It never relaxes the actual-byte limit below.
+      if (identityEncoding && declared > maximum) throw new ApiError('MI_INVALID_RESPONSE')
+    }
+    if (!response.body) throw new ApiError('MI_INVALID_RESPONSE')
+    reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    for (;;) {
+      checkSignal(signal)
+      // Bound pathological streams of empty/tiny chunks too: a synchronously
+      // resolving read loop must not starve the abort timer indefinitely.
+      if (++operations > maximumReadOperations) throw new ApiError('MI_INVALID_RESPONSE')
+      const part = await abortable(reader.read(), signal)
+      checkSignal(signal)
+      if (part.done) { complete = true; break }
+      // Fetch streams may originate in a different realm (e.g. a test runner or
+      // frame). instanceof would reject genuine byte arrays across that boundary.
+      if (!ArrayBuffer.isView(part.value) || Object.prototype.toString.call(part.value) !== '[object Uint8Array]') throw new ApiError('MI_INVALID_RESPONSE')
+      received += part.value.byteLength
+      if (received > maximum || (identityEncoding && declared !== undefined && received > declared)) throw new ApiError('MI_INVALID_RESPONSE')
+      if (part.value.byteLength === 0) { if (++emptyReads > 1024) throw new ApiError('MI_INVALID_RESPONSE'); continue }
+      emptyReads = 0
+      try { decoded += decoder.decode(part.value, { stream: true }) } catch { throw new ApiError('MI_INVALID_RESPONSE') }
+    }
+    if (received === 0 || (identityEncoding && declared !== undefined && received !== declared)) throw new ApiError('MI_INVALID_RESPONSE')
+    try { decoded += decoder.decode() } catch { throw new ApiError('MI_INVALID_RESPONSE') }
+    checkSignal(signal)
+    try { return JSON.parse(decoded) as unknown } catch { throw new ApiError('MI_INVALID_RESPONSE') }
+  } finally {
+    decoded = ''
+    if (reader) {
+      if (!complete) { try { void reader.cancel().catch(() => {}) } catch { /* cancellation is best-effort */ } }
+      try { reader.releaseLock() } catch { /* a pending read may be aborting */ }
+    } else cancelUnread(response.body)
   }
-  let envelope: unknown
-  try { envelope = await response.json() } catch { throw new ApiError('MI_INVALID_RESPONSE', response.status) }
-  const requestID = object(envelope) && typeof envelope.request_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(envelope.request_id) ? envelope.request_id : ''
-  if (!response.ok) {
-    const code = object(envelope) && object(envelope.error) && typeof envelope.error.code === 'string' && /^MI_[A-Z_]{1,64}$/.test(envelope.error.code) ? envelope.error.code : 'MI_SERVICE_UNAVAILABLE'
-    const header = response.headers.get('Retry-After')
-    const seconds = header && /^\d+$/.test(header) ? Number(header) : header ? Math.ceil((Date.parse(header) - Date.now()) / 1000) : 0
-    throw new ApiError(code, response.status, requestID, Number.isFinite(seconds) ? Math.max(0, Math.min(seconds, 86_400)) : 0)
-  }
-  if (!object(envelope) || !requestID || 'error' in envelope || !guard(envelope.data)) throw new ApiError('MI_INVALID_RESPONSE', response.status, requestID)
-  return envelope.data
+}
+function invalidErrorBody(status: number) {
+  // The HTTP status already denies access, but its payload could not be trusted.
+  // Safely invalidate the UI session rather than retaining an authorized cached
+  // view. This is a client fail-closed downgrade, not a server session diagnosis.
+  return new ApiError(status === 401 || status === 403 ? 'MI_SESSION_REQUIRED' : 'MI_INVALID_RESPONSE', status)
+}
+export async function request<T>(path: string, guard: (value: unknown) => value is T, options: RequestOptions = {}): Promise<T> {
+  const timeout = new AbortController()
+  const timer = setTimeout(() => timeout.abort(), requestTimeoutMS)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout.signal]) : timeout.signal
+  try {
+    let response: Response
+    try {
+      checkSignal(signal)
+      response = await abortable(fetch(`/api/v1${path}`, {
+        method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body), signal,
+      }).then((value) => { if (signal.aborted) { cancelUnread(value.body); throw cancelled() }; return value }), signal)
+    } catch {
+      if (options.signal?.aborted) throw cancelled()
+      throw new ApiError('MI_NETWORK_ERROR')
+    }
+    let envelope: unknown
+    try { envelope = await boundedJSON(response, signal) } catch (failure) {
+      if (options.signal?.aborted) throw cancelled()
+      if (response.status === 401 || response.status === 403) throw invalidErrorBody(response.status)
+      if (timeout.signal.aborted || (failure instanceof ApiError && failure.code === 'MI_NETWORK_ERROR')) throw new ApiError('MI_NETWORK_ERROR', response.status)
+      throw invalidErrorBody(response.status)
+    }
+    if (options.signal?.aborted) throw cancelled()
+    if (timeout.signal.aborted) throw new ApiError('MI_NETWORK_ERROR', response.status)
+    const requestID = object(envelope) && typeof envelope.request_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(envelope.request_id) ? envelope.request_id : ''
+    if (!response.ok) {
+      const validError = object(envelope) && object(envelope.error) && typeof envelope.error.code === 'string' && /^MI_[A-Z_]{1,64}$/.test(envelope.error.code)
+      if ((response.status === 401 || response.status === 403) && (!validError || !requestID || (object(envelope) && 'data' in envelope))) throw invalidErrorBody(response.status)
+      const code = validError ? (envelope as { error: { code: string } }).error.code : 'MI_SERVICE_UNAVAILABLE'
+      const header = response.headers.get('Retry-After')
+      const seconds = header && /^\d+$/.test(header) ? Number(header) : header ? Math.ceil((Date.parse(header) - Date.now()) / 1000) : 0
+      throw new ApiError(code, response.status, requestID, Number.isFinite(seconds) ? Math.max(0, Math.min(seconds, 86_400)) : 0)
+    }
+    let valid = false
+    try { valid = object(envelope) && Boolean(requestID) && !('error' in envelope) && guard(envelope.data) } catch { /* guard errors never carry response details */ }
+    if (options.signal?.aborted) throw cancelled()
+    if (timeout.signal.aborted) throw new ApiError('MI_NETWORK_ERROR', response.status)
+    if (!valid || !object(envelope)) throw new ApiError('MI_INVALID_RESPONSE', response.status, requestID)
+    return envelope.data as T
+  } finally { clearTimeout(timer) }
 }
 export const api = {
   setupStatus: (signal?: AbortSignal) => request('/setup/status', (value): value is { initialized: boolean } => object(value) && typeof value.initialized === 'boolean', { signal }),

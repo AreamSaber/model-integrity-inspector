@@ -97,7 +97,7 @@ export function RunWorkflow({ current, userID, onCancel, ...context }: TargetCal
       {error instanceof ApiError && ['MI_PRECHECK_REQUIRED', 'MI_PRECHECK_STALE'].includes(error.code) && <p className="empty-note">请返回目标列表，主动打开“预检”并确认可能产生的费用。此页面不会自动运行预检。</p>}
     </>}
     <div className="form-actions"><button disabled={busy || uncertain} onClick={onCancel}>返回目标列表</button></div>
-    <p className="field-help">离开或切换组织只停止本页读取，不会撤销后台已提交的任务。检测结果和报告只有真实接口接入后才会开放。</p>
+    <p className="field-help">离开或切换组织只停止本页读取，不会撤销后台已提交的任务。可从<a href="#/runs">检测历史</a>重新打开任务和已有分析修订；报告生成尚未接入。</p>
   </section>
 }
 function unknownOutcome(failure: unknown) {

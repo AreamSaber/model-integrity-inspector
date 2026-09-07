@@ -36,6 +36,7 @@ function network(handler?: Handler) {
     if (path === '/api/v1/runs' && options.method === 'POST') { record = queued(quote); return ok(record, 202) }
     if (path === `/api/v1/runs/${record.id}/cancel`) { record = { ...record, status: 'CANCELLING', version: record.version + 1 }; return ok(record) }
     if (path === `/api/v1/runs/${record.id}`) return ok(record)
+    if (path === `/api/v1/runs/${record.id}/events`) return new Response(new ReadableStream({ start(controller) { options.signal?.addEventListener('abort', () => controller.close(), { once: true }) } }), { headers: { 'Content-Type': 'text/event-stream' } })
     throw new Error('Unexpected controlled test route')
   })
   vi.stubGlobal('fetch', calls); return calls
@@ -154,7 +155,7 @@ describe('real Run configuration and explicit confirmation', () => {
     await confirm()
     expect(screen.getByRole('heading', { name: '本次检测：分析中' })).toBeTruthy()
     expect(screen.getByText(/分析尚未完成/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: '分析结果（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('link', { name: '读取已有分析修订 1' })).toBeNull()
     expect((screen.getByRole('button', { name: '检测报告（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
     expect(requests(calls, '/api/v1/runs')).toHaveLength(1)
     expect(polls(calls)).toHaveLength(1)
@@ -251,12 +252,38 @@ describe('real Run configuration and explicit confirmation', () => {
 })
 
 describe('fixed Run progress and cancellation', () => {
-  it('polls one ID, stops on terminal status and renders safe error summaries only', async () => {
+  it('does not display terminal completion or a result link until the terminal GET succeeds', async () => {
+    let reads = 0, release: ((value: Response) => void) | undefined
+    const completed: Run = { ...queued(), status: 'COMPLETED', version: 3, request_count: 18, completed_samples: 18, valid_sample_count: 18, finished_at: '2026-09-07T08:02:00Z' }
+    network((path) => {
+      if (path === `/api/v1/runs/${queued().id}`) return ++reads === 1 ? ok({ ...queued(), status: 'RUNNING', version: 2 }) : new Promise<Response>((resolve) => { release = resolve })
+      if (path.endsWith('/events')) return new Response(`event: progress\nid: ${completed.id}:${completed.version}\ndata: ${JSON.stringify(completed)}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })
+      return undefined
+    })
+    renderTargets(); await openConfiguration(); await estimate(); await confirm()
+    expect(reads).toBe(2)
+    expect(screen.getByRole('heading', { name: '本次检测：采样执行中' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: '读取已有分析修订 1' })).toBeNull()
+    await act(async () => { release!(ok(completed)) })
+    expect(screen.getByRole('heading', { name: '本次检测：已完成' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '读取已有分析修订 1' }).getAttribute('href')).toBe(`#/results/${completed.id}/1`)
+  })
+  it('clears the progress view on revoked run.read and does not expose a terminal event as success', async () => {
     let reads = 0
-    const calls = network((path) => path === `/api/v1/runs/${queued().id}` ? ok(++reads === 1 ? { ...queued(), status: 'RUNNING', version: 2, request_count: 1 } : { ...queued(), status: 'FAILED', version: 3, completed_samples: 18, finished_at: '2026-09-07T08:02:00Z', error_summary: [{ code: 'MI_AUTH_FAILED', count: 1 }, { code: 'MI_UNRECOGNIZED_PRIVATE_MARKER', count: 1 }] }) : undefined)
+    const completed: Run = { ...queued(), status: 'COMPLETED', version: 3, completed_samples: 18, finished_at: '2026-09-07T08:02:00Z' }
+    const calls = network((path) => path === `/api/v1/runs/${queued().id}` ? ++reads === 1 ? ok({ ...queued(), status: 'RUNNING', version: 2 }) : fail('MI_PERMISSION_DENIED', 403) : path.endsWith('/events') ? new Response(`event: progress\nid: ${completed.id}:${completed.version}\ndata: ${JSON.stringify(completed)}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } }) : undefined)
+    renderTargets(); await openConfiguration(); await estimate(); await confirm()
+    expect(screen.getByText(/已停止显示检测状态/)).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.queryByRole('link', { name: '读取已有分析修订 1' })).toBeNull()
+    expect(requests(calls, `/api/v1/runs/${queued().id}/cancel`)).toHaveLength(0)
+  })
+  it('follows one ID and confirms a terminal event with GET before stopping, without raw error summaries', async () => {
+    let reads = 0
+    const finished: Run = { ...queued(), status: 'FAILED', version: 3, request_count: 1, completed_samples: 18, finished_at: '2026-09-07T08:02:00Z', error_summary: [{ code: 'MI_AUTH_FAILED', count: 1 }, { code: 'MI_UNRECOGNIZED_PRIVATE_MARKER', count: 1 }] }
+    const calls = network((path) => path === `/api/v1/runs/${queued().id}` ? ok(++reads === 1 ? { ...queued(), status: 'RUNNING', version: 2, request_count: 1 } : finished) : path.endsWith('/events') ? new Response(`event: progress\nid: ${finished.id}:${finished.version}\ndata: ${JSON.stringify(finished)}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } }) : undefined)
     renderTargets(); await openConfiguration(); vi.useFakeTimers(); await estimate(); await confirm()
-    expect(polls(calls)).toHaveLength(1)
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(polls(calls)).toHaveLength(2)
     expect(screen.getByRole('heading', { name: '本次检测：失败' })).toBeTruthy()
     expect(document.body.textContent).not.toContain('MI_UNRECOGNIZED_PRIVATE_MARKER')
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
@@ -265,7 +292,7 @@ describe('fixed Run progress and cancellation', () => {
   })
   it('rejects regressing versions without moving the tracked Run', async () => {
     let reads = 0
-    const calls = network((path) => path === `/api/v1/runs/${queued().id}` ? ok(++reads === 1 ? { ...queued(), status: 'RUNNING', version: 3 } : { ...queued(), status: 'RUNNING', version: 2 }) : undefined)
+    const calls = network((path) => path === `/api/v1/runs/${queued().id}` ? ok(++reads === 1 ? { ...queued(), status: 'RUNNING', version: 3 } : { ...queued(), status: 'RUNNING', version: 2 }) : path.endsWith('/events') ? new Response('', { headers: { 'Content-Type': 'text/event-stream' } }) : undefined)
     renderTargets(); await openConfiguration(); vi.useFakeTimers(); await estimate(); await confirm()
     await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
     expect(screen.getByText('服务响应格式异常，请联系管理员。')).toBeTruthy()
