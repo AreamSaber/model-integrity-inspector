@@ -54,6 +54,29 @@ Do not disable the server's Origin/CSRF checks to make development requests pass
   header, ciphertext and fingerprint fields; only masked metadata is displayed.
   Conflicts offer explicit reload rather than automatic overwrite or replay.
   See `src/components/targets/README.md` for the target boundary details.
+- System-user creation, display-name/status changes, login-lock reset and versioned
+  temporary-password reset. New users are ordinary accounts; no system-admin
+  promotion or user deletion is exposed. Temporary passwords are write-only,
+  confirmation-checked and cleared after success, failure or local validation.
+  Self-disable/reset controls are blocked; last-admin and self-lockout API errors
+  are explained. Lock state is not exposed by the DTO and is never invented.
+- Organization creation and settings changes, including timezone, active status
+  and 0–180-day response retention. Edits GET the latest record, then bind the
+  target organization ID in both URL and header, even when editing a different
+  organization from the selected workspace. Creating an organization does not
+  silently switch the workspace; disabling the selected one clears selection.
+  Legacy organization refresh follows all pages with bounded/cycle-checked reads.
+- Organization-scoped member listing, addition, roles/extra-grant updates and
+  status-based revocation. Full role definitions are fetched before grant forms
+  open. Existing users are selected by string ID supplied by a system admin;
+  ordinary organization admins never query the global user directory. Extra
+  grants are distinguished from inherited role permissions. Empty extra-grant
+  arrays explicitly clear them; records always include optimistic versions.
+- Management lists use actual server-side `q` search and signed-cursor pagination.
+  Failed refreshes retain clearly marked stale data and disable row mutations.
+  Conflicts offer an explicit discard-and-refresh step without replaying writes.
+  Successful read DTOs reject credential fields, invalid flag/version types,
+  and mismatched organization/user/member response identities.
 
 The role endpoint returns **role definitions**, not the current user's memberships
 or effective permissions. The UI never treats that catalog as authorization.
@@ -69,10 +92,11 @@ target does not make an upstream call or report simulated precheck success.
 
 Runs, reports, baselines, rules, audit and system administration routes remain
 explicitly marked “尚未接入”. Overview statistics are not implemented and are not
-rendered as zero. Provider/model-profile CRUD, user/member/organization management
-and role-catalog pagination are not yet implemented in the UI. Target searching
-is not offered until server-side filtering exists; a current-page filter is not
-presented as a full search. TLS verification cannot be disabled, and client URL
+rendered as zero. Provider/model-profile CRUD and pagination on the legacy
+read-only role page are not yet implemented in the UI (member grant forms do
+load the full role catalog). Target search/filter controls are not yet wired to
+the backend; a current-page filter is not presented as a full search.
+TLS verification cannot be disabled, and client URL
 checks never substitute for server-side SSRF/DNS/network controls.
 Logout ends the current session; password change invalidates every session.
 
@@ -81,5 +105,8 @@ controlled `fetch` boundary. These tests are not production fake implementations
 and do not replace real-browser, real-Go API, mobile visual or deployment smoke
 tests. No paid upstream calls are made by these pages or tests.
 
-The current local checkpoint has 72 passing tests. Vitest uses at most two thread
+The management checkpoint has 96 tests, including 24 management request/DTO cases.
+Management browser integration with the actual Go API is still pending; local
+controlled-network tests are not a substitute for that integration check.
+Vitest uses at most two thread
 workers to avoid Windows fork-startup contention; this does not relax assertions.

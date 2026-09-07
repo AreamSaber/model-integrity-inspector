@@ -35,6 +35,8 @@ const messages: Record<string, string> = {
   MI_SECRET_INVALID: '凭证配置不符合要求，请检查认证方式和请求头。',
   MI_CONFLICT: '记录已被其他操作修改，请重新读取后再提交。',
   MI_VERSION_CONFLICT: '记录版本已变化，请重新读取后再提交。',
+  MI_LAST_ADMINISTRATOR: '此操作会移除最后一位可用管理员，请先安排其他管理员。',
+  MI_SELF_LOCKOUT_FORBIDDEN: '不能通过此操作锁定自己。请使用账号安全页修改自己的密码，并保留自己的管理权限。',
   MI_NOT_FOUND: '记录不存在、已删除，或不在当前组织范围内。',
 }
 export function errorMessage(error: unknown): string {
@@ -74,9 +76,25 @@ function role(value: unknown): value is Role {
 }
 export function page<T>(guard: (value: unknown) => value is T) {
   return (value: unknown): value is { items: T[]; next_cursor: string | null } =>
-    object(value) && Array.isArray(value.items) && value.items.length <= 1000 && value.items.every(guard) && (value.next_cursor === null || text(value.next_cursor, 512))
+    object(value) && Array.isArray(value.items) && value.items.length <= 1000 && value.items.every(guard) && (value.next_cursor === null || text(value.next_cursor, 1024))
 }
 export function acknowledged(value: unknown): value is { ok: true } { return object(value) && value.ok === true }
+async function accessibleOrganizations(signal?: AbortSignal): Promise<{ items: Organization[]; next_cursor: null }> {
+  // The management endpoint is paginated. Do not silently replace the workspace
+  // selector with only its first page after refresh.
+  const items: Organization[] = []
+  const cursors = new Set<string>()
+  let cursor = ''
+  do {
+    const result = await request(`/organizations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, page(organization), { signal })
+    items.push(...result.items)
+    if (items.length > 1000 || cursors.size > 100 || (result.next_cursor && cursors.has(result.next_cursor))) throw new ApiError('MI_INVALID_RESPONSE')
+    cursor = result.next_cursor ?? ''
+    if (cursor) cursors.add(cursor)
+  } while (cursor)
+  if (new Set(items.map((org) => org.id)).size !== items.length) throw new ApiError('MI_INVALID_RESPONSE')
+  return { items, next_cursor: null }
+}
 interface RequestOptions { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal }
 export async function request<T>(path: string, guard: (value: unknown) => value is T, options: RequestOptions = {}): Promise<T> {
   const timeout = AbortSignal.timeout(45_000)
@@ -109,7 +127,7 @@ export const api = {
   initialize: (body: { organization_name: string; username: string; password: string }, setupToken: string, signal?: AbortSignal) => request('/setup/initialize', acknowledged, { body, headers: setupToken ? { 'X-Setup-Token': setupToken } : {}, signal }),
   login: (body: { username: string; password: string }, signal?: AbortSignal) => request('/auth/login', session, { body, signal }),
   me: (signal?: AbortSignal) => request('/auth/me', session, { signal }),
-  organizations: (signal?: AbortSignal) => request('/organizations', page(organization), { signal }),
+  organizations: accessibleOrganizations,
   roles: (organizationID: string, signal?: AbortSignal) => {
     if (!id(organizationID)) return Promise.reject(new ApiError('MI_INVALID_REQUEST'))
     return request('/roles', page(role), { headers: { 'X-Organization-ID': organizationID }, signal })

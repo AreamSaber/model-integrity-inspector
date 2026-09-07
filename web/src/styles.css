@@ -63,6 +63,15 @@ fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
 .danger-button { background: #4a2525; color: #ffd2d2; border-color: #a15f5f; }
 .delete-panel { border-color: #a15f5f; }
 .catalog-retry { margin-bottom: 20px; }
+.management-search { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 24px 0; }
+.management-search label { flex-basis: 100%; color: var(--muted); font-size: .8rem; }
+.management-search input { flex: 1 1 220px; min-width: 0; }
+.grant-fields { padding-top: 20px; margin: 20px 0; border-top: 1px solid var(--line); }
+.grant-fields legend { color: var(--accent); padding-right: 16px; }
+.grant-option { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; overflow-wrap: anywhere; }
+.grant-option input { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; }
+.grant-option span { min-width: 0; }
+.grant-option small { display: block; color: var(--muted); font-size: .72rem; margin-top: 6px; }
 .request-id { font-family: ui-monospace, monospace; font-size: .72rem; margin-top: 6px !important; }
 .loading { display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .status-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; flex-shrink: 0; }

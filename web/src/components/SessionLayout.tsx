@@ -3,6 +3,9 @@ import { api, passwordChangeRequired, sessionInvalid, type Organization, type Ro
 import { AuthForm } from './AuthForms'
 import { ErrorNotice, Loading } from './Feedback'
 import { TargetsPage } from './targets/TargetsPage'
+import { UsersPage } from './management/UsersPage'
+import { OrganizationsPage } from './management/OrganizationsPage'
+import { MembersPage } from './management/MembersPage'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -13,6 +16,9 @@ const navigation = [
   ['rules', '规则与模板', '治理'],
   ['audit', '审计日志', '治理'],
   ['organizations', '组织与角色', '管理'],
+  ['members', '组织成员', '管理'],
+  ['organization-management', '组织管理', '管理'],
+  ['users', '用户管理', '管理'],
   ['system', '系统', '管理'],
   ['account', '账号安全', '管理'],
 ] as const
@@ -29,6 +35,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
   const heading = useRef<HTMLHeadingElement>(null)
   const organization = organizations.find((org) => org.id === selectedID && org.status === 'active')
   const title = navigation.find(([key]) => key === route)?.[1] ?? '页面不存在'
+  const management = { csrfToken: session.csrf_token, userID: session.user.id, systemAdmin: session.user.system_admin === true, onSignedOut, onPasswordRequired }
   useEffect(() => {
     const change = () => setRoute(currentRoute())
     window.addEventListener('hashchange', change)
@@ -74,7 +81,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
     <aside className="sidebar">
       <a className="brand-block" href="#/overview"><span className="brand-mark" aria-hidden="true">M</span><span>MII<small>Integrity Inspector</small></span></a>
       <p className="nav-caption">工作空间导航</p>
-      <nav aria-label="主导航">{navigation.map(([key, label, group]) => <a key={key} href={`#/${key}`} aria-current={route === key ? 'page' : undefined}><span>{label}</span><small aria-hidden="true">{group}</small></a>)}</nav>
+      <nav aria-label="主导航">{navigation.filter(([key]) => key !== 'users' || session.user.system_admin === true).map(([key, label, group]) => <a key={key} href={`#/${key}`} aria-current={route === key ? 'page' : undefined}><span>{label}</span><small aria-hidden="true">{group}</small></a>)}</nav>
       <p className="sidebar-foot">独立部署<br />模型 API 完整性检测</p>
     </aside>
     <div className="workspace-body">
@@ -90,6 +97,12 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
         {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
           route === 'account' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> :
+          route === 'users' ? <UsersPage {...management} /> :
+          route === 'organization-management' ? <OrganizationsPage {...management} onChanged={(org) => {
+            setOrganizations((current) => current.some((item) => item.id === org.id) ? current.map((item) => item.id === org.id ? org : item) : [...current, org])
+            if (org.status !== 'active') setSelectedID((current) => current === org.id ? '' : current)
+          }} /> :
+          route === 'members' ? (organization ? <MembersPage key={organization.id} {...management} organizationID={organization.id} organizationName={organization.name} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理成员。</p></section>) :
           route === 'organizations' ? <>
             <section className="panel"><div className="section-heading"><h2>可访问的组织</h2><button onClick={() => void action('refresh')} disabled={busy !== null}>{busy === 'refresh' ? '正在刷新…' : '刷新组织'}</button></div>
               <p className="muted">来自当前会话授权范围。切换组织后将重新读取该组织的角色目录。</p>
@@ -134,7 +147,7 @@ function Roles({ organization, onSignedOut, onPasswordRequired }: { organization
   }, [organization.id, attempt, onSignedOut, onPasswordRequired])
   return <section className="panel" aria-labelledby="roles-title">
     <div className="section-heading"><h2 id="roles-title">{organization.name} · 角色目录</h2><button disabled={loading} onClick={() => { setLoading(true); setError(null); setAttempt((value) => value + 1) }}>刷新角色</button></div>
-    <p className="muted">这是组织可用的内置角色定义，不代表当前账号拥有这些角色或权限。成员分配管理尚未接入。</p>
+    <p className="muted">这是组织可用的内置角色定义，不代表当前账号拥有这些角色或权限。分配和停用成员资格请前往<a href="#/members">组织成员</a>。</p>
     {loading && <Loading>正在读取组织角色…</Loading>}
     <ErrorNotice error={error} id="roles-error" />
     {Boolean(error) && result && <p className="empty-note">刷新失败。下方保留上次成功加载的目录，可能已经过期。</p>}
