@@ -1,0 +1,1 @@
+-- The shared precheck schema uses portable constraints and explicit indexes.
