@@ -3,6 +3,12 @@
     "strict": true,
     "contexts": [
       "m0-04-required"
+    ],
+    "checks": [
+      {
+        "context": "m0-04-required",
+        "app_id": 15368
+      }
     ]
   },
   "enforce_admins": true,
@@ -19,5 +25,5 @@
   "block_creations": false,
   "required_conversation_resolution": true,
   "lock_branch": false,
-  "allow_fork_syncing": true
+  "allow_fork_syncing": false
 }

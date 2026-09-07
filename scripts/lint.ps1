@@ -26,7 +26,7 @@ if ($unformatted.Count -gt 0) {
 }
 
 $syntaxErrors = @()
-foreach ($script in Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter '*.ps1') {
+foreach ($script in Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Filter '*.ps1') {
     $tokens = $null
     $errors = $null
     [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
@@ -37,6 +37,8 @@ foreach ($script in Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter '*.ps
 if ($syntaxErrors.Count -gt 0) {
     throw "PowerShell syntax check failed:`n$($syntaxErrors -join "`n")"
 }
+
+& (Join-Path $PSScriptRoot 'tests/test-m0-04-policy.ps1')
 
 & $actionlint (Join-Path $workspaceRoot '.github\workflows\ci.yml')
 if ($LASTEXITCODE -ne 0) { throw 'GitHub Actions workflow lint failed.' }

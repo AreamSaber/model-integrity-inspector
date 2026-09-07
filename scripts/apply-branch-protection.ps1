@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ci-policy.ps1')
 $workspaceRoot = Split-Path -Parent $PSScriptRoot
 $policyPath = Join-Path $workspaceRoot '.github\branch-protection\main.json'
 
@@ -27,9 +28,7 @@ if ($Branch -notmatch '^[A-Za-z0-9._/-]+$') {
 }
 
 $policy = Get-Content -Raw -Encoding UTF8 -LiteralPath $policyPath | ConvertFrom-Json
-if ($policy.required_status_checks.contexts -notcontains 'm0-04-required') {
-    throw 'Branch protection policy must require m0-04-required.'
-}
+Assert-MIIBranchPolicy -Policy $policy
 if ($Preview) {
     Write-Output "Preview: PUT repos/$Repository/branches/$Branch/protection"
     $policy | ConvertTo-Json -Depth 8
@@ -44,7 +43,7 @@ if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI is not authenticated.' }
 if ($LASTEXITCODE -ne 0) { throw 'Applying branch protection failed.' }
 
 $applied = & $gh.Source api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "repos/$Repository/branches/$Branch/protection"
-if ($LASTEXITCODE -ne 0 -or $applied -notmatch 'm0-04-required') {
-    throw 'Branch protection verification failed.'
-}
+if ($LASTEXITCODE -ne 0) { throw 'Reading applied branch protection failed.' }
+$appliedPolicy = ($applied | Out-String) | ConvertFrom-Json -ErrorAction Stop
+Assert-MIIBranchPolicy -Policy $appliedPolicy -Applied
 Write-Output "Branch protection applied and verified: $Repository/$Branch"
