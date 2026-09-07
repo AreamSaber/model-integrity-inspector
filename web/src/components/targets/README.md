@@ -16,7 +16,8 @@ Provider and model options come from `/providers` and `/model-profiles`, with
 explicit load-more controls. No mock catalog entries or client-side current-page
 search are presented as full data. Catalog loading failure is explicit; creating
 an unassociated target with a manually supplied model is permitted by the API.
-Provider/model-profile CRUD is outside this page's implementation.
+Provider/model-profile CRUD is available in the separate supplier/model management
+navigation entries; this target form only selects existing catalog records.
 
 All IDs remain decimal strings. Versions are positive integers. The read DTO
 rejects unexpected auth/header/ciphertext/fingerprint fields and validates the

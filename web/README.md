@@ -57,6 +57,20 @@ Do not disable the server's Origin/CSRF checks to make development requests pass
   preserve filters across cursor paging, and reset the cursor on filter changes.
   Saving/deleting restores focus and scroll to the list heading.
   See `src/components/targets/README.md` for the target boundary details.
+- Organization-scoped provider and model-profile management at `#/providers` and
+  `#/model-profiles`: actual server `q` search/cursor paging, separate full detail
+  reads, create, GET-before-edit/delete, versioned updates and name-confirmed
+  deletion. Effective `catalog.write` is read on entry and before each mutation;
+  missing/failed grants keep the page read-only. Associated-record protection is
+  explained without pretending to know reference counts or cascading deletes.
+  Model summaries never invent capability fields absent from the list response.
+  Forms use real provider options with explicit paging/search and fetch the
+  currently associated provider separately when needed. Capabilities, public
+  limits and tokenizer quality are directory declarations, not trusted runtime
+  artifacts. Prices use exact integer micro-dollar conversion, including the
+  safe-integer maximum; null remains unknown and differs from a configured zero.
+  Unknown write responses stop retries until the user returns to re-read the
+  directory. See `src/components/catalog/README.md` for contract boundaries.
 - Explicit target prechecks, with cost acknowledgement and a maximum three
   upstream requests. POST uses one in-memory cryptographic idempotency key per
   logical action; uncertain results offer manual same-key retry, never automatic
@@ -132,9 +146,10 @@ Saving a target never makes an upstream call or reports simulated precheck succe
 
 The standalone Run list, reports, baselines, rules, audit and system administration routes remain
 explicitly marked “尚未接入”. Overview statistics are not implemented and are not
-rendered as zero. Provider/model-profile CRUD and pagination on the legacy
-read-only role page are not yet implemented in the UI (member grant forms do
-load the full role catalog).
+rendered as zero. Pagination on the legacy read-only role page is not yet
+implemented in the UI (member grant forms do load the full role catalog).
+Provider/model-profile management is implemented against the real API client;
+its real-Go/browser mutation integration remains a separate pending check.
 TLS verification cannot be disabled, and client URL
 checks never substitute for server-side SSRF/DNS/network controls.
 Logout ends the current session; password change invalidates every session.
@@ -147,7 +162,7 @@ incur upstream charges only after their explicit user confirmations. Run draft
 and recovery state is in-memory and is not restored after a full page reload;
 do not recreate an uncertain submission by opening another configuration.
 
-The current checkpoint has 151 tests, including 35 Run request/DTO cases,
+The current checkpoint has 181 tests, including 30 catalog and 35 Run request/DTO cases,
 24 management cases and 20 precheck/filter cases. Root's real-Go browser smoke
 has also verified user/member reads; broader management mutation and Run browser
 integration remain separate checks. Controlled-network tests do not replace them.

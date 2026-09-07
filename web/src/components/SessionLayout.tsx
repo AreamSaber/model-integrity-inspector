@@ -6,10 +6,13 @@ import { TargetsPage } from './targets/TargetsPage'
 import { UsersPage } from './management/UsersPage'
 import { OrganizationsPage } from './management/OrganizationsPage'
 import { MembersPage } from './management/MembersPage'
+import { CatalogPage } from './catalog/CatalogPage'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
   ['targets', '目标与模型档案', '检测'],
+  ['providers', '供应商管理', '管理'],
+  ['model-profiles', '模型档案管理', '管理'],
   ['runs', '检测任务', '检测'],
   ['reports', '结果与报告', '检测'],
   ['baselines', '可信基线', '治理'],
@@ -96,6 +99,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
         <ErrorNotice error={error} id="workspace-error" />
         {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
+          route === 'providers' || route === 'model-profiles' ? (organization ? <CatalogPage key={`${organization.id}-${route}`} kind={route} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理目录档案。</p></section>) :
           route === 'account' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> :
           route === 'users' ? <UsersPage {...management} /> :
           route === 'organization-management' ? <OrganizationsPage {...management} onChanged={(org) => {
