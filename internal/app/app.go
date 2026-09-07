@@ -14,6 +14,7 @@ import (
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
+	"model-integrity-inspector.local/mii/internal/integrity/target"
 	webui "model-integrity-inspector.local/mii/web"
 )
 
@@ -90,7 +91,15 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Frontend: webui.Handler()})
+		secretService, err := secret.NewService(store, key)
+		if err != nil {
+			return nil, err
+		}
+		targets, err := target.NewService(target.Config{Store: store, Secrets: secretService})
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}

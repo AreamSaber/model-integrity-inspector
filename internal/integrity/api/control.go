@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -23,6 +22,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
+	"model-integrity-inspector.local/mii/internal/integrity/target"
 )
 
 const sessionCookie = "mii_session"
@@ -39,6 +39,7 @@ type ControlConfig struct {
 	Frontend              http.Handler
 	Readiness             func(context.Context) bool
 	CursorSigner          CursorSigner
+	Targets               *target.Service
 }
 
 type control struct {
@@ -80,8 +81,10 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	mux.HandleFunc("GET /api/v1/auth/me", c.me)
 	mux.HandleFunc("POST /api/v1/auth/logout", c.logout)
 	mux.HandleFunc("POST /api/v1/auth/change-password", c.changePassword)
-	mux.HandleFunc("GET /api/v1/roles", c.roles)
-	mux.HandleFunc("GET /api/v1/organizations", c.organizations)
+	c.registerManagementRoutes(mux)
+	if cfg.Targets != nil {
+		c.registerTargetRoutes(mux)
+	}
 	mux.HandleFunc("GET /api/v1/system/version", c.systemVersion)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") && cfg.Frontend != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
@@ -212,14 +215,13 @@ func (c *control) error(w http.ResponseWriter, r *http.Request, err error) {
 
 func (c *control) decode(w http.ResponseWriter, r *http.Request, out any) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
+	if err != nil || mediaType != "application/json" || r.URL.RawQuery != "" {
 		c.failure(w, r, 400, "MI_INVALID_REQUEST")
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			c.failure(w, r, 413, "MI_INVALID_REQUEST")
@@ -228,8 +230,7 @@ func (c *control) decode(w http.ResponseWriter, r *http.Request, out any) bool {
 		}
 		return false
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if err := strictJSON(raw, out); err != nil {
 		c.failure(w, r, 400, "MI_INVALID_REQUEST")
 		return false
 	}
@@ -361,40 +362,6 @@ func (c *control) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	c.setCookie(w, "", time.Time{}, -1)
 	c.success(w, r, 200, map[string]bool{"ok": true})
-}
-func (c *control) roles(w http.ResponseWriter, r *http.Request) {
-	orgID, err := strconv.ParseInt(r.Header.Get("X-Organization-ID"), 10, 64)
-	if err != nil || orgID <= 0 || strconv.FormatInt(orgID, 10) != r.Header.Get("X-Organization-ID") {
-		c.failure(w, r, 400, "MI_INVALID_REQUEST")
-		return
-	}
-	p, err := c.cfg.Identity.Principal(r.Context(), token(r), orgID)
-	if err != nil {
-		c.error(w, r, err)
-		return
-	}
-	if err := p.Authorize("member.read"); err != nil {
-		c.error(w, r, err)
-		return
-	}
-	items := make([]map[string]any, 0, 5)
-	roles := identity.BuiltinPermissions()
-	for _, name := range []string{"admin", "operator", "auditor", "developer", "viewer"} {
-		items = append(items, map[string]any{"name": name, "permissions": roles[name]})
-	}
-	c.success(w, r, 200, map[string]any{"items": items, "next_cursor": nil})
-}
-func (c *control) organizations(w http.ResponseWriter, r *http.Request) {
-	material, err := c.cfg.Identity.Current(r.Context(), token(r))
-	if err != nil {
-		c.error(w, r, err)
-		return
-	}
-	items := make([]map[string]any, 0, len(material.Organizations))
-	for _, org := range material.Organizations {
-		items = append(items, organizationDTO(org))
-	}
-	c.success(w, r, 200, map[string]any{"items": items, "next_cursor": nil})
 }
 func (c *control) systemVersion(w http.ResponseWriter, r *http.Request) {
 	if _, err := c.cfg.Identity.Current(r.Context(), token(r)); err != nil {

@@ -9,7 +9,8 @@
 - 会话使用 HttpOnly/Secure/SameSite=Strict Cookie。仅显式 loopback 开发模式可使用非 Secure；浏览器不保存密码/Key/session 到 localStorage。认证写请求校验 X-CSRF-Token 与同源 Origin；匿名登录/初始化同样检查 Origin。跨站请求不提供宽泛 CORS。
 - 首次初始化还需引导授权：远程/HTTPS 部署要求 `X-Setup-Token` 与独立环境变量中的一次性引导令牌匹配（至少 32 字符）；仅明确的 loopback HTTP 模式允许真实 loopback 客户端不带令牌。`X-Forwarded-For` 不用于放宽此规则。初始化成功后该写入口永久关闭；令牌不存入数据库或浏览器持久存储。
 - 业务组织通过 X-Organization-ID 明确选择，后端必须核验成员权限；系统管理员跨组织操作须单独授权并审计理由。成员接口路径组织与权限绑定；不存在/跨租户对象统一 404，不回显它的元数据。
-- 列表使用 limit（默认 25、最大 100）和 opaque cursor；默认 created_at/id 稳定倒序；下一页游标绑定组织/过滤条件，非法或换组织游标返回 400。列表不含正文、Secret 密文或大 JSON。
+- 列表使用 limit（默认 25、最大 100）和 opaque cursor；管理目录及目标列表使用唯一ID稳定升序，运行历史将使用created_at/id稳定倒序。下一页游标签名并绑定用户或组织、资源和过滤条件，非法或换范围游标返回400。列表不含正文、Secret密文或大JSON。
+- 写请求使用精确大小写的JSON字段；拒绝重复字段（含嵌套对象）、未知字段、重复文档、无效UTF-8及超过32层的嵌套，正文上限64KiB。不可空字段显式null拒绝；PATCH通过省略字段表示不变。已实现管理与目标接口均使用此解码边界。
 - 乐观锁更新携带 version；冲突 409，客户端重新拉取。写请求有最大体积限制，未知字段拒绝（additionalProperties=false）；模板参数、Header 和 Endpoint 仍须领域层校验。
 - Run 创建/预检/报告/回放/备份返回 202，后台由数据库 Job 执行。预检已增加 GET 读取结果；不在 Handler 同步等待上游。
 - SSE 使用带同源 Cookie 和组织 Header 的 fetch 流；Last-Event-ID 仅携带事件游标。重连可先收到当前快照，客户端按版本丢弃旧事件，再 GET 最终状态/冻结结果；不依赖浏览器 EventSource 传自定义 Header。事件不含正文和凭证。

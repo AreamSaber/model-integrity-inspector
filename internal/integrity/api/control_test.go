@@ -20,6 +20,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
+	"model-integrity-inspector.local/mii/internal/integrity/target"
 )
 
 const controlPassword = "synthetic-control-password-42"
@@ -90,6 +91,14 @@ func newControlFixture(t *testing.T, change func(*ControlConfig)) controlFixture
 		t.Fatal(err)
 	}
 	cfg := ControlConfig{Identity: service, Store: db, PublicOrigin: localOrigin, AllowInsecureLoopback: true, CursorSigner: key, Readiness: func(context.Context) bool { return true }}
+	secretService, err := secret.NewService(db, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Targets, err = target.NewService(target.Config{Store: db, Secrets: secretService})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if change != nil {
 		change(&cfg)
 	}
