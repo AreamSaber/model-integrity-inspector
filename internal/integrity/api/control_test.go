@@ -89,7 +89,7 @@ func newControlFixture(t *testing.T, change func(*ControlConfig)) controlFixture
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := ControlConfig{Identity: service, Store: db, PublicOrigin: localOrigin, AllowInsecureLoopback: true, Readiness: func(context.Context) bool { return true }}
+	cfg := ControlConfig{Identity: service, Store: db, PublicOrigin: localOrigin, AllowInsecureLoopback: true, CursorSigner: key, Readiness: func(context.Context) bool { return true }}
 	if change != nil {
 		change(&cfg)
 	}

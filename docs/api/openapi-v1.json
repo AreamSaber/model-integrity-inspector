@@ -132,7 +132,20 @@
         "operationId": "initialize",
         "summary": "initialize",
         "security": [],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-Setup-Token",
+            "in": "header",
+            "required": false,
+            "description": "Required for remote/HTTPS initialization; matches an operator-provided bootstrap environment secret. Only explicit loopback HTTP from an actual loopback peer may omit it. Never persisted or logged.",
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 256,
+              "writeOnly": true
+            }
+          }
+        ],
         "responses": {
           "201": {
             "description": "成功；只包含授权且脱敏的数据。",
@@ -10479,6 +10492,14 @@
           "system_admin": {
             "type": "boolean"
           },
+          "must_change_password": {
+            "type": "boolean",
+            "description": "Temporary credentials permit only current-session lookup, logout and password change until successfully replaced."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -10487,7 +10508,9 @@
         "required": [
           "id",
           "username",
-          "status"
+          "status",
+          "must_change_password",
+          "version"
         ]
       },
       "UserCreate": {
@@ -10559,6 +10582,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 180
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [

@@ -7,6 +7,7 @@
 - 前缀 /api/v1；所有业务 ID 使用十进制字符串（数据库仍为 int64，避免 JS 精度丢失）。UTC RFC3339 时间；金额为整数微单位，单价未知/风险维度缺失使用 null，不使用 0 冒充已知。
 - JSON 成功 envelope 为 data + request_id；错误为 error{code,message,details} + request_id。详情只可包含 field/retry_after_seconds/reason 分类，不回显凭证、完整 Endpoint query 或上游原始正文。
 - 会话使用 HttpOnly/Secure/SameSite=Strict Cookie。仅显式 loopback 开发模式可使用非 Secure；浏览器不保存密码/Key/session 到 localStorage。认证写请求校验 X-CSRF-Token 与同源 Origin；匿名登录/初始化同样检查 Origin。跨站请求不提供宽泛 CORS。
+- 首次初始化还需引导授权：远程/HTTPS 部署要求 `X-Setup-Token` 与独立环境变量中的一次性引导令牌匹配（至少 32 字符）；仅明确的 loopback HTTP 模式允许真实 loopback 客户端不带令牌。`X-Forwarded-For` 不用于放宽此规则。初始化成功后该写入口永久关闭；令牌不存入数据库或浏览器持久存储。
 - 业务组织通过 X-Organization-ID 明确选择，后端必须核验成员权限；系统管理员跨组织操作须单独授权并审计理由。成员接口路径组织与权限绑定；不存在/跨租户对象统一 404，不回显它的元数据。
 - 列表使用 limit（默认 25、最大 100）和 opaque cursor；默认 created_at/id 稳定倒序；下一页游标绑定组织/过滤条件，非法或换组织游标返回 400。列表不含正文、Secret 密文或大 JSON。
 - 乐观锁更新携带 version；冲突 409，客户端重新拉取。写请求有最大体积限制，未知字段拒绝（additionalProperties=false）；模板参数、Header 和 Endpoint 仍须领域层校验。
@@ -25,4 +26,3 @@
 运行 .tools/go/bin/go test ./tests/contracts 检查 77 项追踪完整性、路径/参数/引用/敏感字段和原型覆盖。这是仓库语义回归，不替代完整 OpenAPI 规范校验、真实 API 契约测试或 E2E。实现每组 API 后，应补上实际请求/权限/失败路径测试，将 x-development-status 和台账据实更新；未实现接口不得返回样例成功数据。
 
 正式 schema/接口变更与客户端同时提交；不默默缩减原计划。P1 reanalyze、Webhook、OIDC、PDF/CSV 不作为当前 API 已完成项。
-

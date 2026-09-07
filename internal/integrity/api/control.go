@@ -38,6 +38,7 @@ type ControlConfig struct {
 	SetupToken            string `json:"-"`
 	Frontend              http.Handler
 	Readiness             func(context.Context) bool
+	CursorSigner          CursorSigner
 }
 
 type control struct {
@@ -146,6 +147,17 @@ func (c *control) middleware(next http.Handler) http.Handler {
 				c.error(w, r, identity.ErrSetupRequired)
 				return
 			}
+			if r.URL.Path != "/api/v1/auth/login" && r.URL.Path != "/api/v1/auth/me" && r.URL.Path != "/api/v1/auth/logout" && r.URL.Path != "/api/v1/auth/change-password" && token(r) != "" {
+				material, err := c.cfg.Identity.Current(r.Context(), token(r))
+				if err != nil {
+					c.error(w, r, err)
+					return
+				}
+				if material.User.MustChangePassword {
+					c.error(w, r, identity.ErrPasswordChangeRequired)
+					return
+				}
+			}
 		}
 		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/setup/initialize" || r.URL.Path == "/api/v1/auth/change-password" {
 			if wait := c.limiter.check(requestIP(r)); wait > 0 {
@@ -191,6 +203,9 @@ func (c *control) error(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, identity.ErrPermission):
 		status = 403
 		code = "MI_PERMISSION_DENIED"
+	case errors.Is(err, identity.ErrPasswordChangeRequired):
+		status = 403
+		code = "MI_PASSWORD_CHANGE_REQUIRED"
 	}
 	c.failure(w, r, status, code)
 }
@@ -284,10 +299,10 @@ func sessionDTO(value identity.SessionMaterial) map[string]any {
 	for _, org := range value.Organizations {
 		orgs = append(orgs, organizationDTO(org))
 	}
-	return map[string]any{"user": map[string]any{"id": strconv.FormatInt(value.User.ID, 10), "username": value.User.Username, "status": value.User.Status, "system_admin": value.User.IsSystemAdmin, "created_at": value.User.CreatedAt}, "organizations": orgs, "csrf_token": value.CSRFToken, "expires_at": value.ExpiresAt}
+	return map[string]any{"user": map[string]any{"id": strconv.FormatInt(value.User.ID, 10), "username": value.User.Username, "display_name": value.User.DisplayName, "status": value.User.Status, "system_admin": value.User.IsSystemAdmin, "must_change_password": value.User.MustChangePassword, "version": value.User.Version, "created_at": value.User.CreatedAt}, "organizations": orgs, "csrf_token": value.CSRFToken, "expires_at": value.ExpiresAt}
 }
 func organizationDTO(org repository.Organization) map[string]any {
-	return map[string]any{"id": strconv.FormatInt(org.ID, 10), "name": org.Name, "timezone": org.Timezone, "status": org.Status}
+	return map[string]any{"id": strconv.FormatInt(org.ID, 10), "name": org.Name, "timezone": org.Timezone, "status": org.Status, "version": org.Version, "full_response_retention_days": org.FullResponseRetentionDays}
 }
 func (c *control) setCookie(w http.ResponseWriter, value string, expires time.Time, maxAge int) {
 	// #nosec G124 -- Secure is false only for explicitly enabled literal-loopback HTTP; constructor and HTTP regression tests enforce this boundary.
