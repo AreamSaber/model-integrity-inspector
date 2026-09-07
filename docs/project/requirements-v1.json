@@ -15,10 +15,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-001",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/identity/service.go","internal/integrity/repository/identity.go","internal/integrity/repository/bootstrap_bundles.go","web/src/components/AuthForms.tsx"],
+      "tests": ["internal/identity/service_test.go","internal/integrity/repository/bootstrap_bundles_test.go","internal/app/pipeline_test.go","web/src/App.test.tsx"],
+      "notes": "一次性初始化、首组织/管理员、系统配置和开发包原子登记已实现；重入/审计失败回滚及实际应用双库有证据，完整干净部署与初始化浏览器统一验收仍待执行。开发进度回填，不代表M7验收或正式批准。",
       "goal_included": true
     },
     {
@@ -34,10 +34,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-002",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/identity/service.go","internal/identity/password.go","internal/integrity/api/control.go","web/src/components/AuthForms.tsx"],
+      "tests": ["internal/identity/service_test.go","internal/identity/password_test.go","internal/integrity/api/control_test.go","web/src/App.test.tsx"],
+      "notes": "本地登录/当前会话退出、CSRF、会话到期、改密撤销全部会话、账号锁定已实现并有双库/浏览器证据；无需改密的独立退出所有会话入口及完整会话管理交互仍待补齐。正式审核延期，不把改密失效等同完整会话管理。",
       "goal_included": true
     },
     {
@@ -53,10 +53,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-003",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/identity/management.go","internal/identity/permissions.go","internal/integrity/api/identity_management.go","web/src/components/management/UsersPage.tsx","web/src/components/management/OrganizationsPage.tsx","web/src/components/management/MembersPage.tsx"],
+      "tests": ["internal/identity/management_test.go","internal/integrity/repository/identity_management_test.go","internal/integrity/api/identity_management_test.go","web/src/management.test.tsx"],
+      "notes": "用户/组织/成员及冻结内置角色、显式权限管理已接真实服务/API/页面；双库CAS、最后管理员、撤权/审计回滚及组件有回归。全管理异常状态浏览器/可访问性统一验收尚未完成；不额外声称已实现自定义角色编辑。",
       "goal_included": true
     },
     {
@@ -72,10 +72,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-004",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/catalog/service.go","internal/integrity/repository/catalog.go","internal/integrity/api/catalog.go","web/src/components/catalog/CatalogPage.tsx"],
+      "tests": ["internal/integrity/repository/catalog_test.go","internal/integrity/api/catalog_test.go","web/src/catalog-api.test.ts","web/src/catalog.test.tsx"],
+      "notes": "本地供应商/模型档案CRUD、引用约束、版本CAS和组织权限已实现并与目标关联；双库与前端组件有证据。完整目录浏览器异常流程尚待统一验证；声明能力/价格/tokenizer元数据不作为真实模型证据。",
       "goal_included": true
     },
     {
@@ -93,10 +93,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-005",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/repository/job_queue.go","internal/integrity/worker/runner.go","internal/integrity/worker/run.go"],
+      "tests": ["internal/integrity/repository/job_queue_test.go","internal/integrity/worker/runner_test.go","internal/integrity/worker/run_cancellation_test.go","internal/integrity/worker/maintenance_test.go"],
+      "notes": "数据库队列/真实Worker、租约fencing、失租/停机/取消、保守故障结算与草稿TTL维护已实现并有实际SQLite/PG证据；完整任务/证据/报告生命周期清理仍未完成，Runner仍单作业，不宣称100并发或生产恢复容量达标。",
       "goal_included": true
     },
     {
@@ -113,10 +113,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-006",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/repository/migrate.go","migrations/migrations.go","internal/app/app.go","internal/integrity/api/control.go"],
+      "tests": ["internal/integrity/repository/store_test.go","internal/integrity/repository/migrate_parser_test.go","internal/app/app_test.go","internal/integrity/api/control_test.go"],
+      "notes": "真实迁移/校验和/版本检查、health/ready与DB/审计尾链/Worker就绪已实现并有双库及故障回归；授权运行状态页#/system和完整监控/运维回执尚未实现，公开readiness不替代管理页。",
       "goal_included": true
     },
     {
@@ -132,10 +132,10 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-007",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": ["Dockerfile"],
+      "tests": ["tests/contracts/distribution_test.go"],
+      "notes": "自身多阶段镜像已存在，c560963 CI实际镜像构建、标签、SBOM和扫描成功；Compose目录当前只有说明，实际清单/私有卷权限/干净环境启动及完整交付仍未实现，不能据镜像成功关闭本需求。",
       "goal_included": true
     },
     {
@@ -1576,15 +1576,22 @@
       "code": [
         "tests/replay/capture.go",
         "tests/replay/replay.go",
-        "tests/replay/transport.go"
+        "tests/replay/transport.go",
+        "tests/replay/cmd/replay/main.go",
+        "tests/replay/localfile/file.go",
+        "tests/replay/localfile/trust.go"
       ],
       "tests": [
         "tests/replay/replay_test.go",
         "tests/replay/boundaries_test.go",
         "tests/replay/isolation_test.go",
-        "tests/replay/diagnostics_test.go"
+        "tests/replay/diagnostics_test.go",
+        "tests/replay/capturefixture/pipeline_test.go",
+        "tests/replay/capturefixture/timing_test.go",
+        "tests/replay/cmd/replay/main_test.go",
+        "tests/replay/localfile/file_test.go"
       ],
-      "notes": "B1开发离线核心已验证签名规范输入、真实协议重解析、独立Token计数、参数运行时及S2诊断保护；当前用例是合成组件测试，不是实际Worker捕获、独立验收集、准确率或发布准入。真实捕获和CLI继续开发。",
+      "notes": "B1核心、实际Worker/TLS最终提交后的双库捕获和私有本地文件CLI已验证：原发布/replay逐字节一致，失败提交不得封存，真实PG预约锁等待复现并修正不同计时起点的错误校验。79afdec真实源仍只在内存，0266102 CLI使用独立合成源；两者文件导出接线、OS级禁网、隔离验收集、准确率与发布准入均未完成，不以开发签名替代正式QA回执。",
       "goal_included": true
     },
     {
