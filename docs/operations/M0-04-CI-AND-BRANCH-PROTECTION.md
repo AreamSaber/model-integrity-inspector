@@ -24,10 +24,10 @@
 
 ## 应用分支保护
 
-首次 CI 成功后，由拥有仓库管理权限的人员执行：
+首次 CI 成功且仓库套餐支持分支保护后，由拥有仓库管理权限的人员执行：
 
 ```powershell
-./scripts/apply-branch-protection.ps1 -Repository OWNER/REPOSITORY
+./scripts/apply-branch-protection.ps1 -Repository AreamSaber/model-integrity-inspector
 ```
 
 脚本把 `.github/branch-protection/main.json` 应用到 `main`，随后读取远端配置并确认 `m0-04-required` 已成为必需检查。策略同时要求分支为最新、至少一次批准、最后一次推送后重新批准、解决全部对话，并禁止强推和删除。
@@ -35,9 +35,13 @@
 仅预览请求而不修改远端：
 
 ```powershell
-./scripts/apply-branch-protection.ps1 -Repository OWNER/REPOSITORY -Preview
+./scripts/apply-branch-protection.ps1 -Repository AreamSaber/model-integrity-inspector -Preview
 ```
 
 ## 当前外部前置条件
 
-当前本地仓库没有 `origin`，环境也没有 GitHub CLI 或容器运行时。仓库绑定 GitHub 后，必须取得一次真实 CI 成功记录并应用/回读分支保护，M0-04 才能提交最终审核。
+2026-09-07 已创建私有仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector)，本地 `origin` 已指向该仓库，`main` 已推送。GitHub CLI 已登录 `AreamSaber`，远端确认账号具有 `ADMIN` 权限。
+
+GitHub 分支保护 API 当前返回 HTTP 403：`Upgrade to GitHub Pro or make this repository public to enable this feature.` 因此缺少的是私有仓库的套餐能力，分支保护尚未应用。仓库保持私有；启用支持该功能的套餐后，再运行上述脚本并回读验证。CI 中的聚合检查失败不能代替 GitHub 服务端的强制合并限制。
+
+Docker 镜像构建、OCI 标签验证、镜像 SBOM 和 Trivy 扫描已在 GitHub 托管 runner 上实际执行；本地未安装 Docker 不再阻塞取得这些验收证据。CI 运行证据见 `docs/reviews/M0-04-review.md`。M0-04 提交最终审核前，仍须完成 M0-03 正式批准、CI 验收以及分支保护应用和回读。
