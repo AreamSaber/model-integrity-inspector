@@ -21,6 +21,8 @@ COPY migrations/ ./migrations/
 COPY tests/ ./tests/
 COPY docs/ ./docs/
 COPY *.md ./
+COPY Dockerfile ./
+COPY scripts/package.ps1 ./scripts/package.ps1
 COPY web/*.go ./web/
 COPY --from=web /src/web/dist ./web/dist/
 RUN go test ./...
@@ -41,6 +43,7 @@ LABEL org.opencontainers.image.title="Model Integrity Inspector" \
       org.opencontainers.image.source="${SOURCE}"
 COPY --from=backend /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=backend /out/mii /mii
+COPY --from=backend /src/internal/integrity/tokenizer/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 USER 65532:65532
 ENV APP_ROLE=all MII_ADDR=0.0.0.0:8080 MII_ALLOW_INSECURE_LOOPBACK=false
 EXPOSE 8080

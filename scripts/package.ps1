@@ -64,7 +64,10 @@ try {
     $webArchive = Join-Path $outputRoot "mii-web_${version}_${shortCommit}.zip"
     Compress-Archive -Path (Join-Path $webRoot 'dist\*') -DestinationPath $webArchive -Force
 
-    $artifacts = @($binaryPath, $webArchive) | ForEach-Object {
+    $noticePath = Join-Path $outputRoot "$artifactStem.THIRD_PARTY_NOTICES.md"
+    Copy-Item -LiteralPath (Join-Path $workspaceRoot 'internal/integrity/tokenizer/THIRD_PARTY_NOTICES.md') -Destination $noticePath
+
+    $artifacts = @($binaryPath, $webArchive, $noticePath) | ForEach-Object {
         [ordered]@{
             file = Split-Path -Leaf $_
             sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
@@ -85,7 +88,7 @@ try {
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
 
     $checksumPath = Join-Path $outputRoot "$artifactStem.SHA256SUMS"
-    $checksumTargets = @($binaryPath, $webArchive, $manifestPath)
+    $checksumTargets = @($binaryPath, $webArchive, $noticePath, $manifestPath)
     $checksumLines = @($checksumTargets | ForEach-Object {
         "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant())  $(Split-Path -Leaf $_)"
     })
