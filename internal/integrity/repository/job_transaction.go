@@ -186,6 +186,9 @@ func queueTime(tx *gorm.DB, driver string) (time.Time, error) {
 }
 
 func queueError(err error) error {
+	if known := executionKnownError(err); known != nil {
+		return known
+	}
 	for _, known := range []error{ErrJobInvalid, ErrJobLeaseLost, ErrConsumerActive, ErrConsumerLost, ErrTransactionClosed} {
 		if errors.Is(err, known) {
 			return known

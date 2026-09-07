@@ -60,6 +60,9 @@ const userSummaryColumns = "id, username, display_name, status, is_system_admin,
 const orgSummaryColumns = "id, name, timezone, status, full_response_retention_days, version, created_at, updated_at"
 
 func managementError(err error) error {
+	if known := executionKnownError(err); known != nil {
+		return known
+	}
 	for _, known := range []error{ErrManagementPermission, ErrManagementSession, ErrPasswordChangeRequired, ErrLastAdministrator, ErrSelfLockout} {
 		if errors.Is(err, known) {
 			return known
