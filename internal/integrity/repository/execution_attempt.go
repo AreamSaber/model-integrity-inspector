@@ -271,16 +271,22 @@ func (t *Tenant) CheckExecution(runID int64) error {
 	return executionError(tx.executionTargetCurrent(snapshot.Plan.Target))
 }
 
-var outcomeCodes = map[string]bool{"": true, "MI_NETWORK_TEMPORARY": true, "MI_CONNECTION_RESET": true, "MI_TIMEOUT": true, "MI_RATE_LIMITED": true, "MI_SERVICE_UNAVAILABLE": true, "MI_AUTH_FAILED": true, "MI_MODEL_NOT_FOUND": true, "MI_PROTOCOL_UNSUPPORTED": true, "MI_CLIENT_SAFETY_LIMIT": true, "MI_SAFETY_REFUSAL": true, "MI_EXECUTION_CANCELLED": true, "MI_EXECUTION_TARGET_STALE": true, "MI_UNCERTAIN_ATTEMPT": true, "MI_EXECUTION_BUDGET_EXCEEDED": true}
+var outcomeCodes = map[string]bool{"": true, "MI_NETWORK_TEMPORARY": true, "MI_CONNECTION_RESET": true, "MI_TIMEOUT": true, "MI_RATE_LIMITED": true, "MI_SERVICE_UNAVAILABLE": true, "MI_AUTH_FAILED": true, "MI_MODEL_NOT_FOUND": true, "MI_PROTOCOL_UNSUPPORTED": true, "MI_CLIENT_SAFETY_LIMIT": true, "MI_EVIDENCE_LIMIT": true, "MI_SAFETY_REFUSAL": true, "MI_EXECUTION_CANCELLED": true, "MI_EXECUTION_TARGET_STALE": true, "MI_UNCERTAIN_ATTEMPT": true, "MI_EXECUTION_BUDGET_EXCEEDED": true}
 
 func validAttemptOutcome(outcome domain.AttemptOutcome) bool {
+	if outcome.TokenizerQuality != "" && outcome.TokenizerQuality != "exact" && outcome.TokenizerQuality != "compatible" && outcome.TokenizerQuality != "heuristic" && outcome.TokenizerQuality != "unavailable" {
+		return false
+	}
+	if len(outcome.TokenizerID) > 128 {
+		return false
+	}
 	switch outcome.Validity {
 	case "VALID", "VALID_WITH_WARNING", "INVALID_RETRYABLE", "INVALID_PROTOCOL", "INVALID_SAFETY_LIMIT", "NOT_APPLICABLE":
 	default:
 		return false
 	}
 	valid := outcome.Validity == "VALID" || outcome.Validity == "VALID_WITH_WARNING"
-	if !outcomeCodes[outcome.ErrorCode] || (valid && (outcome.ErrorCode != "" || outcome.HTTPStatus != 200)) || (!valid && outcome.ErrorCode == "") || outcome.HTTPStatus < 0 || outcome.HTTPStatus > 599 || outcome.LocalCompletionTokens < 0 || outcome.LocalCompletionTokens > 1_000_000_000 || outcome.DurationMillis < 0 || outcome.DurationMillis > 86400000 || outcome.RetryAfterSeconds < 0 || outcome.RetryAfterSeconds > 3600 {
+	if !outcomeCodes[outcome.ErrorCode] || (valid && (outcome.ErrorCode != "" || outcome.HTTPStatus != 200)) || (!valid && outcome.ErrorCode == "") || outcome.HTTPStatus < 0 || outcome.HTTPStatus > 599 || outcome.LocalCompletionTokens < 0 || outcome.LocalCompletionTokens > 1_000_000_000 || outcome.DurationMillis < 0 || outcome.DurationMillis > 86400000 || outcome.RetryAfterSeconds < 0 || outcome.RetryAfterSeconds > 86400 {
 		return false
 	}
 	for _, v := range []*int64{outcome.PromptTokens, outcome.CompletionTokens} {
@@ -368,11 +374,24 @@ func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome do
 func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapshot, sample LogicalSampleRecord, plan domain.SamplePlan, attempt AttemptRecord, outcome domain.AttemptOutcome, now time.Time, jitter int, uncertain bool) error {
 	input := plan.EstimatedInputTokens
 	output := outcome.LocalCompletionTokens
+	if outcome.TokenizerQuality == "unavailable" && outcome.CompletionTokens == nil {
+		output = int64(plan.Request.MaxOutputTokens)
+	}
 	if outcome.PromptTokens != nil {
 		input = max(input, *outcome.PromptTokens)
 	}
 	if outcome.CompletionTokens != nil {
 		output = max(output, *outcome.CompletionTokens)
+	}
+	if outcome.CompletionTokens == nil {
+		switch outcome.ErrorCode {
+		case "MI_TIMEOUT", "MI_NETWORK_TEMPORARY", "MI_CONNECTION_RESET", "MI_CLIENT_SAFETY_LIMIT", "MI_EVIDENCE_LIMIT", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE":
+			output = max(output, int64(plan.Request.MaxOutputTokens))
+		case "MI_PROTOCOL_UNSUPPORTED":
+			if outcome.HTTPStatus == 200 {
+				output = max(output, int64(plan.Request.MaxOutputTokens))
+			}
+		}
 	}
 	if uncertain {
 		output = int64(plan.Request.MaxOutputTokens)
@@ -415,7 +434,11 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	if uncertain {
 		status = "UNCERTAIN"
 	}
-	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": outcome.LocalCompletionTokens, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}).Error; err != nil {
+	var localTokens any = outcome.LocalCompletionTokens
+	if outcome.TokenizerQuality == "unavailable" {
+		localTokens = nil
+	}
+	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": localTokens, "tokenizer_id": outcome.TokenizerID, "tokenizer_quality": outcome.TokenizerQuality, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}).Error; err != nil {
 		return err
 	}
 	valid := outcome.Validity == "VALID" || outcome.Validity == "VALID_WITH_WARNING"

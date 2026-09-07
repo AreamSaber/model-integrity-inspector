@@ -45,7 +45,7 @@ func TestExecutionHierarchicalLimitsAcrossRunsTargetsAndOrganizations(t *testing
 					if i > 0 && scope == "global" {
 						authority := tenant.ctx.Value(controlAuthorityKey{}).(controlAuthority)
 						roles := managementFixtureRoles()
-						roles[0].Permissions = append(roles[0].Permissions, "run.create")
+						roles[0].Permissions = append(roles[0].Permissions, "run.create", "run.custom", "run.high-cost")
 						org, err := store.ManageCreateOrganization(tenant.ctx, authority.identity, ManagedOrganizationCreate{Name: fmt.Sprintf("scope-%d", i), Timezone: "UTC", Roles: roles})
 						if err != nil {
 							t.Fatal(err)

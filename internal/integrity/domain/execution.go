@@ -1,6 +1,11 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+)
 
 // ExecutionPlan is immutable S2 execution data, not an HTTP request DTO or log
 // object. Credentials and custom headers have no representation in this type.
@@ -21,6 +26,10 @@ type ExecutionPlan struct {
 	Probes        []ProbePlan      `json:"probes"`
 }
 
+func (ExecutionPlan) String() string               { return "[redacted execution plan]" }
+func (p ExecutionPlan) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, p.String()) }
+func (p ExecutionPlan) LogValue() slog.Value       { return slog.StringValue(p.String()) }
+
 type ExecutionTarget struct {
 	ID                 int64  `json:"id"`
 	Version            int64  `json:"version"`
@@ -30,6 +39,9 @@ type ExecutionTarget struct {
 	Model              string `json:"model"`
 	Protocol           string `json:"protocol"`
 	MaxOutputParameter string `json:"max_output_parameter"`
+	AuthType           string `json:"auth_type"`
+	AuthHeaderName     string `json:"auth_header_name,omitempty"`
+	TimeoutSeconds     int    `json:"timeout_seconds"`
 }
 
 type BundleVersions struct {
@@ -91,6 +103,8 @@ type AttemptOutcome struct {
 	PromptTokens          *int64
 	CompletionTokens      *int64
 	LocalCompletionTokens int64
+	TokenizerID           string
+	TokenizerQuality      string
 	RetryAfterSeconds     int64
 	DurationMillis        int64
 }

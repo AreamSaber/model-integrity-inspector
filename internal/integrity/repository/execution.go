@@ -155,6 +155,12 @@ func validExecutionParameters(request domain.NormalizedRequest) bool {
 // CreateRun freezes the typed plan, target/Secret versions and clamped admin
 // policy in the same authorized transaction as the initial typed plan Job.
 func (t *Tenant) CreateRun(plan domain.ExecutionPlan, policy scheduler.Policy, requestKey string) (RunRecord, error) {
+	if plan.Target.AuthType == "" {
+		plan.Target.AuthType = "bearer"
+	}
+	if plan.Target.TimeoutSeconds == 0 {
+		plan.Target.TimeoutSeconds = 180
+	}
 	plan, limits, err := policy.Apply(plan)
 	if err != nil {
 		return RunRecord{}, err
@@ -166,17 +172,66 @@ func (t *Tenant) CreateRun(plan domain.ExecutionPlan, policy scheduler.Policy, r
 	if err != nil || len(encoded) > 8<<20 {
 		return RunRecord{}, ErrConfiguration
 	}
+	var result RunRecord
+	err = t.controlTenantTransaction("run.create", func(tx *TenantTransaction) error {
+		var operationError error
+		result, operationError = t.createRunInTransaction(tx, plan, limits, encoded, requestKey)
+		return operationError
+	})
+	return result, executionError(err)
+}
+
+// createRunInTransaction also serves estimate confirmation. The caller must
+// already hold the authorized controlTenantTransaction (including draft locks).
+// It never opens a nested transaction or relaxes frozen-plan/target validation.
+func (t *Tenant) createRunInTransaction(tx *TenantTransaction, plan domain.ExecutionPlan, limits domain.ExecutionLimits, encoded []byte, requestKey string) (RunRecord, error) {
+	if tx == nil || tx.closed.Load() {
+		return RunRecord{}, ErrTransactionClosed
+	}
+	if tx.store != t.store || tx.orgID != t.orgID || !validateExecutionPlan(plan) || !precheckRequestKeyPattern.MatchString(requestKey) {
+		return RunRecord{}, ErrConfiguration
+	}
+	canonical, err := json.Marshal(executionSnapshot{Plan: plan, Limits: limits})
+	if err != nil || len(canonical) > 8<<20 || !bytes.Equal(canonical, encoded) {
+		return RunRecord{}, ErrConfiguration
+	}
 	actor, err := t.targetActor()
 	if err != nil {
 		return RunRecord{}, err
 	}
 	var result RunRecord
-	err = t.controlTenantTransaction("run.create", func(tx *TenantTransaction) error {
+	err = func() error {
+		permissions, err := managementPermissions(tx.db, t.orgID, actor)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(permissions, "run.create") {
+			return ErrManagementPermission
+		}
+		if plan.Package == "custom" && !slices.Contains(permissions, "run.custom") {
+			return ErrManagementPermission
+		}
+		highCost := plan.Package == "deep" || plan.Budget.MaxRequests > 60 || plan.Budget.MaxTokens > 50000 || (plan.Budget.MaxCostMicros != nil && *plan.Budget.MaxCostMicros > 2000000)
+		if highCost && !slices.Contains(permissions, "run.high-cost") {
+			return ErrManagementPermission
+		}
 		locked, err := tx.LockTargetForRun(plan.Target.ID, plan.Target.Version)
 		if err != nil {
 			return err
 		}
 		if locked.Secret.ID != plan.Target.SecretID || locked.Secret.Version != plan.Target.SecretVersion || locked.Target.Endpoint != plan.Target.Endpoint || locked.Target.Model != plan.Target.Model || locked.Target.Protocol != plan.Target.Protocol {
+			return ErrExecutionStale
+		}
+		var options struct {
+			TimeoutSeconds int `json:"timeout_seconds"`
+		}
+		if json.Unmarshal([]byte(locked.Target.OptionsJSON), &options) != nil {
+			return ErrConfiguration
+		}
+		if options.TimeoutSeconds == 0 {
+			options.TimeoutSeconds = 180
+		}
+		if locked.Target.AuthType != plan.Target.AuthType || locked.Target.AuthHeaderName != plan.Target.AuthHeaderName || options.TimeoutSeconds != plan.Target.TimeoutSeconds {
 			return ErrExecutionStale
 		}
 		var existing RunRecord
@@ -252,7 +307,7 @@ func (t *Tenant) CreateRun(plan domain.ExecutionPlan, policy scheduler.Policy, r
 			return err
 		}
 		return tx.store.appendAudit(t.ctx, tx.db, t.orgID, auditObject("run.create", "run", id), nil)
-	})
+	}()
 	return result, executionError(err)
 }
 

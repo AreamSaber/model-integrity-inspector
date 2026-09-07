@@ -80,6 +80,7 @@ type LogicalSampleRecord struct {
 	JobID            *int64
 	AttemptCount     int
 	ExecutionOrdinal int
+	FailureCode      string
 }
 
 func (LogicalSampleRecord) TableName() string { return "integrity_logical_samples" }
@@ -103,6 +104,8 @@ type AttemptRecord struct {
 	CompletionTokens      *int64
 	TotalTokens           *int64
 	LocalCompletionTokens *int64
+	TokenizerID           string
+	TokenizerQuality      string
 	DurationMS            *int64 `gorm:"column:duration_ms"`
 	ReservedTokens        int64
 	ReservedCostMicros    int64

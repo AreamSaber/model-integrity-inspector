@@ -21,7 +21,7 @@ func executionFixture(t *testing.T, store *Store, count int) (*Tenant, TargetSta
 	t.Helper()
 	requireMigrate(t, store)
 	input := initialState()
-	input.Roles[0].Permissions = append(input.Roles[0].Permissions, "run.cancel-own", "run.cancel-any", "target.delete", "secret.replace")
+	input.Roles[0].Permissions = append(input.Roles[0].Permissions, "run.cancel-own", "run.cancel-any", "run.custom", "run.high-cost", "target.delete", "secret.replace")
 	initial, err := store.Initialize(testActorContext(t, 0), input)
 	if err != nil {
 		t.Fatal(err)
