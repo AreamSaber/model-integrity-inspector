@@ -110,7 +110,7 @@ func (t *Tenant) EnqueuePrecheck(candidate PrecheckRecord) (PrecheckRecord, erro
 		return PrecheckRecord{}, ErrConfiguration
 	}
 	var result PrecheckRecord
-	err = t.InTransaction(func(tx *TenantTransaction) error {
+	err = t.controlTenantTransaction("target.precheck", func(tx *TenantTransaction) error {
 		locked, err := tx.LockTargetForRun(candidate.TargetID, candidate.TargetVersion)
 		if err != nil {
 			return err
@@ -351,7 +351,7 @@ func (tx *TenantTransaction) precheckTargetCurrent(record PrecheckRecord) error 
 }
 
 func precheckError(err error) error {
-	for _, known := range []error{ErrPrecheckStale, ErrPrecheckExpired, ErrPrecheckBudget, ErrJobCancelled} {
+	for _, known := range []error{ErrPrecheckStale, ErrPrecheckExpired, ErrPrecheckBudget, ErrJobCancelled, ErrManagementSession, ErrManagementPermission, ErrPasswordChangeRequired} {
 		if errors.Is(err, known) {
 			return known
 		}

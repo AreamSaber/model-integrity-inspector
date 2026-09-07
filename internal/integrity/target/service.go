@@ -184,6 +184,9 @@ func view(state repository.TargetState) (View, error) {
 }
 
 func (service *Service) Create(ctx context.Context, orgID int64, input Input, credentials secret.Input) (View, error) {
+	if err := service.store.RequireControlAuthority(ctx, orgID); err != nil {
+		return View{}, err
+	}
 	tenant, err := service.store.WithOrganization(ctx, orgID)
 	if err != nil {
 		return View{}, err
@@ -240,6 +243,9 @@ func (service *Service) List(ctx context.Context, orgID int64, options repositor
 }
 
 func (service *Service) Update(ctx context.Context, orgID, id, expectedVersion int64, input Input, status string) (View, error) {
+	if err := service.store.RequireControlAuthority(ctx, orgID); err != nil {
+		return View{}, err
+	}
 	tenant, err := service.store.WithOrganization(ctx, orgID)
 	if err != nil {
 		return View{}, err
@@ -263,6 +269,9 @@ func (service *Service) Update(ctx context.Context, orgID, id, expectedVersion i
 }
 
 func (service *Service) RotateSecret(ctx context.Context, orgID, id, expectedTargetVersion, expectedSecretVersion int64, credentials secret.Input) (View, error) {
+	if err := service.store.RequireControlAuthority(ctx, orgID); err != nil {
+		return View{}, err
+	}
 	tenant, err := service.store.WithOrganization(ctx, orgID)
 	if err != nil {
 		return View{}, err
@@ -290,6 +299,9 @@ func (service *Service) RotateSecret(ctx context.Context, orgID, id, expectedTar
 }
 
 func (service *Service) Delete(ctx context.Context, orgID, id, expectedVersion int64) error {
+	if err := service.store.RequireControlAuthority(ctx, orgID); err != nil {
+		return err
+	}
 	tenant, err := service.store.WithOrganization(ctx, orgID)
 	if err != nil {
 		return err

@@ -51,7 +51,7 @@ func (c *control) parsePage(r *http.Request, scope string) (Page, error) {
 		}
 	}
 	out.Query = strings.TrimSpace(query.Get("q"))
-	if len(out.Query) > 128 || !utf8.ValidString(out.Query) || strings.ContainsRune(out.Query, 0) {
+	if len(out.Query) > 128 || !utf8.ValidString(out.Query) || strings.ContainsAny(out.Query, "\x00\r\n") {
 		return out, ErrPagination
 	}
 	value := query.Get("cursor")

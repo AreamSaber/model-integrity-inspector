@@ -108,11 +108,20 @@ func eachWorkerDatabase(t *testing.T, test func(*testing.T, workerFixture)) {
 			}
 			ctx := audit.WithActor(t.Context(), audit.Actor{ActorID: 0, ReasonCode: "worker.test"})
 			// #nosec G101 -- synthetic fixture only, not a deployment credential/hash.
-			initial, err := store.Initialize(ctx, repository.Initialization{OrganizationName: "Worker test", Username: "admin", PasswordHash: "synthetic-fixture-not-a-password-hash", AdminRole: "administrator", Roles: []repository.InitialRole{{Name: "administrator", Permissions: []string{"target.read", "target.write"}}}})
+			initial, err := store.Initialize(ctx, repository.Initialization{OrganizationName: "Worker test", Username: "admin", PasswordHash: "synthetic-fixture-not-a-password-hash", AdminRole: "administrator", Roles: []repository.InitialRole{{Name: "administrator", Permissions: []string{"target.read", "target.write", "target.delete", "target.precheck", "secret.replace"}}}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			ctx = audit.WithActor(t.Context(), audit.Actor{ActorID: initial.User.ID, ReasonCode: "worker.test"})
+			now := time.Now().UTC()
+			session := repository.Session{UserID: initial.User.ID, SessionHash: strings.Repeat("a", 64), CSRFHash: strings.Repeat("b", 64), CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+			if err := store.CreateSessionIfPasswordCurrent(ctx, &session, initial.User.PasswordHash, now); err != nil {
+				t.Fatal(err)
+			}
+			ctx, err = store.BindControlAuthority(ctx, session.SessionHash, initial.Organization.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			secrets, err := secret.NewService(store, ring)
 			if err != nil {
 				t.Fatal(err)

@@ -164,7 +164,7 @@ func (t *Tenant) CreateTargetWithSecret(record TargetRecord, credential SecretRe
 	record.ID, record.OrganizationID, record.SecretID, record.Version = id, t.orgID, credential.ID, 1
 	record.CreatedBy, record.UpdatedBy, record.CreatedAt, record.UpdatedAt, record.DeletedAt = actor, actor, now, now, nil
 	credential.CreatedAt, credential.RotatedAt, credential.DeletedAt = now, nil, nil
-	err = t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+	err = t.controlTransaction("target.write", func(tx *gorm.DB) error {
 		if err := t.checkTargetReferences(tx, record); err != nil {
 			return err
 		}
@@ -180,7 +180,7 @@ func (t *Tenant) CreateTargetWithSecret(record TargetRecord, credential SecretRe
 		return t.store.appendAudit(t.ctx, tx, t.orgID, auditObject("target.create", "target", record.ID), nil)
 	})
 	if err != nil {
-		return TargetState{}, persistenceError(err)
+		return TargetState{}, managementError(err)
 	}
 	return TargetState{record, SecretMetadata{credential.ID, 1, secretMask(credential.LastFour), nil}}, nil
 }
@@ -211,7 +211,7 @@ func (t *Tenant) UpdateTarget(id, expectedVersion int64, replacement TargetRecor
 		return TargetState{}, ErrConfiguration
 	}
 	var result TargetState
-	err = t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+	err = t.controlTransaction("target.write", func(tx *gorm.DB) error {
 		current, err := t.lockedTarget(tx, id, expectedVersion)
 		if err != nil {
 			return err
@@ -245,7 +245,7 @@ func (t *Tenant) UpdateTarget(id, expectedVersion int64, replacement TargetRecor
 		return nil
 	})
 	if err != nil {
-		return TargetState{}, persistenceError(err)
+		return TargetState{}, managementError(err)
 	}
 	return result, nil
 }
@@ -260,7 +260,7 @@ func (t *Tenant) ReplaceTargetSecret(id, expectedTargetVersion, expectedSecretVe
 		return TargetState{}, ErrConfiguration
 	}
 	var result TargetState
-	err = t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+	err = t.controlTransaction("secret.replace", func(tx *gorm.DB) error {
 		current, err := t.lockedTarget(tx, id, expectedTargetVersion)
 		if err != nil {
 			return err
@@ -297,7 +297,7 @@ func (t *Tenant) ReplaceTargetSecret(id, expectedTargetVersion, expectedSecretVe
 		return nil
 	})
 	if err != nil {
-		return TargetState{}, persistenceError(err)
+		return TargetState{}, managementError(err)
 	}
 	return result, nil
 }
@@ -310,7 +310,7 @@ func (t *Tenant) DeleteTarget(id, expectedVersion int64) error {
 	if err != nil {
 		return err
 	}
-	return persistenceError(t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+	return t.controlTransaction("target.delete", func(tx *gorm.DB) error {
 		current, err := t.lockedTarget(tx, id, expectedVersion)
 		if err != nil {
 			return err
@@ -365,7 +365,7 @@ func (t *Tenant) DeleteTarget(id, expectedVersion int64) error {
 			return err
 		}
 		return t.store.appendAudit(t.ctx, tx, t.orgID, auditObject("target.delete", "target", id), nil)
-	}))
+	})
 }
 
 // LockTargetForRun joins the run/job transaction's serialization boundary with

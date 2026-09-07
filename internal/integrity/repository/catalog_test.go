@@ -21,6 +21,15 @@ func catalogFixture(t *testing.T, s *Store) (InitializationResult, ManagementAut
 	if err := s.db.Exec("INSERT INTO role_permissions (organization_id,role_id,permission_code) SELECT organization_id,id,'catalog.write' FROM roles WHERE organization_id=? AND name='admin'", initial.Organization.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	for _, permission := range []string{"target.delete", "secret.replace", "target.precheck"} {
+		if err := s.db.Exec("INSERT INTO permissions (code,description) VALUES (?,'test') ON CONFLICT (code) DO NOTHING", permission).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("INSERT INTO role_permissions (organization_id,role_id,permission_code) SELECT organization_id,id,? FROM roles WHERE organization_id=? AND name='admin'", permission, initial.Organization.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx = bindTargetTestSession(t, s, ctx, auth.SessionID, initial.Organization.ID)
 	return initial, auth, ctx
 }
 func catalogProfileFixture(providerID int64) ModelProfile {
@@ -281,7 +290,7 @@ func TestCatalogPostgresDisableWaitsForReferenceRead(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = other.Close() }()
-		tenant, _ := other.WithOrganization(ctx, orgID)
+		tenant, _ := other.WithOrganization(rebindTargetTestSession(t, other, ctx), orgID)
 		// An uncommitted disable is invisible to an unlocked MVCC read. The
 		// reference operation must block, then reject the committed disabled row.
 		tx := s.db.WithContext(ctx).Begin()

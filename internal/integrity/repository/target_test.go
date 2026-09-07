@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +17,42 @@ import (
 func targetFixture(t *testing.T, store *Store) (InitializationResult, *Tenant) {
 	t.Helper()
 	requireMigrate(t, store)
-	initial := requireInitialize(t, store)
-	tenant, err := store.WithOrganization(testActorContext(t, initial.User.ID), initial.Organization.ID)
+	input := initialState()
+	input.Roles[0].Permissions = append(input.Roles[0].Permissions, "secret.replace", "target.delete", "target.precheck")
+	initial, err := store.Initialize(testActorContext(t, 0), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := managementSession(t, store, initial.User)
+	ctx := bindTargetTestSession(t, store, testActorContext(t, initial.User.ID), auth.SessionID, initial.Organization.ID)
+	tenant, err := store.WithOrganization(ctx, initial.Organization.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return initial, tenant
+}
+
+// Tests obtain exactly the same capability as HTTP from an actual persisted
+// session; there is no production helper that bypasses user/session checks.
+func bindTargetTestSession(t *testing.T, store *Store, ctx context.Context, sessionID, orgID int64) context.Context {
+	t.Helper()
+	var session Session
+	if err := store.db.Where("id=?", sessionID).First(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	bound, err := store.BindControlAuthority(ctx, session.SessionHash, orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound
+}
+func rebindTargetTestSession(t *testing.T, store *Store, ctx context.Context) context.Context {
+	t.Helper()
+	value, ok := ctx.Value(controlAuthorityKey{}).(controlAuthority)
+	if !ok {
+		t.Fatal("test requires real control authority")
+	}
+	return bindTargetTestSession(t, store, ctx, value.identity.SessionID, value.organizationID)
 }
 
 // Structurally valid encrypted fixture; crypto correctness is tested through
@@ -82,10 +113,10 @@ func TestTargetPersistenceLifecycleAndTenantIsolation(t *testing.T) {
 		if _, err := other.GetSecretForWorker(created.Secret.ID, 1); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("cross-org secret: %v", err)
 		}
-		if _, err := other.UpdateTarget(created.Target.ID, 1, targetRecordFixture()); !errors.Is(err, ErrNotFound) {
+		if _, err := other.UpdateTarget(created.Target.ID, 1, targetRecordFixture()); !errors.Is(err, ErrManagementSession) {
 			t.Fatalf("cross-org update: %v", err)
 		}
-		if err := other.DeleteTarget(created.Target.ID, 1); !errors.Is(err, ErrNotFound) {
+		if err := other.DeleteTarget(created.Target.ID, 1); !errors.Is(err, ErrManagementSession) {
 			t.Fatalf("cross-org delete: %v", err)
 		}
 		if _, err := tenant.GetSecretForWorker(created.Secret.ID, 2); !errors.Is(err, ErrNotFound) {
@@ -174,7 +205,7 @@ func TestTargetPersistenceLifecycleAndTenantIsolation(t *testing.T) {
 			t.Fatal("delete retained credential material")
 		}
 		verified, err := tenant.VerifyAuditFull()
-		if err != nil || verified.EventCount != 9 {
+		if err != nil || verified.EventCount != 10 {
 			t.Fatalf("atomic audit sequence count=%d: %v", verified.EventCount, err)
 		}
 	})
@@ -219,7 +250,7 @@ func TestTargetAuditFailureRollsBackEveryMutation(t *testing.T) {
 		}
 		signer.fail.Store(false)
 		verified, err := tenant.VerifyAuditFull()
-		if err != nil || verified.EventCount != 3 {
+		if err != nil || verified.EventCount != 4 {
 			t.Fatal("audit chain modified by failed mutation")
 		}
 	})
@@ -227,14 +258,14 @@ func TestTargetAuditFailureRollsBackEveryMutation(t *testing.T) {
 
 func TestTargetOptimisticConcurrencyAcrossConnections(t *testing.T) {
 	eachDatabase(t, func(t *testing.T, store *Store, cfg Config) {
-		initial, tenant := targetFixture(t, store)
+		_, tenant := targetFixture(t, store)
 		original := mustCreateTarget(t, tenant)
 		second, err := Open(t.Context(), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer func() { _ = second.Close() }()
-		secondTenant, _ := second.WithOrganization(testActorContext(t, initial.User.ID), tenant.orgID)
+		secondTenant, _ := second.WithOrganization(rebindTargetTestSession(t, second, tenant.ctx), tenant.orgID)
 		results := make(chan error, 8)
 		var group sync.WaitGroup
 		for i := range 8 {
@@ -267,7 +298,7 @@ func TestTargetOptimisticConcurrencyAcrossConnections(t *testing.T) {
 			t.Fatal("CAS version incorrect")
 		}
 		verified, err := tenant.VerifyAuditFull()
-		if err != nil || verified.EventCount != 4 {
+		if err != nil || verified.EventCount != 5 {
 			t.Fatal("losing writers produced audit or corruption")
 		}
 	})
@@ -275,14 +306,14 @@ func TestTargetOptimisticConcurrencyAcrossConnections(t *testing.T) {
 
 func TestTargetConcurrentSecretReplacementOneWinner(t *testing.T) {
 	eachDatabase(t, func(t *testing.T, store *Store, cfg Config) {
-		initial, tenant := targetFixture(t, store)
+		_, tenant := targetFixture(t, store)
 		original := mustCreateTarget(t, tenant)
 		other, err := Open(t.Context(), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer func() { _ = other.Close() }()
-		otherTenant, _ := other.WithOrganization(testActorContext(t, initial.User.ID), tenant.orgID)
+		otherTenant, _ := other.WithOrganization(rebindTargetTestSession(t, other, tenant.ctx), tenant.orgID)
 		results := make(chan error, 8)
 		var group sync.WaitGroup
 		for i := range 8 {
@@ -316,7 +347,7 @@ func TestTargetConcurrentSecretReplacementOneWinner(t *testing.T) {
 			t.Fatal("rotation CAS changed inconsistent versions")
 		}
 		verified, err := tenant.VerifyAuditFull()
-		if err != nil || verified.EventCount != 5 {
+		if err != nil || verified.EventCount != 6 {
 			t.Fatal("rotation CAS audit sequence inconsistent")
 		}
 	})

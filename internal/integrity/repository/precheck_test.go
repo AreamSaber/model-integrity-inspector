@@ -230,7 +230,8 @@ func TestPrecheckReconcileCancellationAuditRollbackAndOtherJobIsolation(t *testi
 			t.Fatal("reconcile did not preserve typed terminal outcomes")
 		}
 		verified, err := tenant.VerifyAuditFull()
-		if err != nil || verified.EventCount != 5 {
+		// Includes the real authenticated session created by targetFixture.
+		if err != nil || verified.EventCount != 6 {
 			t.Fatal("reconcile modified unrelated job audit behavior")
 		}
 	})

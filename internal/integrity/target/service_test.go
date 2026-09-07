@@ -3,7 +3,9 @@ package target
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/safehttp"
@@ -87,12 +90,25 @@ func eachServiceDatabase(t *testing.T, test func(*testing.T, serviceFixture)) {
 				t.Fatal(err)
 			}
 			ctx := audit.WithActor(t.Context(), audit.Actor{ActorID: 0, ReasonCode: "target.test"})
-			// #nosec G101 -- synthetic persistence fixture, never a password or deployable password hash.
-			initial, err := store.Initialize(ctx, repository.Initialization{OrganizationName: "Target tests", Username: "admin", PasswordHash: "fixture-not-a-real-password-hash", AdminRole: "administrator", Roles: []repository.InitialRole{{Name: "administrator", Permissions: []string{"target.read", "target.write"}}}})
+			identities, err := identity.NewService(ctx, store)
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx = audit.WithActor(t.Context(), audit.Actor{ActorID: initial.User.ID, ReasonCode: "target.test"})
+			const fixturePassword = "synthetic-target-login-password"
+			if err := identities.Initialize(ctx, "Target tests", "admin", fixturePassword); err != nil {
+				t.Fatal(err)
+			}
+			material, err := identities.Login(ctx, "admin", fixturePassword)
+			if err != nil {
+				t.Fatal(err)
+			}
+			orgID := material.Organizations[0].ID
+			ctx = audit.WithActor(t.Context(), audit.Actor{ActorID: material.User.ID, ReasonCode: "target.test"})
+			hash := sha256.Sum256([]byte(material.CookieValue()))
+			ctx, err = store.BindControlAuthority(ctx, hex.EncodeToString(hash[:]), orgID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			secrets, err := secret.NewService(store, ring)
 			if err != nil {
 				t.Fatal(err)
@@ -110,7 +126,7 @@ func eachServiceDatabase(t *testing.T, test func(*testing.T, serviceFixture)) {
 				t.Fatal("test inspection database failed")
 			}
 			t.Cleanup(func() { _ = db.Close() })
-			test(t, serviceFixture{service, secrets, store, db, ctx, initial.Organization.ID})
+			test(t, serviceFixture{service, secrets, store, db, ctx, orgID})
 		})
 	}
 }
@@ -297,13 +313,13 @@ func TestServiceTenantPaginationSnapshotOwnershipAndCanceledWorker(t *testing.T)
 		if _, err := f.service.Get(f.ctx, foreignOrg, first.ID); !errors.Is(err, repository.ErrNotFound) {
 			t.Fatal("cross tenant read")
 		}
-		if _, err := f.service.Update(f.ctx, foreignOrg, first.ID, 1, testInput(), "active"); !errors.Is(err, repository.ErrNotFound) {
+		if _, err := f.service.Update(f.ctx, foreignOrg, first.ID, 1, testInput(), "active"); !errors.Is(err, repository.ErrManagementPermission) {
 			t.Fatal("cross tenant update")
 		}
-		if _, err := f.service.RotateSecret(f.ctx, foreignOrg, first.ID, 1, 1, testCredentials()); !errors.Is(err, repository.ErrNotFound) {
+		if _, err := f.service.RotateSecret(f.ctx, foreignOrg, first.ID, 1, 1, testCredentials()); !errors.Is(err, repository.ErrManagementPermission) {
 			t.Fatal("cross tenant rotation")
 		}
-		if err := f.service.Delete(f.ctx, foreignOrg, first.ID, 1); !errors.Is(err, repository.ErrNotFound) {
+		if err := f.service.Delete(f.ctx, foreignOrg, first.ID, 1); !errors.Is(err, repository.ErrManagementPermission) {
 			t.Fatal("cross tenant delete")
 		}
 		if _, err := f.service.Snapshot(f.ctx, foreignOrg, first.ID); !errors.Is(err, repository.ErrNotFound) {

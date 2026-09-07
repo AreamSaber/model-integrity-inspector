@@ -202,16 +202,16 @@ func (c *control) error(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, identity.ErrAuthentication):
 		status = 401
 		code = "MI_LOGIN_FAILED"
-	case errors.Is(err, identity.ErrSession):
+	case errors.Is(err, identity.ErrSession), errors.Is(err, repository.ErrManagementSession):
 		status = 401
 		code = "MI_SESSION_REQUIRED"
 	case errors.Is(err, identity.ErrCSRF):
 		status = 403
 		code = "MI_CSRF_INVALID"
-	case errors.Is(err, identity.ErrPermission):
+	case errors.Is(err, identity.ErrPermission), errors.Is(err, repository.ErrManagementPermission):
 		status = 403
 		code = "MI_PERMISSION_DENIED"
-	case errors.Is(err, identity.ErrPasswordChangeRequired):
+	case errors.Is(err, identity.ErrPasswordChangeRequired), errors.Is(err, repository.ErrPasswordChangeRequired):
 		status = 403
 		code = "MI_PASSWORD_CHANGE_REQUIRED"
 	}

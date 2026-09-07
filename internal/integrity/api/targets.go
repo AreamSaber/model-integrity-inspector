@@ -85,7 +85,12 @@ func (c *control) authorizeOrganization(w http.ResponseWriter, r *http.Request, 
 		return nil, 0, false
 	}
 	actor.ActorID = principal.UserID
-	return audit.WithActor(r.Context(), actor), id, true
+	ctx, err := c.cfg.Store.BindControlAuthority(audit.WithActor(r.Context(), actor), digest(token(r)), id)
+	if err != nil {
+		c.error(w, r, err)
+		return nil, 0, false
+	}
+	return ctx, id, true
 }
 
 func (fields targetFields) input() (target.Input, error) {
