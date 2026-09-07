@@ -6,10 +6,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// CheckLease is a read-only liveness/cancellation check between heartbeats. It
-// reuses the queue's existing generation/owner/expiry fence without renewing it.
+// CheckLease is an advisory read-only liveness/cancellation check between
+// heartbeats. It deliberately does not open a transaction: SQLite transactions
+// use BEGIN IMMEDIATE, which would turn every poll into a competing writer.
+// Each statement may see a newer committed state. This never grants dispatch or
+// commit authority: WithLease/CompleteWith revalidate all fences transactionally.
 func (q *JobQueue) CheckLease(ctx context.Context, lease JobLease) error {
-	return precheckError(q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if q == nil || q.store == nil {
+		return ErrJobInvalid
+	}
+	db := q.store.db.WithContext(ctx)
+	return precheckError(func(tx *gorm.DB) error {
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -46,7 +53,7 @@ func (q *JobQueue) CheckLease(ctx context.Context, lease JobLease) error {
 			}
 		}
 		return nil
-	}))
+	}(db))
 }
 
 // WithLease permits short, typed pre-call bookkeeping under the exact same
