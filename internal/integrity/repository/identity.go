@@ -128,6 +128,9 @@ func (s *Store) Initialize(ctx context.Context, input Initialization) (Initializ
 		if !adminFound {
 			return ErrConfiguration
 		}
+		if err := s.seedBootstrapBundles(ctx, tx, orgID, userID, now); err != nil {
+			return err
+		}
 		if err := tx.Exec("INSERT INTO system_settings (setting_key, value_json, version, updated_at) VALUES (?, ?, ?, ?)", "initialized", "true", 1, now).Error; err != nil {
 			return err
 		}

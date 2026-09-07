@@ -108,6 +108,9 @@ func (s *Store) ManageCreateOrganization(ctx context.Context, auth ManagementAut
 				}
 			}
 		}
+		if err := s.seedBootstrapBundles(ctx, tx, orgID, user.ID, now); err != nil {
+			return err
+		}
 		if err := s.auditManagement(ctx, tx, []int64{orgID}, auditObject("system.organization_create", "organization", orgID)); err != nil {
 			return err
 		}

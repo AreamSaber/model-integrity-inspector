@@ -30,7 +30,7 @@ var (
 )
 
 func executionKnownError(err error) error {
-	for _, known := range []error{ErrAnalysisSource, ErrAnalysisLimit} {
+	for _, known := range []error{ErrAnalysisSource, ErrAnalysisLimit, ErrBundleIntegrity, ErrBundleUnavailable} {
 		if errors.Is(err, known) {
 			return known
 		}
@@ -207,6 +207,9 @@ func (t *Tenant) createRunInTransaction(tx *TenantTransaction, plan domain.Execu
 	}
 	var result RunRecord
 	err = func() error {
+		if err := tx.validateBootstrapPlan(plan); err != nil {
+			return err
+		}
 		permissions, err := managementPermissions(tx.db, t.orgID, actor)
 		if err != nil {
 			return err

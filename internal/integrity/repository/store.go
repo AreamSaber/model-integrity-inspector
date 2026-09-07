@@ -32,10 +32,11 @@ var (
 
 // Config is infrastructure configuration. DSN must never be logged or serialized.
 type Config struct {
-	Driver       string    `json:"-"`
-	DSN          string    `json:"-"`
-	MaxOpenConns int       `json:"-"`
-	AuditSigner  audit.MAC `json:"-"`
+	Driver       string              `json:"-"`
+	DSN          string              `json:"-"`
+	MaxOpenConns int                 `json:"-"`
+	AuditSigner  audit.MAC           `json:"-"`
+	Bootstrap    *BootstrapArtifacts `json:"-"`
 }
 
 // Store owns the connection pool; the underlying unscoped ORM is not exported.
@@ -44,11 +45,16 @@ type Store struct {
 	sql         *sql.DB
 	driver      string
 	auditSigner audit.MAC
+	bootstrap   *BootstrapArtifacts
 }
 
 // Open verifies connectivity, but does not create or change the schema.
 // Only the server/all startup path may subsequently call Migrate.
 func Open(ctx context.Context, cfg Config) (*Store, error) {
+	bootstrap, bootstrapErr := validatedBootstrap(cfg.Bootstrap)
+	if bootstrapErr != nil {
+		return nil, bootstrapErr
+	}
 	if cfg.DSN == "" || cfg.MaxOpenConns < 0 {
 		return nil, ErrConfiguration
 	}
@@ -103,7 +109,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		_ = pool.Close()
 		return nil, ErrUnavailable
 	}
-	return &Store{db: db, sql: pool, driver: cfg.Driver, auditSigner: cfg.AuditSigner}, nil
+	return &Store{db: db, sql: pool, driver: cfg.Driver, auditSigner: cfg.AuditSigner, bootstrap: bootstrap}, nil
 }
 
 func sqliteDSN(dsn string) (string, error) {

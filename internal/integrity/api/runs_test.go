@@ -108,6 +108,72 @@ func runHTTPAssertNoS2(t *testing.T, data string) {
 	}
 }
 
+func TestRunHTTPRuntimeVersionChangeRejectsDraftButPreservesReceipt(t *testing.T) {
+	f := newRunHTTPFixture(t, true)
+	f.initialize(t)
+	cookie, csrf, org := f.login(t)
+	headers := map[string]string{"X-CSRF-Token": csrf, "X-Organization-ID": org}
+	w := f.request(t, "POST", "/api/v1/targets", targetHTTPBody, headers, cookie)
+	expectControl(t, w, 201, "")
+	var target targetHTTPView
+	managementHTTPData(t, w, &target)
+	runHTTPPassedPrecheck(t, f, cookie, headers, target.ID)
+	quotes := make([]runHTTPQuote, 2)
+	for i := range quotes {
+		w = f.request(t, "POST", "/api/v1/runs/estimate", `{"target_id":"`+target.ID+`","target_version":1,"package":"quick"}`, headers, cookie)
+		expectControl(t, w, 200, "")
+		managementHTTPData(t, w, &quotes[i])
+	}
+	w = f.request(t, "POST", "/api/v1/runs", runHTTPConfirm(quotes[0]), headers, cookie)
+	expectControl(t, w, 202, "")
+	var original runHTTPView
+	managementHTTPData(t, w, &original)
+	engine, err := tokenizer.NewBuiltin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, hash, err := templates.Builtin().Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, ok := f.cfg.CursorSigner.(*secret.KeyRing)
+	if !ok {
+		t.Fatal("fixture key missing")
+	}
+	compiler, err := generator.New(data, hash, engine, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Runs, err = runservice.NewService(runservice.Config{Store: f.cfg.Store, Targets: f.cfg.Targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: "test-dev.2", ScoringVersion: "test-dev.2", ExecutionReady: func(context.Context) bool { return true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.handler, err = NewControlHandler(f.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectControl(t, f.request(t, "POST", "/api/v1/runs", runHTTPConfirm(quotes[1]), headers, cookie), 409, "MI_RUN_ESTIMATE_STALE")
+	w = f.request(t, "POST", "/api/v1/runs", runHTTPConfirm(quotes[0]), headers, cookie)
+	expectControl(t, w, 202, "")
+	var receipt runHTTPView
+	managementHTTPData(t, w, &receipt)
+	if receipt.ID != original.ID {
+		t.Fatal("runtime change lost existing receipt")
+	}
+	queue, err := f.cfg.Store.OpenJobQueue(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = queue.Close(context.Background()) }()
+	first, err := queue.Claim(t.Context())
+	if err != nil || first == nil || first.Job.ObjectID <= 0 {
+		t.Fatal("missing original run job", err)
+	}
+	if extra, err := queue.Claim(t.Context()); err != nil || extra != nil {
+		t.Fatal("stale draft created another job", err)
+	}
+}
+
 func TestRunHTTPQuoteConfirmReceiptReadAndCancel(t *testing.T) {
 	f := newRunHTTPFixture(t, true)
 	f.initialize(t)

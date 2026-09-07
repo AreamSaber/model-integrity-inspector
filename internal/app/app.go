@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"model-integrity-inspector.local/mii/internal/identity"
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/features"
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/scoring"
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
+	runtimebundle "model-integrity-inspector.local/mii/internal/integrity/bundle"
 	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
@@ -43,6 +46,11 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
+	artifacts, err := runtimebundle.Builtin()
+	if err != nil {
+		return nil, err
+	}
+	bootstrap := &repository.BootstrapArtifacts{RuleVersion: runtimebundle.BuiltinVersion, RuleHash: runtimebundle.BuiltinHash, RuleJSON: string(artifacts.RuleBytes()), TemplateVersion: templates.BuiltinVersion, TemplateHash: templates.BuiltinHash, TemplateJSON: string(artifacts.TemplateBytes()), ScoringVersion: scoring.Version, TokenizerVersion: tokenizer.BuiltinVersion}
 	if cfg.DatabaseDriver == "sqlite" {
 		if err := os.MkdirAll(filepath.Dir(cfg.DatabasePath), 0700); err != nil {
 			return nil, ErrStartup
@@ -65,7 +73,7 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 	if cfg.DatabaseDriver == "sqlite" {
 		dsn = cfg.DatabasePath
 	}
-	store, err := repository.Open(ctx, repository.Config{Driver: cfg.DatabaseDriver, DSN: dsn, AuditSigner: key})
+	store, err := repository.Open(ctx, repository.Config{Driver: cfg.DatabaseDriver, DSN: dsn, AuditSigner: key, Bootstrap: bootstrap})
 	if err != nil {
 		return nil, err
 	}
@@ -86,12 +94,25 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 	if err = store.VerifyAllAudit(ctx, true); err != nil {
 		return nil, err
 	}
+	if cfg.Role.Components().Server {
+		if err := store.SyncBootstrapBundles(ctx); err != nil {
+			return nil, err
+		}
+	}
 	app := &application{store: store}
 	secretService, err := secret.NewService(store, key)
 	if err != nil {
 		return nil, err
 	}
 	engine, err := tokenizer.NewBuiltin()
+	if err != nil {
+		return nil, err
+	}
+	compiler, err := generator.New(artifacts.TemplateBytes(), templates.BuiltinHash, engine, key)
+	if err != nil {
+		return nil, err
+	}
+	builder, err := features.New(features.Config{Verifier: compiler, Tokenizer: engine, TemplateArtifact: artifacts.TemplateBytes(), TrustedTemplateHash: templates.BuiltinHash})
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +126,11 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 			return nil, err
 		}
 		handlers[repository.JobTargetPrecheck] = precheck
+		analysis, err := worker.NewAnalysisHandler(worker.AnalysisConfig{Builder: builder, EvidenceKeys: key})
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobRunAnalyze] = analysis
 		app.worker, err = worker.New(worker.Config{Store: store, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
 			if err := worker.ReconcileRunJobs(ctx, queue); err != nil {
 				return err
@@ -134,17 +160,10 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		if err != nil {
 			return nil, err
 		}
-		bundle, _, err := templates.Builtin().Canonical()
-		if err != nil {
-			return nil, err
-		}
-		compiler, err := generator.New(bundle, templates.BuiltinHash, engine, key)
-		if err != nil {
-			return nil, err
-		}
-		// Estimates work now, but paid confirmation is fail-closed until a real
-		// versioned scoring bundle and RunAnalysis handler are installed.
-		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: "unconfigured", ScoringVersion: "unconfigured"})
+		// Runtime now has verified development artifacts and a real analysis
+		// handler. Confirmation remains fail-closed until result/history access
+		// and the user-visible uncalibrated disclosure are connected end to end.
+		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version})
 		if err != nil {
 			return nil, err
 		}

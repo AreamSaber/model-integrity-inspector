@@ -85,6 +85,21 @@ func TestApplicationPersistsInitializationAcrossRestart(t *testing.T) {
 	if err := restarted.store.VerifyAllAudit(t.Context(), true); err != nil {
 		t.Fatal(err)
 	}
+	user, err := restarted.store.FindUserForAuthentication(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberships, err := restarted.store.ListUserMemberships(t.Context(), user.ID)
+	if err != nil || len(memberships) != 1 {
+		t.Fatal("initialized organization missing", err)
+	}
+	tenant, err := restarted.store.WithOrganization(t.Context(), memberships[0].OrganizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tenant.CheckBootstrapBundles(); err != nil {
+		t.Fatal("runtime bundle seed did not survive restart", err)
+	}
 }
 
 func TestApplicationRejectsMissingOrWrongMasterKey(t *testing.T) {

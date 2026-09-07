@@ -232,9 +232,13 @@ func (t *Tenant) ConfirmRunEstimate(id int64, verifiedPlan domain.ExecutionPlan,
 	return run, runEstimateError(err)
 }
 
-// Lock order is identical to target edits: target then catalog. Terminal
+// Runtime artifact locks precede target/catalog locks; target edits retain their
+// target-then-catalog order and do not lock artifacts. Terminal
 // prechecks are immutable and bind the exact target and Secret versions.
 func (tx *TenantTransaction) validateEstimateBindings(plan domain.ExecutionPlan, actor int64) error {
+	if err := tx.validateBootstrapPlan(plan); err != nil {
+		return err
+	}
 	permissions, err := managementPermissions(tx.db, tx.orgID, actor)
 	if err != nil {
 		return persistenceError(err)

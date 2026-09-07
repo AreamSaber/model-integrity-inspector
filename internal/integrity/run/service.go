@@ -281,6 +281,12 @@ func (s *Service) Confirm(ctx context.Context, orgID, estimateID int64, hash str
 	if !time.Now().Before(draft.ExpiresAt) {
 		return repository.RunRecord{}, repository.ErrEstimateExpired
 	}
+	// A deployment may have changed the active rule/scoring implementation while
+	// this draft was open. Existing receipts above remain recoverable, but a new
+	// Run must not be created against an unavailable implementation version.
+	if verified.Versions.Rule != s.cfg.RuleVersion || verified.Versions.Scoring != s.cfg.ScoringVersion {
+		return repository.RunRecord{}, repository.ErrEstimateStale
+	}
 	snapshot, err := s.cfg.Targets.Snapshot(ctx, orgID, verified.Target.ID)
 	if err != nil {
 		return repository.RunRecord{}, err
