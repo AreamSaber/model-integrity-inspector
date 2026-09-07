@@ -1572,10 +1572,19 @@
         "M7-01"
       ],
       "test_case": "REQ-CFG-003",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "tests/replay/capture.go",
+        "tests/replay/replay.go",
+        "tests/replay/transport.go"
+      ],
+      "tests": [
+        "tests/replay/replay_test.go",
+        "tests/replay/boundaries_test.go",
+        "tests/replay/isolation_test.go",
+        "tests/replay/diagnostics_test.go"
+      ],
+      "notes": "B1开发离线核心已验证签名规范输入、真实协议重解析、独立Token计数、参数运行时及S2诊断保护；当前用例是合成组件测试，不是实际Worker捕获、独立验收集、准确率或发布准入。真实捕获和CLI继续开发。",
       "goal_included": true
     },
     {

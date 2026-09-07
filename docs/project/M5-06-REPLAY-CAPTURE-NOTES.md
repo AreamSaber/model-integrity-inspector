@@ -1,6 +1,6 @@
 # M5-06 B1：离线捕获回放最小实施方案
 
-状态：实施前设计草案，2026-09-07。本文未交付 replay runner、捕获数据集、准确率回执或发布准入；A1 文件保持冻结。本文仅规划两个受控 TLS 开发案例，不代表校准、独立盲验收、真实供应商渠道或人工批准。
+状态：获准实施设计，2026-09-07。第一子单元已实现 `tests/replay` 严格 codec、私有 verifiedCapture、真实离线 parser→features→Runtime 及合成单元回归；真实 Worker/TLS 捕获、CLI、捕获数据集、准确率回执或发布准入尚未交付。A1 文件未改。本文仅规划两个受控 TLS 开发案例，不代表校准、独立盲验收、真实供应商渠道或人工批准。
 
 ## 1. 推荐边界
 
@@ -37,11 +37,12 @@
 - `tests/replay/capturefixture/*_test.go`：独立控制端，复用真实 Worker/API 与 TLS mock；不编入检测 CLI。
 - `tests/replay/README.md` 与公开的两个合成开发捕获；只有经 S2/S3 扫描后才考虑提交捕获正文。
 
-接口草案（非现有实现）：
+核心已落盘接口（CLI/真实控制端仍待下一子单元）：
 
 ```go
 // verifiedCapture 不导出，只有严格校验函数能构造。
-func Replay(ctx context.Context, input io.Reader, cfg Config) (Prediction, error)
+func New(cfg Config) (*Engine, error)
+func (e *Engine) Replay(ctx context.Context, input io.Reader) (Prediction, error)
 // Config 内的开发 Manifest verifier/捕获公钥由本地部署组合注入，
 // 不从 input 中选择任意公钥、密钥、算法、文件路径或 runtime 实现。
 ```
@@ -123,9 +124,9 @@ header 保留同名多值，不预先合并为单值。只保留 parser 真正�
 
 这些是工具输入拒绝上限，不得静默截断后继续给“正常”结论：
 
-- 单 capture JSON 24 MiB；所有 decoded body 总量 8 MiB；总 wire request 数据 4 MiB；Manifest 4 MiB，并服从 generator 自身更严限制。
+- 单 capture JSON 24 MiB；所有 decoded body 总量 8 MiB；总 wire request 数据 4 MiB；Manifest 2 MiB，与 generator/feature builder 实际限制一致。
 - 每 Run ≤150 个逻辑样本；完整 Attempt ≤450，且每样本 ≤冻结 `MaxRetries+1`、当前最高 3。首批支持的真实捕获只含一次成功/partial Attempt。
-- 单 request ≤1 MiB；单 raw response ≤1 MiB；单 SSE event ≤1 MiB；final feature Evidence 单条 ≤1 MiB、整批 ≤8 MiB，均与 Worker/features 上限取更小值。
+- 单 request ≤1 MiB；单 raw response ≤1 MiB；单 SSE event ≤1 MiB；final feature Evidence 单条 ≤1 MiB。feature builder 的 8 MiB 整批限制实际合计 Manifest + wire payload + 编码 Evidence，不是三者各有 8 MiB；代码继续服从该更严限制。
 - header 名称固定 5 种，每种 ≤4 值，每值 ≤512 bytes，header 总量 ≤12 KiB；保留重复并由 parser 作语义判定。
 - 原始 body 分段元数据（若后续加入）≤4096 段/response，不允许无限零长 read；当前不接受任意分段程序。
 - 时间固定 UTC、正序，Attempt ≤180 秒；Run ≤冻结预算；duration/TTFB/TTFT/事件间隔均有界且彼此一致。禁止 NaN/Inf、未来睡眠指令。
