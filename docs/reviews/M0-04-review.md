@@ -4,7 +4,7 @@
 负责人：OPS/SEC  
 依赖：M0-03（已通过，2026-09-07 批准）
 
-当前状态：进行中
+当前状态：待审核
 
 ## 目标
 
@@ -86,7 +86,7 @@ e928e623c42234e35352a9f7deaa8d537d8ce7c3378e7d4b6dc8615b6f473ebb  web/pnpm-lock.
 
 ## 远端验证（2026-09-07）
 
-- 已创建私有仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector)，配置 `origin` 并推送 `main`；GitHub CLI 登录账号为 `AreamSaber`，仓库权限为 `ADMIN`。
+- 最初创建私有仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector)，配置 `origin` 并推送 `main`；GitHub CLI 登录账号为 `AreamSaber`，仓库权限为 `ADMIN`。仓库现已按项目方授权公开。
 - [首次 push CI](https://github.com/AreamSaber/model-integrity-inspector/actions/runs/34071845489) 在提交 `5871477753656af9b09fdf79457466f9abb30e49` 上运行：Linux/Windows 打包、依赖扫描、镜像构建、镜像 SBOM 和 Trivy 镜像扫描通过；Linux runner 上 actionlint 调用 ShellCheck，发现变量未加引号及重复输出重定向，质量任务失败，`m0-04-required` 随之失败。
 - 提交 `b8593440cdd972a32d403db4348d078f78c818fb` 修复了以上 ShellCheck 问题；未关闭检查或降低扫描阈值。该提交的工作流文件 SHA-256 为 `7dd97ef63e1eddfc43164fcb71e85e617caa2d2c97d81669d055495be9d6b83a`。
 - [修复后的 push CI](https://github.com/AreamSaber/model-integrity-inspector/actions/runs/34073862307) 已完成且结论为 `success`：`quality`、`dependency-scan`、`package-ubuntu-24.04`、`package-windows-2025`、`image`、`m0-04-required` 六项任务全部通过。
@@ -103,10 +103,28 @@ e928e623c42234e35352a9f7deaa8d537d8ce7c3378e7d4b6dc8615b6f473ebb  web/pnpm-lock.
 
 仓库原为私有时，分支保护读取请求 `GET /repos/AreamSaber/model-integrity-inspector/branches/main/protection` 返回 HTTP 403：`Upgrade to GitHub Pro or make this repository public to enable this feature.` 2026-09-07 项目方明确授权公开仓库后，已将现有仓库转换为 `PUBLIC` 并回读确认；仓库地址和历史保留。M0-03 同日获项目方批准。
 
-## 尚未关闭的外部条件
+## 分支保护应用与回读（2026-09-07）
 
-1. 公开仓库的 `main` 分支保护策略仍待应用和回读，才能满足“CI 失败阻止合并”的服务端强制要求。现有聚合任务会正确报失败，但不能代替分支保护。
+- M0-03 批准记录已在 `main` 提交 `12255a188ab1cf332107f3ea2bfef6c18e3f02aa` 中落地。
+- 执行 `./scripts/apply-branch-protection.ps1 -Repository AreamSaber/model-integrity-inspector`，GitHub 成功接受策略，并成功回读 `main` 保护配置。
+- 随后独立读取 `GET /repos/AreamSaber/model-integrity-inspector/branches/main/protection` 并逐项断言，以下 11 项检查全部通过。
+
+| 检查 | 远端实际值 |
+|---|---|
+| 必需检查 | `m0-04-required` |
+| 必需检查来源 | GitHub Actions，`app_id=15368` |
+| 分支必须为最新 | `required_status_checks.strict=true` |
+| 管理员同样受约束 | `enforce_admins.enabled=true` |
+| 最少批准数 | `required_approving_review_count=1` |
+| 新提交使旧批准失效 | `dismiss_stale_reviews=true` |
+| 最后推送后需批准 | `require_last_push_approval=true` |
+| 所有对话必须解决 | `required_conversation_resolution.enabled=true` |
+| 线性历史 | `required_linear_history.enabled=true` |
+| 禁止强推 | `allow_force_pushes.enabled=false` |
+| 禁止删除 | `allow_deletions.enabled=false` |
+
+因此私有仓库套餐限制、M0-03 前置依赖和分支保护缺失均已关闭。最终审核材料通过 `docs/m0-04-final-review` 分支提交 PR，遵循已启用的保护规则；仍须 GitHub 要求的独立审核者批准后才能合并，不使用管理员绕过。用户本次批准的是 M0-03，M0-04 留给 TL、OPS/SEC 最终审核。
 
 ## 当前结论
 
-仓库已按项目方授权公开，M0-03 已通过，远端 CI 六项任务全部通过，版本化制品、源码/镜像 SBOM、镜像构建与扫描已有真实运行证据。本地未安装 Docker 不再阻塞这些验证。完成 `main` 分支保护应用和回读前，M0-04 保持“进行中”。
+仓库已按项目方授权公开，M0-03 已通过，远端 CI、版本化制品、源码/镜像 SBOM、镜像构建与扫描已有成功运行证据，`main` 分支保护已应用并完整回读核对。M0-04 交付材料齐全，状态调整为“待审核”，等待 TL、OPS/SEC 最终批准；M0 Gate 尚未通过。
