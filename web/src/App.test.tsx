@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { type Session } from './api'
 import { StrictMode } from 'react'
+import { overview } from './components/overview/test-fixtures'
 
 const password = 'synthetic-password-123'
 const session: Session = {
@@ -26,6 +27,8 @@ function network(handler?: (url: string, options: RequestInit) => Response | Pro
     if (url.endsWith('/setup/status')) return ok({ initialized: true })
     if (url.endsWith('/auth/me')) return authenticated ? ok(session) : fail('MI_SESSION_REQUIRED', 401)
     if (url.endsWith('/auth/login')) return ok(session)
+    if (url.endsWith('/auth/permissions')) return ok({ organization_id: new Headers(options.headers).get('X-Organization-ID'), user_id: session.user.id, permissions: ['run.read', 'target.read'] })
+    if (url.startsWith('/api/v1/overview?')) return ok(overview(Number(new URL(url, 'https://mii.test').searchParams.get('days')) as 7 | 30, new Headers(options.headers).get('X-Organization-ID')!, false))
     if (url.endsWith('/roles')) return ok({ items: [{ name: 'viewer', permissions: ['target.read'] }], next_cursor: null })
     throw new Error('Unexpected test request')
   })

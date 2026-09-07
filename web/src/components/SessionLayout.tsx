@@ -15,6 +15,7 @@ import { ComparisonPage } from './comparison/ComparisonPage'
 import { comparisonRoute } from '../comparison-api'
 import { TrendsPage } from './trends/TrendsPage'
 import { trendsRoute } from '../trends-api'
+import { OverviewPage } from './overview/OverviewPage'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -114,7 +115,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
       <main id="main-content" className="main-content" tabIndex={-1}>
         <div className="page-heading"><p className="eyebrow">{organization?.name ?? '尚未选择组织'}</p><h1 ref={heading} tabIndex={-1}>{title}</h1></div>
         <ErrorNotice error={error} id="workspace-error" />
-        {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
+        {route === 'overview' ? (organization ? <OverviewPage key={`${organization.id}-${session.user.id}`} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取检测总览。</p><a href="#/organizations">查看组织与角色 →</a></section>) :
           validTrend ? (organization ? <TrendsPage key={`${organization.id}-${session.user.id}-${route}`} {...management} organizationID={organization.id} targetID={trend.kind === 'target' ? trend.targetID : undefined} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取目标趋势。</p></section>) :
           validComparison ? (organization ? <ComparisonPage key={`${organization.id}-${session.user.id}-${route}`} {...management} organizationID={organization.id} selection={comparison.kind === 'pair' ? comparison.selection : undefined} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取两任务对比。</p></section>) :
           route === 'runs' || route === 'reports' || historicalID || resultID ? (organization ? (resultID ? <ResultsPage key={`${organization.id}-result-${resultID}`} {...management} organizationID={organization.id} runID={resultID} /> : historicalID ? <HistoricalRun key={`${organization.id}-run-${historicalID}`} {...management} organizationID={organization.id} runID={historicalID} /> : <RunHistory key={`${organization.id}-${route}`} {...management} organizationID={organization.id} resultsOnly={route === 'reports'} />) : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取检测历史和结果。</p></section>) :
@@ -139,14 +140,6 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
       <footer className="workspace-footer">当前版本正在接入业务模块 · 权限以服务端校验为准</footer>
     </div>
   </div>
-}
-
-function Overview({ organization, username }: { organization?: Organization; username: string }) {
-  return <>
-    <section className="welcome-panel"><span className="section-number">01 / WORKSPACE</span><h2>欢迎回来，{username}</h2><p>{organization ? `当前工作空间：${organization.name}。后续检测与证据将在此组织范围内查看。` : '请先选择组织。如果没有可访问的组织，请联系管理员。'}</p><a className="button-link" href="#/organizations">查看组织与角色 →</a></section>
-    <section className="panel"><div className="section-heading"><h2>检测数据</h2><span className="status-label">组织范围内读取</span></div><p className="muted">检测历史与已有分析结果可从下方入口读取。组织总览聚合统计尚未接入；单目标当前页趋势可按需读取，不展示示例记录或虚假的零值。</p><div className="workflow-links"><a href="#/targets">目标与模型档案 <span>→</span></a><a href="#/runs">检测任务 <span>→</span></a><a href="#/reports">结果与报告 <span>→</span></a><a href="#/trends">目标趋势 <span>→</span></a></div></section>
-    <p className="security-note">这里的账号和组织信息来自真实会话。前端导航仅提供交互引导，不授予任何业务权限。</p>
-  </>
 }
 
 function Unavailable({ title, unknown }: { title: string; unknown: boolean }) {

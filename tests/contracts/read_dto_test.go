@@ -29,6 +29,11 @@ func TestPublicRunReadSchemasMatchActualClosedDTOs(t *testing.T) {
 	types := map[string]reflect.Type{
 		"RunHistoryItem": reflect.TypeFor[runservice.HistoryItem](), "ResultSummary": reflect.TypeFor[runservice.ResultSummary](),
 		"RunTrendItem": reflect.TypeFor[runservice.TrendItem](), "AttemptTrend": reflect.TypeFor[runservice.AttemptTrendView](),
+		"Overview": reflect.TypeFor[runservice.OverviewView](), "OverviewWindow": reflect.TypeFor[runservice.OverviewWindow](),
+		"OverviewTargets": reflect.TypeFor[runservice.OverviewTargets](), "OverviewStatuses": reflect.TypeFor[runservice.OverviewStatuses](),
+		"OverviewRuns": reflect.TypeFor[runservice.OverviewRuns](), "OverviewCosts": reflect.TypeFor[runservice.OverviewCosts](),
+		"OverviewDistribution": reflect.TypeFor[runservice.OverviewDistribution](), "OverviewCohort": reflect.TypeFor[runservice.OverviewCohort](),
+		"OverviewDailyCohort": reflect.TypeFor[runservice.OverviewDailyCohort](), "OverviewDay": reflect.TypeFor[runservice.OverviewDay](),
 		"Versions": reflect.TypeFor[runservice.VersionsView](), "Result": reflect.TypeFor[runservice.ResultView](),
 		"TokenAnalysis": reflect.TypeFor[runservice.TokenAnalysisView](), "TokenTier": reflect.TypeFor[runservice.TokenTierView](), "TokenPlateau": reflect.TypeFor[runservice.TokenPlateauView](),
 		"BehaviorAnalysis": reflect.TypeFor[runservice.BehaviorAnalysisView](), "BehaviorPattern": reflect.TypeFor[runservice.PatternView](), "BehaviorDifference": reflect.TypeFor[runservice.DifferenceView](),

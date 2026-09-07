@@ -11,6 +11,173 @@
     }
   ],
   "paths": {
+    "/overview": {
+      "get": {
+        "operationId": "getOverview",
+        "summary": "Read a bounded organization overview for 7 or 30 local calendar days",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                7,
+                30
+              ],
+              "default": 7
+            },
+            "description": "Includes the current unfinished day in the organization's stored IANA timezone. Empty, signed, padded, repeated and unknown query parameters are rejected."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One authorized database snapshot. Closed S1-only organization aggregate; no upstream calls, response decryption, dataset sampling or report generation.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Overview"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, repeated, empty or unknown query/header input. Only days=7 or days=30 is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Current persisted session is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Both run.read and target.read in the current organization are required; system administration is not a wildcard. Forced password changes also deny access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Initialization is still required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MI_OVERVIEW_BUSY: non-blocking aggregation capacity is exhausted; retry is caller-controlled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "const": "2"
+                },
+                "description": "Aggregation busy response uses 2 seconds; the client does not automatically retry."
+              }
+            }
+          },
+          "500": {
+            "description": "Closed unexpected server error; never substitute empty overview data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Overview limit, deadline, invalid organization timezone, database unavailability or malformed persisted S1 summary. No partial/truncated statistics are returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": [
+          "run.read",
+          "target.read"
+        ],
+        "x-permission-mode": "all",
+        "x-development-status": "implemented-database-backed",
+        "x-max-response-bytes": 262144,
+        "x-request-deadline-ms": 2000,
+        "x-max-window-runs": 10000,
+        "x-max-current-targets": 10000,
+        "x-max-risk-cohorts": 16,
+        "x-errors": [
+          "MI_OVERVIEW_BUSY",
+          "MI_OVERVIEW_LIMIT",
+          "MI_OVERVIEW_TIMEOUT",
+          "MI_OVERVIEW_TIMEZONE_INVALID",
+          "MI_ANALYSIS_RESULT_INVALID"
+        ],
+        "description": "Run membership uses created_at in [start_utc,as_of), not completion or Attempt timestamps. Current target directory counts are independent of the window. Risk distribution is separately grouped by package and the four frozen versions, published revision 1 only; unscored and unpublished Runs remain separate. COMPLETED is a Run status, not an HTTP success rate. Known cost subtotal is an estimate, never a supplier invoice; incomplete totals stay null. A single snapshot revalidates current session/account/organization/membership and both permissions. Limits fail explicitly rather than truncate, and all figures are development/uncalibrated. No request/response content, endpoint or credential is read."
+      }
+    },
     "/runs/trends": {
       "get": {
         "operationId": "listRunTrends",
@@ -11408,6 +11575,503 @@
       }
     },
     "schemas": {
+      "Overview": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_revision": {
+            "const": 1,
+            "type": "integer"
+          },
+          "calibrated": {
+            "const": false,
+            "type": "boolean"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/OverviewCosts"
+          },
+          "daily": {
+            "description": "Exactly window.days local calendar buckets, ordered oldest first; only the last bucket is partial. Empty days are retained.",
+            "items": {
+              "$ref": "#/components/schemas/OverviewDay"
+            },
+            "maxItems": 30,
+            "minItems": 7,
+            "type": "array"
+          },
+          "development": {
+            "const": true,
+            "type": "boolean"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "risk_cohorts": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewCohort"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/OverviewRuns"
+          },
+          "schema_version": {
+            "const": "overview-v1",
+            "type": "string"
+          },
+          "scope": {
+            "const": "organization_window",
+            "type": "string"
+          },
+          "targets": {
+            "$ref": "#/components/schemas/OverviewTargets"
+          },
+          "window": {
+            "$ref": "#/components/schemas/OverviewWindow"
+          }
+        },
+        "required": [
+          "schema_version",
+          "scope",
+          "organization_id",
+          "analysis_revision",
+          "development",
+          "calibrated",
+          "window",
+          "targets",
+          "runs",
+          "costs",
+          "risk_cohorts",
+          "daily"
+        ],
+        "type": "object"
+      },
+      "OverviewCohort": {
+        "additionalProperties": false,
+        "properties": {
+          "distribution": {
+            "$ref": "#/components/schemas/OverviewDistribution"
+          },
+          "id": {
+            "description": "Response-local cohort identity assigned by a deterministic package/version tuple sort. Not a persistent database ID, cross-window identity or authorization token.",
+            "maxLength": 3,
+            "pattern": "^c([1-9]|1[0-6])$",
+            "type": "string"
+          },
+          "package": {
+            "enum": [
+              "quick",
+              "standard",
+              "deep",
+              "custom"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "published_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unscored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/Versions"
+          }
+        },
+        "required": [
+          "id",
+          "package",
+          "versions",
+          "published_runs",
+          "scored_runs",
+          "unscored_runs",
+          "distribution"
+        ],
+        "type": "object"
+      },
+      "OverviewCosts": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "const": "persisted_run_estimate",
+            "type": "string"
+          },
+          "complete_total_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Equal to known_subtotal_micros only when at least one Run has a known estimate and unknown_runs=0; otherwise null, including an empty window."
+          },
+          "currency": {
+            "const": "USD",
+            "type": "string"
+          },
+          "known_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "known_subtotal_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of known persisted Run estimates only, in integer USD micros, not invoices. Null when known_runs=0; an observed known zero remains 0."
+          },
+          "unknown_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "basis",
+          "known_runs",
+          "unknown_runs",
+          "known_subtotal_micros",
+          "complete_total_micros"
+        ],
+        "type": "object"
+      },
+      "OverviewDailyCohort": {
+        "additionalProperties": false,
+        "properties": {
+          "cohort_id": {
+            "description": "Response-local cohort identity assigned by a deterministic package/version tuple sort. Not a persistent database ID, cross-window identity or authorization token.",
+            "maxLength": 3,
+            "pattern": "^c([1-9]|1[0-6])$",
+            "type": "string"
+          },
+          "distribution": {
+            "$ref": "#/components/schemas/OverviewDistribution"
+          },
+          "published_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unscored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cohort_id",
+          "published_runs",
+          "scored_runs",
+          "unscored_runs",
+          "distribution"
+        ],
+        "type": "object"
+      },
+      "OverviewDay": {
+        "additionalProperties": false,
+        "properties": {
+          "end_utc": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "local_date": {
+            "format": "date",
+            "maxLength": 10,
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "type": "string"
+          },
+          "partial": {
+            "description": "True only for the current unfinished local day, whose exclusive end is as_of; do not compare this partial count as a complete day's improvement.",
+            "type": "boolean"
+          },
+          "risk_cohorts": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewDailyCohort"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "run_count": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start_utc": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "local_date",
+          "start_utc",
+          "end_utc",
+          "partial",
+          "run_count",
+          "risk_cohorts"
+        ],
+        "type": "object"
+      },
+      "OverviewDistribution": {
+        "additionalProperties": false,
+        "description": "Counts of scored, published revision-1 results in one exact package/four-version cohort. Null scores and unpublished Runs are separate, never low risk. These are descriptive counts, not calibrated probabilities, causal anomalies or a new threshold.",
+        "properties": {
+          "critical": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "insufficient": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "medium": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "watch": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "low",
+          "watch",
+          "medium",
+          "high",
+          "critical",
+          "insufficient"
+        ],
+        "type": "object"
+      },
+      "OverviewRuns": {
+        "additionalProperties": false,
+        "properties": {
+          "by_status": {
+            "$ref": "#/components/schemas/OverviewStatuses"
+          },
+          "published_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unpublished_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unscored_runs": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "by_status",
+          "unpublished_runs",
+          "published_runs",
+          "scored_runs",
+          "unscored_runs"
+        ],
+        "type": "object"
+      },
+      "OverviewStatuses": {
+        "additionalProperties": false,
+        "description": "Current Run statuses counted once per Run created in the window. COMPLETED is not upstream request success; no Attempt success-rate is calculated here.",
+        "properties": {
+          "ANALYZING": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "CANCELLED": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "CANCELLING": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "COMPLETED": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "DRAFT": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "FAILED": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PARTIAL": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PRECHECKING": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "QUEUED": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "REVIEW_REQUIRED": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "RUNNING": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "DRAFT",
+          "PRECHECKING",
+          "QUEUED",
+          "RUNNING",
+          "ANALYZING",
+          "COMPLETED",
+          "PARTIAL",
+          "FAILED",
+          "REVIEW_REQUIRED",
+          "CANCELLING",
+          "CANCELLED"
+        ],
+        "type": "object"
+      },
+      "OverviewTargets": {
+        "additionalProperties": false,
+        "description": "Current non-deleted target directory counts, including disabled targets, independent of the Run time window; not endpoint availability.",
+        "properties": {
+          "active": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "disabled": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "active",
+          "disabled"
+        ],
+        "type": "object"
+      },
+      "OverviewWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "The fixed observation instant for this authorized read snapshot; equals end_utc.",
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "days": {
+            "enum": [
+              7,
+              30
+            ],
+            "type": "integer"
+          },
+          "end_utc": {
+            "description": "Exclusive UTC end, equal to as_of. Run membership uses created_at, not finished_at or Attempt timestamps.",
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "start_utc": {
+            "description": "Inclusive UTC instant of local midnight window.days-1 dates before today.",
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "timezone": {
+            "description": "Current organization IANA location or UTC; Local and unknown locations fail closed. Calendar days follow this location, including DST, not fixed UTC 24-hour intervals.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "days",
+          "timezone",
+          "as_of",
+          "start_utc",
+          "end_utc"
+        ],
+        "type": "object"
+      },
       "BaselineApproval": {
         "type": "object",
         "additionalProperties": false,
@@ -13000,6 +13664,10 @@
                   "MI_INSUFFICIENT_SAMPLES",
                   "MI_ANALYSIS_FAILED",
                   "MI_ANALYSIS_RESULT_INVALID",
+                  "MI_OVERVIEW_BUSY",
+                  "MI_OVERVIEW_LIMIT",
+                  "MI_OVERVIEW_TIMEOUT",
+                  "MI_OVERVIEW_TIMEZONE_INVALID",
                   "MI_SECRET_UNAVAILABLE",
                   "MI_PERMISSION_DENIED",
                   "MI_SERVICE_UNAVAILABLE",

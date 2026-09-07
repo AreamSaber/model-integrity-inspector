@@ -29,6 +29,16 @@ var names = map[reflect.Type]string{
 	reflect.TypeFor[runservice.HistoryItem]():          "RunHistoryItem",
 	reflect.TypeFor[runservice.TrendItem]():            "RunTrendItem",
 	reflect.TypeFor[runservice.AttemptTrendView]():     "AttemptTrend",
+	reflect.TypeFor[runservice.OverviewView]():         "Overview",
+	reflect.TypeFor[runservice.OverviewWindow]():       "OverviewWindow",
+	reflect.TypeFor[runservice.OverviewTargets]():      "OverviewTargets",
+	reflect.TypeFor[runservice.OverviewStatuses]():     "OverviewStatuses",
+	reflect.TypeFor[runservice.OverviewRuns]():         "OverviewRuns",
+	reflect.TypeFor[runservice.OverviewCosts]():        "OverviewCosts",
+	reflect.TypeFor[runservice.OverviewDistribution](): "OverviewDistribution",
+	reflect.TypeFor[runservice.OverviewCohort]():       "OverviewCohort",
+	reflect.TypeFor[runservice.OverviewDailyCohort]():  "OverviewDailyCohort",
+	reflect.TypeFor[runservice.OverviewDay]():          "OverviewDay",
 	reflect.TypeFor[runservice.ResultSummary]():        "ResultSummary",
 	reflect.TypeFor[runservice.VersionsView]():         "Versions",
 	reflect.TypeFor[runservice.ResultView]():           "Result",
@@ -183,6 +193,7 @@ func main() {
 	for t, name := range names {
 		result[name] = objectSchema(t)
 	}
+	overviewSchemas(result)
 	properties := func(name string) schema { return result[name].(schema)["properties"].(schema) }
 	trend := properties("AttemptTrend")
 	for _, field := range []string{"dispatched", "retry_attempts", "succeeded", "failed", "uncertain", "in_flight", "success_rate_denominator", "latency_samples"} {
@@ -240,4 +251,51 @@ func main() {
 		fmt.Fprintln(os.Stderr, "cannot encode public DTO schemas")
 		os.Exit(1)
 	}
+}
+
+func overviewSchemas(result schema) {
+	properties := func(name string) schema { return result[name].(schema)["properties"].(schema) }
+	for _, name := range []string{"OverviewTargets", "OverviewStatuses", "OverviewRuns", "OverviewCosts", "OverviewDistribution", "OverviewCohort", "OverviewDailyCohort", "OverviewDay"} {
+		for key, value := range properties(name) {
+			if value.(schema)["type"] == "integer" {
+				properties(name)[key] = schema{"type": "integer", "minimum": 0, "maximum": 10000}
+			}
+		}
+	}
+	p := properties("Overview")
+	p["schema_version"] = schema{"type": "string", "const": "overview-v1"}
+	p["scope"] = schema{"type": "string", "const": "organization_window"}
+	p["analysis_revision"] = schema{"type": "integer", "const": 1}
+	p["development"] = schema{"type": "boolean", "const": true}
+	p["calibrated"] = schema{"type": "boolean", "const": false}
+	p["risk_cohorts"].(schema)["maxItems"] = 16
+	p["daily"].(schema)["minItems"] = 7
+	p["daily"].(schema)["maxItems"] = 30
+	p["daily"].(schema)["description"] = "Exactly window.days local calendar buckets, ordered oldest first; only the last bucket is partial. Empty days are retained."
+	p = properties("OverviewWindow")
+	p["days"] = schema{"type": "integer", "enum": []int{7, 30}}
+	p["timezone"] = schema{"type": "string", "minLength": 1, "maxLength": 128, "description": "Current organization IANA location or UTC; Local and unknown locations fail closed. Calendar days follow this location, including DST, not fixed UTC 24-hour intervals."}
+	p["as_of"].(schema)["description"] = "The fixed observation instant for this authorized read snapshot; equals end_utc."
+	p["start_utc"].(schema)["description"] = "Inclusive UTC instant of local midnight window.days-1 dates before today."
+	p["end_utc"].(schema)["description"] = "Exclusive UTC end, equal to as_of. Run membership uses created_at, not finished_at or Attempt timestamps."
+	p = properties("OverviewCosts")
+	p["currency"] = schema{"type": "string", "const": "USD"}
+	p["basis"] = schema{"type": "string", "const": "persisted_run_estimate"}
+	for _, key := range []string{"known_subtotal_micros", "complete_total_micros"} {
+		p[key] = nullable(schema{"type": "integer", "minimum": 0, "maximum": 9007199254740991})
+	}
+	p["known_subtotal_micros"].(schema)["description"] = "Sum of known persisted Run estimates only, in integer USD micros, not invoices. Null when known_runs=0; an observed known zero remains 0."
+	p["complete_total_micros"].(schema)["description"] = "Equal to known_subtotal_micros only when at least one Run has a known estimate and unknown_runs=0; otherwise null, including an empty window."
+	id := func() schema {
+		return schema{"type": "string", "pattern": "^c([1-9]|1[0-6])$", "maxLength": 3, "description": "Response-local cohort identity assigned by a deterministic package/version tuple sort. Not a persistent database ID, cross-window identity or authorization token."}
+	}
+	properties("OverviewCohort")["id"] = id()
+	properties("OverviewDailyCohort")["cohort_id"] = id()
+	p = properties("OverviewDay")
+	p["local_date"] = schema{"type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "maxLength": 10}
+	p["risk_cohorts"].(schema)["maxItems"] = 16
+	p["partial"].(schema)["description"] = "True only for the current unfinished local day, whose exclusive end is as_of; do not compare this partial count as a complete day's improvement."
+	result["OverviewTargets"].(schema)["description"] = "Current non-deleted target directory counts, including disabled targets, independent of the Run time window; not endpoint availability."
+	result["OverviewStatuses"].(schema)["description"] = "Current Run statuses counted once per Run created in the window. COMPLETED is not upstream request success; no Attempt success-rate is calculated here."
+	result["OverviewDistribution"].(schema)["description"] = "Counts of scored, published revision-1 results in one exact package/four-version cohort. Null scores and unpublished Runs are separate, never low risk. These are descriptive counts, not calibrated probabilities, causal anomalies or a new threshold."
 }

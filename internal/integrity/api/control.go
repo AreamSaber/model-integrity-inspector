@@ -106,6 +106,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 		c.registerRunRoutes(mux)
 		c.registerRunEventRoutes(mux)
 		c.registerRunResultRoutes(mux)
+		c.registerOverviewRoutes(mux)
 		c.registerReviewRoutes(mux)
 	}
 	mux.HandleFunc("GET /api/v1/system/version", c.systemVersion)
@@ -137,6 +138,11 @@ func digest(value string) string {
 
 func (c *control) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview" {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			r = r.WithContext(ctx)
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -205,6 +211,10 @@ func (c *control) failure(w http.ResponseWriter, r *http.Request, status int, co
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": code}, "request_id": id})
 }
 func (c *control) error(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview" && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
+		c.failure(w, r, 503, "MI_OVERVIEW_TIMEOUT")
+		return
+	}
 	status := 503
 	code := "MI_SERVICE_UNAVAILABLE"
 	switch {

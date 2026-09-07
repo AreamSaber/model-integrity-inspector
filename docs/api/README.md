@@ -30,11 +30,21 @@
 
 ## Run 控制链路（持续开发）
 
-当前54路径/73操作/99 schema；这些数量包括尚未实现的计划接口，不是交付完成数量。有效权限读取及 Run estimate/confirm/read/cancel、SSE、历史/结果/S1证据与目标趋势均有真实HTTP测试。`RunQuote`包含草稿ID/有效期、冻结版本、预算和保守估算；`ConfirmRunInput`不接受完整执行计划或第二套选项。自定义选项与当前生成器上限一致；未来baseline/early_stop仍列为待实现，当前严格拒绝传入。运行时现接入实际分析和可读结果，确认按真实 readiness 与版本/费用/权限准入开放；依赖未就绪仍明确503。
+当前55路径/74操作/109 schema；这些数量包括尚未实现的计划接口，不是交付完成数量。有效权限读取及 Run estimate/confirm/read/cancel、SSE、历史/结果/S1证据、目标趋势及组织总览均有真实HTTP测试。`RunQuote`包含草稿ID/有效期、冻结版本、预算和保守估算；`ConfirmRunInput`不接受完整执行计划或第二套选项。自定义选项与当前生成器上限一致；未来baseline/early_stop仍列为待实现，当前严格拒绝传入。运行时现接入实际分析和可读结果，确认按真实 readiness 与版本/费用/权限准入开放；依赖未就绪仍明确503。
 
 已确认草稿的重复确认使用同一owner/org/hash Run收据，保留于Run而非即将过期的S2草稿行；被清理的未确认草稿为404，尚未清理但过期为409。金额未知不等于零费用；默认已知价格金额上限和所有管理员收紧均在报价/签名前生效。详细开发限制见DEV-RUNTIME-V1.md。
 
-`GET /runs` 使用轻量 RunHistoryItem。历史/结果/证据及趋势六条 route 已标记 implemented-database-backed；现仅支持固定修订1，默认结果和趋势只需 run.read，statistics/Finding/Sample/Attempt 另需 evidence.read。结果只返回闭集 S1、开发/未校准状态和C/D；未执行或缺失不伪造分数。schema 与35个实际 Go 投影（含报告）的字段/必填/可空/封闭结构由 `TestPublicRunReadSchemasMatchActualClosedDTOs` 比较；辅助 `go run scripts/read-contract-schemas.go` 只打印候选 schema，仍需人工复核领域语义及 API 失败路径，不能代替权限测试。生成输出不是完整 OpenAPI，不得整体覆盖其他未注册 schema；本次仅定向合并新增的 RunTrendItem / AttemptTrend。
+`GET /runs` 使用轻量 RunHistoryItem。历史/结果/证据及趋势六条 route 已标记 implemented-database-backed；现仅支持固定修订1，默认结果和趋势只需 run.read，statistics/Finding/Sample/Attempt 另需 evidence.read。结果只返回闭集 S1、开发/未校准状态和C/D；未执行或缺失不伪造分数。schema 与45个实际 Go 投影（含报告及组织总览）的字段/必填/可空/封闭结构由 `TestPublicRunReadSchemasMatchActualClosedDTOs` 比较；辅助 `go run scripts/read-contract-schemas.go` 只打印候选 schema，仍需人工复核领域语义及 API 失败路径，不能代替权限测试。生成输出不是完整 OpenAPI，不得整体覆盖其他未注册 schema；本次仅定向合并10个 Overview schema。
+
+## 组织总览（M6-01 开发单元）
+
+`GET /api/v1/overview?days=7|30` 同时需要 `run.read` 和 `target.read`，在一个只读快照复验持久会话、组织、成员与两项权限。`days` 默认7，拒绝未知/重复/空/补零参数；组织来自 Header，不接受自选组织时区或 as_of。UTC/IANA 组织时区决定含今日的7/30个日历日，Run按 `created_at ∈ [start_utc,as_of)` 归属，今日明确 partial；DST不按固定24小时计算。`Local`/损坏时区明确503，不静默改UTC。
+
+当前目标总数包含禁用、排除软删除，与时间窗无关。任务按Run计数、11种状态分列；COMPLETED不等于所有HTTP调用成功。已发布固定revision 1风险按检测包及四版本分层，不跨版本平均分；未发布/无分值单列。费用仅为既有Run估算，已知小计与未知Run分列，未知或空窗的完整总額为null。cohort的c1等ID只在本响应内关联每日明细，不是持久业务ID。端点不读取正文、Endpoint、凭证、conclusion_json或逐Run样本。
+
+保护上限：窗口Run/当前目标各10000，cohort16，响应256KiB；超限返回 `MI_OVERVIEW_LIMIT`，绝不截断为总体。精确GET从middleware入口到数据库读取使用2秒context，超时 `MI_OVERVIEW_TIMEOUT`；聚合准入每进程2/每组织1，非阻塞忙返回429 `MI_OVERVIEW_BUSY` 和 `Retry-After: 2`，不承诺限住认证前全部流量。坏时区为 `MI_OVERVIEW_TIMEZONE_INVALID`，坏S1为 `MI_ANALYSIS_RESULT_INVALID`；其他会话/权限/初始化/服务错误沿用闭合规则。`Cache-Control: no-store`。这些是开发资源保护，不是生产P95/容量验收。
+
+真实TLS Quick18+Custom9经Worker发布后，SQLite/PostgreSQL实际应用三轮61.209s验证了7/30窗口、两Run而非27Attempt、独立包分层、未知费用null及每日分母。仓储/API另有双库索引EXPLAIN、10000+1拒绝、整数溢出、撤权快照及取消回滚回归。前端27文件623测试及typecheck/lint/build通过；root总览/应用105测试复跑通过。真实SQLite浏览器验证7/30切换、刷新快照、历史跳转/返回、退出和无控制台错误，hold121.660s含交互等待，不是性能结果；不是浏览器活动任务故障验收。
 
 ## 目标历史趋势（HIS-001 后端开发单元）
 
