@@ -77,7 +77,11 @@ func (q *JobQueue) WithLease(ctx context.Context, lease JobLease, fn func(*Tenan
 		if active != 1 {
 			return ErrJobCancelled
 		}
-		capability := &TenantTransaction{store: q.store, db: tx, ctx: ctx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation}
+		actorCtx, err := q.leasedAuditContext(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation}
 		defer capability.closed.Store(true)
 		if err := fn(capability); err != nil {
 			return err

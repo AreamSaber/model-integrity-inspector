@@ -285,7 +285,11 @@ func (q *JobQueue) CompleteWith(ctx context.Context, lease JobLease, fn func(*Te
 		if locked.RowsAffected != 1 {
 			return ErrJobLeaseLost
 		}
-		capability := &TenantTransaction{store: q.store, db: tx, ctx: ctx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, completing: true}
+		actorCtx, err := q.leasedAuditContext(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, completing: true}
 		defer capability.closed.Store(true)
 		if fn != nil {
 			if err := fn(capability); err != nil {

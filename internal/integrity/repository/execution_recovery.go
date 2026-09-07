@@ -170,6 +170,11 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 			return err
 		}
 		for _, job := range jobs {
+			actorCtx, err := workerAuditContext(ctx, db, job)
+			if err != nil {
+				return err
+			}
+			capability.ctx = actorCtx
 			capability.leaseJobID = job.ID
 			if JobType(job.Type) == JobRunPlan {
 				if err := capability.reconcileUnstartedRun(job, now); err != nil {
@@ -198,7 +203,7 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 				if err := db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ?", organizationID, sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
 					return err
 				}
-				if err := capability.store.appendAudit(ctx, db, organizationID, auditObject("run.sample.reconcile", "logical_sample", sample.ID), nil); err != nil {
+				if err := capability.store.appendAudit(capability.ctx, db, organizationID, auditObject("run.sample.reconcile", "logical_sample", sample.ID), nil); err != nil {
 					return err
 				}
 			}
