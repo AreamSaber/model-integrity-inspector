@@ -40,8 +40,8 @@
 
 ## 当前外部前置条件
 
-2026-09-07 已创建私有仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector)，本地 `origin` 已指向该仓库，`main` 已推送。GitHub CLI 已登录 `AreamSaber`，远端确认账号具有 `ADMIN` 权限。
+2026-09-07 创建的仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector) 已按项目方明确授权从私有转换为公开，并回读确认 `PUBLIC`。本地 `origin` 和 `main` 保持同步。GitHub CLI 已登录 `AreamSaber`，远端确认账号具有 `ADMIN` 权限。
 
-GitHub 分支保护 API 当前返回 HTTP 403：`Upgrade to GitHub Pro or make this repository public to enable this feature.` 因此缺少的是私有仓库的套餐能力，分支保护尚未应用。仓库保持私有；启用支持该功能的套餐后，再运行上述脚本并回读验证。CI 中的聚合检查失败不能代替 GitHub 服务端的强制合并限制。
+原私有仓库的套餐限制通过公开仓库解决。`main` 分支保护仍须使用上述脚本应用并回读验证；CI 中的聚合检查失败不能代替 GitHub 服务端的强制合并限制。
 
-Docker 镜像构建、OCI 标签验证、镜像 SBOM 和 Trivy 扫描已在 GitHub 托管 runner 上实际执行；本地未安装 Docker 不再阻塞取得这些验收证据。CI 运行证据见 `docs/reviews/M0-04-review.md`。M0-04 提交最终审核前，仍须完成 M0-03 正式批准、CI 验收以及分支保护应用和回读。
+Docker 镜像构建、OCI 标签验证、镜像 SBOM 和 Trivy 扫描已在 GitHub 托管 runner 上实际执行；本地未安装 Docker 不再阻塞取得这些验收证据。M0-03 已于 2026-09-07 获得项目方正式批准，CI 运行证据见 `docs/reviews/M0-04-review.md`。M0-04 提交最终审核前，仍须完成分支保护应用和回读。

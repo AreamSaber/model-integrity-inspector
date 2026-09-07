@@ -2,7 +2,8 @@
 
 计划编号：M0-04  
 负责人：OPS/SEC  
-依赖：M0-03（当前待审核）  
+依赖：M0-03（已通过，2026-09-07 批准）
+
 当前状态：进行中
 
 ## 目标
@@ -100,13 +101,12 @@ e928e623c42234e35352a9f7deaa8d537d8ce7c3378e7d4b6dc8615b6f473ebb  web/pnpm-lock.
 | 源码 CycloneDX SBOM | `96e6371d55997cc47a3b287013011030327ab867ee19cfd44285fc1cbdd307c7` |
 | 镜像 CycloneDX SBOM | `15137ba31a40262b5cde211da32f1a982454c5d638ca75e3ece3cdf9f416089c` |
 
-分支保护读取请求 `GET /repos/AreamSaber/model-integrity-inspector/branches/main/protection` 返回 HTTP 403：`Upgrade to GitHub Pro or make this repository public to enable this feature.` 这是私有仓库的套餐能力限制；账号已登录且拥有管理权限。分支保护尚未应用，仓库保持私有。
+仓库原为私有时，分支保护读取请求 `GET /repos/AreamSaber/model-integrity-inspector/branches/main/protection` 返回 HTTP 403：`Upgrade to GitHub Pro or make this repository public to enable this feature.` 2026-09-07 项目方明确授权公开仓库后，已将现有仓库转换为 `PUBLIC` 并回读确认；仓库地址和历史保留。M0-03 同日获项目方批准。
 
 ## 尚未关闭的外部条件
 
-1. M0-03 仍为“待审核”，尚未满足 M0-04 的正式依赖状态；
-2. 当前账号套餐不支持该私有仓库的分支保护，需要具备该能力后应用并回读策略，才能满足“CI 失败阻止合并”的服务端强制要求。现有聚合任务会正确报失败，但不能代替分支保护。
+1. 公开仓库的 `main` 分支保护策略仍待应用和回读，才能满足“CI 失败阻止合并”的服务端强制要求。现有聚合任务会正确报失败，但不能代替分支保护。
 
 ## 当前结论
 
-仓库已连接 GitHub，远端 CI 六项任务全部通过，版本化制品、源码/镜像 SBOM、镜像构建与扫描已有真实运行证据。本地未安装 Docker 不再阻塞这些验证。分支保护仍受私有仓库套餐限制，M0-03 依赖仍待批准，因此 M0-04 保持“进行中”，暂不提交最终审核。
+仓库已按项目方授权公开，M0-03 已通过，远端 CI 六项任务全部通过，版本化制品、源码/镜像 SBOM、镜像构建与扫描已有真实运行证据。本地未安装 Docker 不再阻塞这些验证。完成 `main` 分支保护应用和回读前，M0-04 保持“进行中”。

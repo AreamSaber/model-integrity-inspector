@@ -3,7 +3,22 @@
 计划编号：M0-03  
 负责人：TL/BE  
 依赖：M0-02（已通过）  
-当前状态：待审核
+当前状态：已通过
+
+## 批准记录
+
+- 批准日期：2026-09-07。
+- 批准来源：项目方在当前任务中明确批准“M0-03”。
+- 批准范围：独立仓库、工程目录、精确工具链、构建与测试，以及本记录中的 P1/P2/P3 整改。
+- 批准依据：以下本地验证和运行冒烟证据，以及提交 `63a1fbd40719cc9a1cb4f348a9b80d535370549b` 的 [GitHub CI 六项任务全部通过](https://github.com/AreamSaber/model-integrity-inspector/actions/runs/34074051964)。
+- 本轮复验：`verify-m0-03.ps1` 再次通过，最终状态输出为 `M0-01=passed, M0-02=passed, M0-03=passed`。
+
+本机系统 Node 已升级为 `24.20.0`，验证器按预期拒绝版本漂移。复验使用 Node 官方 `node-v24.19.0-win-x64.zip`，对照官方 `SHASUMS256.txt` 校验 SHA-256 `57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73`，解压至被忽略的 `.tools/node-v24.19.0-win-x64/`，未更改系统 Node 或冻结版本。在仓库根目录复用本次本地环境：
+
+```powershell
+$env:PATH = "$(Join-Path $PWD '.tools/node-v24.19.0-win-x64');$env:PATH"
+./scripts/verify-m0-03.ps1
+```
 
 ## 开发目标
 
@@ -112,7 +127,7 @@ b938ec1f4c13272d8b957ea7ff7655b6ffe0087ca88d71f2c15d4b0f8d3fd1e4  .editorconfig
 | migration/rules/tests/deploy 目录 | 已完成 | 双数据库与各责任目录已建立并说明后续里程碑边界。 |
 | 一条命令完成本地构建 | 已完成 | `scripts/build.ps1` 完成依赖恢复、前端测试/构建、Go 测试/构建。 |
 | 无其他业务源码依赖 | 已完成 | Go module 和前端 lockfile 检查通过。 |
-| TL 审核 | 待完成 | 当前保持待审核，未提前标记已通过。 |
+| TL 审核 | 已完成 | 项目方于 2026-09-07 明确批准 M0-03，批准依据见本记录。 |
 
 ## 已知限制
 
@@ -132,4 +147,4 @@ b938ec1f4c13272d8b957ea7ff7655b6ffe0087ca88d71f2c15d4b0f8d3fd1e4  .editorconfig
 
 ## 审核结论
 
-工程结构、依赖锁、构建、测试和三类运行冒烟证据齐全，提交 TL 审核。批准前 M0-03 保持“待审核”，M0 Gate 仍未通过。
+审核结论：已通过。工程结构、依赖锁、构建、测试和三类运行冒烟证据齐全，P1/P2/P3 整改已关闭，项目方于 2026-09-07 明确批准 M0-03。M0-04 的前置依赖已满足；M0 Gate 仍需等待 M0-04～M0-08 全部通过。
