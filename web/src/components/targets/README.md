@@ -33,8 +33,10 @@ URL validation is a usability check, not SSRF enforcement. TLS verification is
 always enabled; authoritative URL/DNS/network restrictions remain on the server.
 The target-row Run entry reads the current target version and opens the separate
 configuration, estimate, cost-confirmation and progress workflow. It never
-automatically prechecks, estimates or creates a Run. The standalone Run list and
-result/report pages are not yet connected. See `../runs/README.md`.
+automatically prechecks, estimates or creates a Run. The standalone Run history
+and existing analysis revision 1 are connected to the real API; the result views
+provide summary, Token/behavior statistics and authorized S1 evidence, not response
+bodies. Report generation and export are not connected. See `../runs/README.md`.
 Precheck is a real, potentially billed operation: it requires opening one target,
 reading its current version, and
 explicitly acknowledging the maximum three upstream requests. List rendering,

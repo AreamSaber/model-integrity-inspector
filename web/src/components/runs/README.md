@@ -25,19 +25,34 @@ creation; after expiry only an existing Run can be recovered. Draft/recovery sta
 is in-memory, not browser storage; navigation warns that leaving does not cancel
 an already submitted job, and a full reload cannot recover this UI state.
 
-`RunProgress` reads one fixed ID every five seconds, for at most 600 reads before
-manual continuation. It pins target, creator, package, manifest, version bundles
-and planned sample count, rejects regressing record versions/sample completion,
-and retains the last accepted record after a read error. Cancellation needs a
+`RunProgress` uses `watchRun` to follow one fixed ID with bounded fetch SSE. An
+initial exact-ID GET establishes the current record; disconnects and terminal
+events require another authoritative GET. A terminal event alone cannot reveal a
+final result link. Automatic tracking is limited to 12 connections or one hour
+before manual continuation; it does not recreate or execute the Run. It pins
+target, creator, package, manifest, version bundles and planned sample count,
+rejects regressing record versions/sample completion, and retains the last
+accepted record after ordinary read errors. Authentication/permission failure
+removes the protected view; it is not presented as an empty or completed Run.
+Cancellation needs a
 checkbox, fresh effective permission and the current record version. It is only
 available for QUEUED/RUNNING with an open execution phase; unknown cancellation
 results are reconciled by GET, never by automatic POST. Organization changes,
 logout, session expiry, mandatory password changes and unmount abort local reads
 and mutations, but do not claim to undo an accepted backend task.
 
-The ANALYZING state does not mean completed analysis. Results/reports remain
-disabled, the standalone Run list is not implemented, and unavailable backend
-execution/analysis handlers fail visibly. Tests exercise the rendered UI through
-the actual client and controlled fetch responses; no paid upstream calls are
-performed, and this checkpoint does not claim real-browser integration, calibrated
-analysis or a completed development milestone.
+The ANALYZING state does not mean completed analysis. A terminal Run with read
+permission offers an existing analysis revision 1 link; the server determines
+whether a published result is actually available. Run history uses server-side
+organization-scoped filters and cursors. The connected result views show immutable
+summary, Token/behavior statistics and S1 samples/Attempt metadata, not response
+bodies. Statistics and S1 details additionally require evidence permission; old
+results cannot silently be replaced by changed content under the same revision.
+Report generation/export remain unavailable. A history list is not the missing
+organization overview/trend or two-Run comparison feature.
+
+Tests exercise the rendered UI through the actual client and controlled fetch
+responses, without paid upstream calls. The current integration ledger separately
+records the real-Go/browser read-path check; it does not establish the full browser
+configuration-to-Run/cancellation/SSE-failure workflow, calibrated analysis or a
+completed development milestone.

@@ -73,6 +73,8 @@ describe('target management API boundary', () => {
     expect(screen.getByText('********test · v3')).toBeTruthy()
     expect((screen.getByRole('button', { name: '预检 Primary target' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByRole('button', { name: '配置检测 Primary target' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText(/检测历史与已有分析结果已接入；报告生成与导出尚未接入/)).toBeTruthy()
+    expect(screen.queryByText(/分析结果和报告尚未接入/)).toBeNull()
     const call = calls.mock.calls.find(([url]) => String(url).includes('/targets?'))!
     expect(String(call[0])).toBe('/api/v1/targets?limit=25')
     expect(new Headers(call[1]?.headers).get('X-Organization-ID')).toBe(org)
