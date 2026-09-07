@@ -187,6 +187,13 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		} else if errors.Is(cause, repository.ErrExecutionStale) {
 			result.outcome.Validity = "NOT_APPLICABLE"
 			result.outcome.ErrorCode = "MI_EXECUTION_TARGET_STALE"
+		} else if errors.Is(cause, repository.ErrExecutionCircuitOpen) && (result.outcome.ErrorCode == "MI_EXECUTION_CANCELLED" || result.outcome.ErrorCode == "MI_NETWORK_TEMPORARY" || result.outcome.ErrorCode == "MI_TIMEOUT") {
+			// A fully received result remains evidence; only I/O interrupted by
+			// the circuit is labelled as stopped by it, never as user cancellation.
+			// net/http can surface a typed context cancellation cause as a network
+			// error, so the trusted watcher cause disambiguates those failures.
+			result.outcome.Validity = "NOT_APPLICABLE"
+			result.outcome.ErrorCode = "MI_EXECUTION_CIRCUIT_OPEN"
 		}
 	}
 	scope := secret.EvidenceScope{OrganizationID: sample.OrganizationID, RunID: sample.RunID, LogicalSampleID: sample.ID, AttemptID: result.attempt.ID, RequestHash: result.attempt.RequestHash}
@@ -209,5 +216,5 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 }
 
 func executionStop(err error) bool {
-	return errors.Is(err, repository.ErrExecutionCancelled) || errors.Is(err, repository.ErrExecutionClosed) || errors.Is(err, repository.ErrExecutionBudget) || errors.Is(err, repository.ErrExecutionStale)
+	return errors.Is(err, repository.ErrExecutionCancelled) || errors.Is(err, repository.ErrExecutionClosed) || errors.Is(err, repository.ErrExecutionBudget) || errors.Is(err, repository.ErrExecutionStale) || errors.Is(err, repository.ErrExecutionCircuitOpen)
 }

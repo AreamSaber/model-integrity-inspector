@@ -212,6 +212,9 @@ func executionOpen(run RunRecord, now time.Time) error {
 	if run.CancelRequestedAt != nil {
 		return ErrExecutionCancelled
 	}
+	if run.CircuitBreakerCode != "" {
+		return ErrExecutionCircuitOpen
+	}
 	if run.ExecutionClosedAt != nil || run.Status != "RUNNING" {
 		return ErrExecutionClosed
 	}
@@ -271,7 +274,7 @@ func (t *Tenant) CheckExecution(runID int64) error {
 	return executionError(tx.executionTargetCurrent(snapshot.Plan.Target))
 }
 
-var outcomeCodes = map[string]bool{"": true, "MI_NETWORK_TEMPORARY": true, "MI_CONNECTION_RESET": true, "MI_TIMEOUT": true, "MI_RATE_LIMITED": true, "MI_SERVICE_UNAVAILABLE": true, "MI_AUTH_FAILED": true, "MI_MODEL_NOT_FOUND": true, "MI_PROTOCOL_UNSUPPORTED": true, "MI_CLIENT_SAFETY_LIMIT": true, "MI_EVIDENCE_LIMIT": true, "MI_SAFETY_REFUSAL": true, "MI_EXECUTION_CANCELLED": true, "MI_EXECUTION_TARGET_STALE": true, "MI_UNCERTAIN_ATTEMPT": true, "MI_EXECUTION_BUDGET_EXCEEDED": true}
+var outcomeCodes = map[string]bool{"": true, "MI_NETWORK_TEMPORARY": true, "MI_CONNECTION_RESET": true, "MI_TIMEOUT": true, "MI_RATE_LIMITED": true, "MI_SERVICE_UNAVAILABLE": true, "MI_AUTH_FAILED": true, "MI_MODEL_NOT_FOUND": true, "MI_PROTOCOL_UNSUPPORTED": true, "MI_CLIENT_SAFETY_LIMIT": true, "MI_EVIDENCE_LIMIT": true, "MI_SAFETY_REFUSAL": true, "MI_EXECUTION_CANCELLED": true, "MI_EXECUTION_TARGET_STALE": true, "MI_UNCERTAIN_ATTEMPT": true, "MI_EXECUTION_BUDGET_EXCEEDED": true, "MI_EXECUTION_CIRCUIT_OPEN": true}
 
 func validAttemptOutcome(outcome domain.AttemptOutcome) bool {
 	if outcome.TokenizerQuality != "" && outcome.TokenizerQuality != "exact" && outcome.TokenizerQuality != "compatible" && outcome.TokenizerQuality != "heuristic" && outcome.TokenizerQuality != "unavailable" {
@@ -385,7 +388,7 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	}
 	if outcome.CompletionTokens == nil {
 		switch outcome.ErrorCode {
-		case "MI_TIMEOUT", "MI_NETWORK_TEMPORARY", "MI_CONNECTION_RESET", "MI_CLIENT_SAFETY_LIMIT", "MI_EVIDENCE_LIMIT", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE":
+		case "MI_TIMEOUT", "MI_NETWORK_TEMPORARY", "MI_CONNECTION_RESET", "MI_CLIENT_SAFETY_LIMIT", "MI_EVIDENCE_LIMIT", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE", "MI_EXECUTION_CIRCUIT_OPEN":
 			output = max(output, int64(plan.Request.MaxOutputTokens))
 		case "MI_PROTOCOL_UNSUPPORTED":
 			if outcome.HTTPStatus == 200 {
@@ -443,7 +446,7 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	}
 	valid := outcome.Validity == "VALID" || outcome.Validity == "VALID_WITH_WARNING"
 	delay, retry := scheduler.RetryDelay(outcome.ErrorCode, attempt.AttemptNo, frozen.Plan.MaxRetries, outcome.RetryAfterSeconds, jitter)
-	retry = retry && outcome.Validity == "INVALID_RETRYABLE" && !uncertain && run.CancelRequestedAt == nil && run.ExecutionClosedAt == nil && run.DeadlineAt != nil && run.DeadlineAt.After(now.Add(delay))
+	retry = retry && outcome.Validity == "INVALID_RETRYABLE" && !uncertain && run.CancelRequestedAt == nil && run.CircuitBreakerCode == "" && run.ExecutionClosedAt == nil && run.DeadlineAt != nil && run.DeadlineAt.After(now.Add(delay))
 	run.TokenCount = totalTokens
 	run.EstimatedCostMicros = totalCost
 	run.ReservedTokens -= attempt.ReservedTokens

@@ -41,6 +41,9 @@ type RunRecord struct {
 	Version                int64
 	RequestKey             string `json:"-"`
 	PlanJobID              *int64
+	FinalizedSampleCount   int64
+	CircuitBreakerCode     string
+	CircuitBreakerOpenedAt *time.Time
 }
 
 func (RunRecord) TableName() string { return "integrity_runs" }
@@ -65,22 +68,23 @@ type ProbeRecord struct {
 func (ProbeRecord) TableName() string { return "integrity_probe_instances" }
 
 type LogicalSampleRecord struct {
-	ID               int64
-	OrganizationID   int64
-	RunID            int64
-	ProbeInstanceID  int64
-	Ordinal          int
-	PairID           *string
-	IdempotencyKey   string
-	RequestPlan      string `json:"-"`
-	FinalAttemptID   *int64
-	Validity         string
-	CreatedAt        time.Time
-	CompletedAt      *time.Time
-	JobID            *int64
-	AttemptCount     int
-	ExecutionOrdinal int
-	FailureCode      string
+	ID                 int64
+	OrganizationID     int64
+	RunID              int64
+	ProbeInstanceID    int64
+	Ordinal            int
+	PairID             *string
+	IdempotencyKey     string
+	RequestPlan        string `json:"-"`
+	FinalAttemptID     *int64
+	Validity           string
+	CreatedAt          time.Time
+	CompletedAt        *time.Time
+	JobID              *int64
+	AttemptCount       int
+	ExecutionOrdinal   int
+	FailureCode        string
+	CompletionSequence *int64
 }
 
 func (LogicalSampleRecord) TableName() string { return "integrity_logical_samples" }

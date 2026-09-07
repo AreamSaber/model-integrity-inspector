@@ -19,17 +19,18 @@ import (
 )
 
 var (
-	ErrExecutionBudget    = errors.New("MI_EXECUTION_BUDGET_EXCEEDED")
-	ErrExecutionLimit     = errors.New("MI_EXECUTION_CONCURRENCY_LIMIT")
-	ErrExecutionRPM       = errors.New("MI_EXECUTION_RATE_LIMIT")
-	ErrExecutionClosed    = errors.New("MI_EXECUTION_CLOSED")
-	ErrExecutionCancelled = errors.New("MI_EXECUTION_CANCELLED")
-	ErrExecutionStale     = errors.New("MI_EXECUTION_TARGET_STALE")
-	ErrAttemptUncertain   = errors.New("MI_UNCERTAIN_ATTEMPT")
+	ErrExecutionBudget      = errors.New("MI_EXECUTION_BUDGET_EXCEEDED")
+	ErrExecutionLimit       = errors.New("MI_EXECUTION_CONCURRENCY_LIMIT")
+	ErrExecutionRPM         = errors.New("MI_EXECUTION_RATE_LIMIT")
+	ErrExecutionClosed      = errors.New("MI_EXECUTION_CLOSED")
+	ErrExecutionCancelled   = errors.New("MI_EXECUTION_CANCELLED")
+	ErrExecutionStale       = errors.New("MI_EXECUTION_TARGET_STALE")
+	ErrAttemptUncertain     = errors.New("MI_UNCERTAIN_ATTEMPT")
+	ErrExecutionCircuitOpen = errors.New("MI_EXECUTION_CIRCUIT_OPEN")
 )
 
 func executionKnownError(err error) error {
-	for _, known := range []error{ErrExecutionBudget, ErrExecutionLimit, ErrExecutionRPM, ErrExecutionClosed, ErrExecutionCancelled, ErrExecutionStale, ErrAttemptUncertain, scheduler.ErrOverflow, scheduler.ErrPolicy, scheduler.ErrUnknownPrice} {
+	for _, known := range []error{ErrExecutionBudget, ErrExecutionLimit, ErrExecutionRPM, ErrExecutionClosed, ErrExecutionCancelled, ErrExecutionStale, ErrAttemptUncertain, ErrExecutionCircuitOpen, scheduler.ErrOverflow, scheduler.ErrPolicy, scheduler.ErrUnknownPrice} {
 		if errors.Is(err, known) {
 			return known
 		}

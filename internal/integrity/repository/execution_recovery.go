@@ -103,6 +103,9 @@ func (tx *TenantTransaction) FinishUnattemptedSample(sampleID int64) error {
 }
 
 func (tx *TenantTransaction) closeExecutionIfFinished(runID int64, now time.Time) error {
+	if err := tx.advanceExecutionBreaker(runID, now); err != nil {
+		return err
+	}
 	var remaining int64
 	if err := tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, runID).Count(&remaining).Error; err != nil {
 		return err
@@ -221,6 +224,9 @@ func (tx *TenantTransaction) reconcileUnstartedRun(job Job, now time.Time) error
 		code = "MI_EXECUTION_CANCELLED"
 	}
 	if err := tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, run.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
+		return err
+	}
+	if _, _, err := tx.sequenceFinalSamples(run.ID); err != nil {
 		return err
 	}
 	if err := tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND run_id = ?", tx.orgID, run.ID).Updates(map[string]any{"status": "COMPLETED", "finished_at": now}).Error; err != nil {

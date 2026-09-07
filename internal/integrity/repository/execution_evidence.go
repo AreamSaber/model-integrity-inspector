@@ -103,7 +103,11 @@ func (tx *TenantTransaction) FailUnattemptedSample(sampleID int64, code string) 
 		return err
 	}
 	if sample.CompletedAt != nil {
-		return ErrExecutionClosed
+		now, err := queueTime(tx.db, tx.store.driver)
+		if err != nil {
+			return err
+		}
+		return tx.closeExecutionIfFinished(sample.RunID, now)
 	}
 	var active int64
 	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND logical_sample_id = ? AND status = 'DISPATCHED'", tx.orgID, sampleID).Count(&active).Error; err != nil {
@@ -147,7 +151,11 @@ func (tx *TenantTransaction) DeferExecutionSample(sampleID int64) error {
 		return err
 	}
 	if sample.CompletedAt != nil {
-		return ErrExecutionClosed
+		now, err := queueTime(tx.db, tx.store.driver)
+		if err != nil {
+			return err
+		}
+		return tx.closeExecutionIfFinished(sample.RunID, now)
 	}
 	run, frozen, err := tx.lockRun(sample.RunID)
 	if err != nil {
