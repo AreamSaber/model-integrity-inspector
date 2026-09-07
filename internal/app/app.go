@@ -13,9 +13,14 @@ import (
 	"model-integrity-inspector.local/mii/internal/identity"
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
 	"model-integrity-inspector.local/mii/internal/integrity/catalog"
+	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
+	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
+	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
+	"model-integrity-inspector.local/mii/internal/integrity/scheduler"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
+	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 	"model-integrity-inspector.local/mii/internal/integrity/worker"
 	webui "model-integrity-inspector.local/mii/web"
 )
@@ -86,12 +91,26 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
+	engine, err := tokenizer.NewBuiltin()
+	if err != nil {
+		return nil, err
+	}
 	if cfg.Role.Components().Worker {
 		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService})
 		if err != nil {
 			return nil, err
 		}
-		app.worker, err = worker.New(worker.Config{Store: store, Handlers: map[repository.JobType]worker.Handler{repository.JobTargetPrecheck: precheck}})
+		handlers, err := worker.NewRunHandlers(worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, Tokenizer: engine})
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobTargetPrecheck] = precheck
+		app.worker, err = worker.New(worker.Config{Store: store, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
+			if err := worker.ReconcileRunJobs(ctx, queue); err != nil {
+				return err
+			}
+			return queue.ExpireRunEstimates(ctx)
+		}})
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +134,21 @@ func prepare(ctx context.Context, cfg Config) (*application, error) {
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Frontend: webui.Handler()})
+		bundle, _, err := templates.Builtin().Canonical()
+		if err != nil {
+			return nil, err
+		}
+		compiler, err := generator.New(bundle, templates.BuiltinHash, engine, key)
+		if err != nil {
+			return nil, err
+		}
+		// Estimates work now, but paid confirmation is fail-closed until a real
+		// versioned scoring bundle and RunAnalysis handler are installed.
+		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: "unconfigured", ScoringVersion: "unconfigured"})
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}

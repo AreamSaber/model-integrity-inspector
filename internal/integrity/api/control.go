@@ -23,6 +23,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
 	"model-integrity-inspector.local/mii/internal/integrity/catalog"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
+	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
 	"model-integrity-inspector.local/mii/internal/integrity/target"
 )
 
@@ -31,6 +32,7 @@ const sessionCookie = "mii_session"
 var ErrControlConfig = errors.New("MI_CONTROL_CONFIGURATION_INVALID")
 
 type ControlConfig struct {
+	Runs                  *runservice.Service
 	Catalog               *catalog.Service
 	Identity              *identity.Service
 	Store                 *repository.Store
@@ -81,6 +83,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	mux.HandleFunc("POST /api/v1/setup/initialize", c.initialize)
 	mux.HandleFunc("POST /api/v1/auth/login", c.login)
 	mux.HandleFunc("GET /api/v1/auth/me", c.me)
+	mux.HandleFunc("GET /api/v1/auth/permissions", c.effectivePermissions)
 	mux.HandleFunc("POST /api/v1/auth/logout", c.logout)
 	mux.HandleFunc("POST /api/v1/auth/change-password", c.changePassword)
 	c.registerManagementRoutes(mux)
@@ -89,6 +92,9 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	}
 	if cfg.Targets != nil {
 		c.registerTargetRoutes(mux)
+	}
+	if cfg.Runs != nil {
+		c.registerRunRoutes(mux)
 	}
 	mux.HandleFunc("GET /api/v1/system/version", c.systemVersion)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -29,6 +29,9 @@ type Config struct {
 	Store    *repository.Store
 	Logger   *slog.Logger
 	Handlers map[repository.JobType]Handler
+	// Maintenance reconciles terminal/abandoned jobs through this consumer's
+	// existing queue. It must honor context and must not open a second consumer.
+	Maintenance func(context.Context, *repository.JobQueue) error
 	// Trusted runtime/test settings may shorten but never lengthen safety polls.
 	PollInterval      time.Duration
 	HeartbeatInterval time.Duration
@@ -104,6 +107,9 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 	if err := queue.HeartbeatConsumer(ctx); err != nil {
 		return err
 	}
+	if err := runner.maintain(ctx, queue); err != nil {
+		return err
+	}
 	runner.ready.Store(true)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -113,6 +119,8 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 		defer close(heartbeatDone)
 		ticker := time.NewTicker(runner.config.HeartbeatInterval)
 		defer ticker.Stop()
+		maintenance := time.NewTicker(time.Second)
+		defer maintenance.Stop()
 		for {
 			select {
 			case <-runCtx.Done():
@@ -123,6 +131,13 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 				err := queue.HeartbeatConsumer(pulseCtx)
 				stop()
 				if err != nil {
+					runner.ready.Store(false)
+					heartbeatFailure <- err
+					cancel()
+					return
+				}
+			case <-maintenance.C:
+				if err := runner.maintain(runCtx, queue); err != nil {
 					runner.ready.Store(false)
 					heartbeatFailure <- err
 					cancel()
@@ -139,6 +154,15 @@ func (runner *Runner) Run(ctx context.Context) (result error) {
 	default:
 	}
 	return err
+}
+
+func (runner *Runner) maintain(ctx context.Context, queue *repository.JobQueue) error {
+	if runner.config.Maintenance == nil {
+		return nil
+	}
+	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return runner.config.Maintenance(bounded, queue)
 }
 
 func (runner *Runner) loop(ctx context.Context, queue *repository.JobQueue) error {

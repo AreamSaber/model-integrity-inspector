@@ -48,3 +48,23 @@ SQLite 只允许 `APP_ROLE=all`。PostgreSQL 允许 server/worker/all；server/a
 浏览器测试使用 `.tools/v1-smoke` 的独立合成账号/数据，不涉及真实上游或现有生产账号。实际 PostgreSQL 测试运行时也位于忽略目录；`scripts/test-postgres.ps1` 只管理带本项目标记且路径/PID 匹配的隔离进程，不安装系统服务。
 
 CI 现增加固定 digest 的 PostgreSQL18.6 服务与双库 race 命令；远端结果必须等实际 workflow 完成后记录。Docker/完整 Compose/全链路检测仍未在本地完成，不能据此声明交付通过。
+
+## Run 开发链路与当前限制
+
+目标列表可主动打开“配置检测”。`GET /api/v1/auth/permissions`返回当前组织/用户的实际持久权限；不从系统管理员标记推断跨租户授权。
+
+`POST /api/v1/runs/estimate`接受当前目标版本、检测包及受限选项。在同版本预检通过后生成签名Manifest并保存10分钟、仅当前创建者可读的草稿；不创建Job，不解密凭证，不访问上游。Quick/Standard/Deep开发包分别为18/60/120逻辑样本，受预算/档案限制时按完整探针组缩减，明确partial。输入Token是保守预算估算；重试需要另外占用预算。自定义包必须指定探针种类、语言、重复次数，阶梯需递增档位；当前最多150逻辑样本。基线/early_stop/观察模式仍待M5，当前不得传入未实现选项。
+
+`POST /api/v1/runs`只接受`estimate_id`、`manifest_hash`、`confirm_cost:true`，确认原冻结配置，不能在确认时改价格/目标/请求。目标、密钥、预检和模型档案版本及有效权限在创建事务中复验。一个草稿只有一个永久执行身份；未知POST结果可手动重试原body恢复同一Run，不自动重新估算或创建第二次执行。
+
+已知双侧价格而未填金额时，普通默认冻结`min(管理员金额上限, 2_000_000微单位)`；底层策略对已知价格始终强制管理员金额上限，不能用null关闭保护。最终冻结配置超过60请求、50,000 Token或2,000,000微单位，以及deep包，需要`run.high-cost`；custom另需`run.custom`。管理员进一步收紧后按实际可执行预算授权。价格未知或仅有单侧价格时金额为null，明确**金额未受限，仅受请求/Token/时间预算约束**；不能设置金额预算，不能冒称免费或金额有界。
+
+无完整模型limits时采用context4096/output1024的保守开发假设并提示，不冒称供应商声明；可信运行时Tokenizer不由模型档案的quality声明替代。配置引用和声明值纳入签名Manifest，旧Run不会随当前目录改价而重估。
+
+RunPlan/SampleExecute Worker已经接入SafeHTTP、流式/非流式Adapter、实际Token计算及每次Do前的独立预算预留。S2响应使用purpose-separated密钥及org/run/sample/attempt/request-hash AAD加密，与Attempt/Job/样本同事务提交；封装上限1MiB，超限不保留伪完整响应。失租、取消或目标轮换停止外呼；DISPATCHED未知结果按UNCERTAIN恢复，不重发猜测成功。
+
+连续最终样本的认证失败2次、模型不存在2次、协议失败5次触发熔断，停止新请求、取消在途网络、保留已收到的有效证据。成功/其他类别打断连续，重试不重复计数；同Run行锁分配完成序号。**2/2/5是未校准开发运行策略，不是正式算法判定阈值**。旧数据迁移只采用完成时间/id确定性回填顺序。
+
+过期草稿按每批最多100条清理并原子记审计，确认后的Run自己保留签名执行快照与owner/hash回执。创建新草稿前也清理该用户过期记录，因此不依赖Worker在线来避免持续堆积。Worker通过同一个消费者执行周期清理；不打开第二个SQLite消费者。已删除的未确认草稿返回404；过期但尚未清理的草稿返回409。TTL清理是自动生命周期行为，不表示创建者进行人工审核或删除操作。响应证据的完整组织保留策略和清理仍待M6，目前固定开发保留期30天，不宣称完整生命周期已交付。
+
+目前M5完整评分包和RunAnalysis处理器尚未接入：版本明确`unconfigured`，运行时确认返回`MI_EXECUTION_NOT_READY`，不会把执行到ANALYZING冒充完整报告。页面支持原始进度和取消，结果/报告入口仍禁用；独立Run列表、SSE推送、完整浏览器端到端、实际多作业并发容量仍需后续完成。

@@ -39,20 +39,27 @@ func (p Policy) Apply(plan domain.ExecutionPlan) (domain.ExecutionPlan, domain.E
 	plan.Budget.MaxRequests = min(plan.Budget.MaxRequests, p.limits.MaxRequests)
 	plan.Budget.MaxTokens = min(plan.Budget.MaxTokens, p.limits.MaxTokens)
 	plan.Budget.TimeoutSeconds = min(plan.Budget.TimeoutSeconds, p.limits.MaxDurationSeconds)
-	if plan.Budget.MaxCostMicros != nil {
-		if *plan.Budget.MaxCostMicros < 0 {
-			return plan, p.limits, ErrPolicy
-		}
-		cost := min(*plan.Budget.MaxCostMicros, p.limits.MaxCostMicros)
-		plan.Budget.MaxCostMicros = &cost
-		if plan.Pricing.InputMicrosPerMillion == nil || plan.Pricing.OutputMicrosPerMillion == nil {
-			return plan, p.limits, ErrUnknownPrice
-		}
-	}
 	for _, price := range []*int64{plan.Pricing.InputMicrosPerMillion, plan.Pricing.OutputMicrosPerMillion} {
 		if price != nil && *price < 0 {
 			return plan, p.limits, ErrPolicy
 		}
+	}
+	if plan.Budget.MaxCostMicros != nil {
+		if *plan.Budget.MaxCostMicros < 0 {
+			return plan, p.limits, ErrPolicy
+		}
+		if plan.Pricing.InputMicrosPerMillion == nil || plan.Pricing.OutputMicrosPerMillion == nil {
+			return plan, p.limits, ErrUnknownPrice
+		}
+	}
+	if plan.Pricing.InputMicrosPerMillion != nil && plan.Pricing.OutputMicrosPerMillion != nil {
+		// An omitted user limit cannot disable an administrator's monetary
+		// ceiling. Freeze a detached value, including an explicit zero ceiling.
+		cost := p.limits.MaxCostMicros
+		if plan.Budget.MaxCostMicros != nil {
+			cost = min(cost, *plan.Budget.MaxCostMicros)
+		}
+		plan.Budget.MaxCostMicros = &cost
 	}
 	return plan, p.limits, nil
 }

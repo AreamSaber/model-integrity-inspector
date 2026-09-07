@@ -98,6 +98,49 @@ func TestAPIContract(t *testing.T) {
 	}
 }
 
+func TestRunQuoteConfirmationAndEffectivePermissionsContract(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/api/openapi-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec map[string]any
+	if json.Unmarshal(raw, &spec) != nil {
+		t.Fatal("invalid contract")
+	}
+	paths := spec["paths"].(map[string]any)
+	schemas := spec["components"].(map[string]any)["schemas"].(map[string]any)
+	confirm := paths["/runs"].(map[string]any)["post"].(map[string]any)
+	request := confirm["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	if request["$ref"] != "#/components/schemas/ConfirmRunInput" {
+		t.Fatal("confirmation accepts a mutable plan")
+	}
+	fields := schemas["ConfirmRunInput"].(map[string]any)["properties"].(map[string]any)
+	if len(fields) != 3 || fields["estimate_id"] == nil || fields["manifest_hash"] == nil || fields["confirm_cost"].(map[string]any)["const"] != true {
+		t.Fatal("confirmation lost explicit fixed quote identity")
+	}
+	for _, name := range []string{"RunQuote", "EffectivePermissions", "Run"} {
+		object := schemas[name].(map[string]any)
+		properties := object["properties"].(map[string]any)
+		for _, forbidden := range []string{"manifest", "nonce", "seed", "messages", "snapshot_json", "secret_id", "ciphertext"} {
+			if properties[forbidden] != nil {
+				t.Fatal("S2 contract projection", name, forbidden)
+			}
+		}
+	}
+	permission := paths["/auth/permissions"].(map[string]any)["get"].(map[string]any)
+	params := permission["parameters"].([]any)
+	if len(params) != 1 || params[0].(map[string]any)["name"] != "X-Organization-ID" || params[0].(map[string]any)["required"] != true {
+		t.Fatal("permissions not organization scoped")
+	}
+	run := schemas["Run"].(map[string]any)["properties"].(map[string]any)
+	for _, name := range []string{"started_at", "finished_at", "execution_closed_at"} {
+		types, ok := run[name].(map[string]any)["type"].([]any)
+		if !ok || len(types) != 2 || types[1] != "null" {
+			t.Fatal("queued run date is not nullable", name)
+		}
+	}
+}
+
 func TestPrototypeCoverage(t *testing.T) {
 	raw, err := os.ReadFile("../../docs/design/m0-05-prototype.html")
 	if err != nil {

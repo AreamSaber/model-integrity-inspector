@@ -27,3 +27,9 @@
 运行 .tools/go/bin/go test ./tests/contracts 检查 77 项追踪完整性、路径/参数/引用/敏感字段和原型覆盖。这是仓库语义回归，不替代完整 OpenAPI 规范校验、真实 API 契约测试或 E2E。实现每组 API 后，应补上实际请求/权限/失败路径测试，将 x-development-status 和台账据实更新；未实现接口不得返回样例成功数据。
 
 正式 schema/接口变更与客户端同时提交；不默默缩减原计划。P1 reanalyze、Webhook、OIDC、PDF/CSV 不作为当前 API 已完成项。
+
+## Run 控制链路（持续开发）
+
+当前52路径/71操作/72 schema；新增有效权限读取及Run estimate/confirm/read/cancel的真实HTTP测试。`RunQuote`包含草稿ID/有效期、冻结版本、预算和保守估算；`ConfirmRunInput`不接受完整执行计划或第二套选项。自定义选项与当前生成器上限一致；未来baseline/early_stop仍列为待实现，当前严格拒绝传入。运行时缺完整分析链时明确503，不返回虚假的完成检测。
+
+已确认草稿的重复确认使用同一owner/org/hash Run收据，保留于Run而非即将过期的S2草稿行；被清理的未确认草稿为404，尚未清理但过期为409。金额未知不等于零费用；默认已知价格金额上限和所有管理员收紧均在报价/签名前生效。详细开发限制见DEV-RUNTIME-V1.md。

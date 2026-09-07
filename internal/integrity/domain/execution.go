@@ -10,9 +10,11 @@ import (
 // ExecutionPlan is immutable S2 execution data, not an HTTP request DTO or log
 // object. Credentials and custom headers have no representation in this type.
 type ExecutionPlan struct {
-	Target       ExecutionTarget `json:"target"`
-	Package      string          `json:"package"`
-	ManifestHash string          `json:"manifest_hash"`
+	PrecheckID   int64                  `json:"precheck_id,omitempty"`
+	ModelProfile *ExecutionModelProfile `json:"model_profile,omitempty"`
+	Target       ExecutionTarget        `json:"target"`
+	Package      string                 `json:"package"`
+	ManifestHash string                 `json:"manifest_hash"`
 	// Manifest is S2 reproduction metadata, never a log field. Low-level legacy
 	// fixtures may omit it; the public service must require a verified compiler
 	// manifest and derive the Plan from it, not accept an arbitrary HTTP Plan.
@@ -24,6 +26,13 @@ type ExecutionPlan struct {
 	MaxRetries    int              `json:"max_retries"`
 	BaselineRunID *int64           `json:"baseline_run_id,omitempty"`
 	Probes        []ProbePlan      `json:"probes"`
+}
+
+// ExecutionModelProfile binds mutable catalog identity to a frozen manifest.
+// Prices, capabilities and limits themselves are stored in the signed options.
+type ExecutionModelProfile struct {
+	ID      int64 `json:"id"`
+	Version int64 `json:"version"`
 }
 
 func (ExecutionPlan) String() string               { return "[redacted execution plan]" }

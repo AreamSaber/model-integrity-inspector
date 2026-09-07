@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"time"
 
@@ -91,9 +92,20 @@ func (t *Tenant) SaveRunEstimate(plan domain.ExecutionPlan, policy scheduler.Pol
 	if err != nil {
 		return RunEstimateRecord{}, err
 	}
+	// Separate transaction keeps cleanup's draft/audit locks out of the target
+	// write lock order, and bounds storage even while no Worker is running.
+	if err := t.controlTenantTransaction("run.create", func(tx *TenantTransaction) error {
+		return tx.store.pruneRunEstimates(tx.ctx, tx.db, t.orgID, actor)
+	}); err != nil {
+		return RunEstimateRecord{}, runEstimateError(err)
+	}
 	var result RunEstimateRecord
 	var classified error
 	err = t.controlTenantTransaction("run.create", func(tx *TenantTransaction) error {
+		if err := tx.validateEstimateBindings(plan, actor); err != nil {
+			classified = err
+			return err
+		}
 		state, err := tx.LockTargetForRun(plan.Target.ID, plan.Target.Version)
 		if err != nil {
 			return err
@@ -136,6 +148,20 @@ func (t *Tenant) GetRunEstimate(id int64) (RunEstimateRecord, error) {
 		return db.Where("organization_id = ? AND id = ? AND created_by = ?", t.orgID, id, actor).First(&record).Error
 	})
 	return record, runEstimateError(err)
+}
+
+// FindConfirmedEstimate only recovers an existing receipt. It cannot create a
+// Run, and remains owner/session scoped even if the target is now disabled.
+func (t *Tenant) FindConfirmedEstimate(id int64, hash string) (RunRecord, error) {
+	actor, err := t.targetActor()
+	if err != nil {
+		return RunRecord{}, err
+	}
+	var run RunRecord
+	err = t.controlTransaction("run.create", func(db *gorm.DB) error {
+		return db.Where("organization_id = ? AND request_key = ? AND created_by = ? AND manifest_hash = ?", t.orgID, "estimate:"+strconv.FormatInt(id, 10), actor, hash).First(&run).Error
+	})
+	return run, runEstimateError(err)
 }
 
 // DecodeRunEstimate returns detached internal configuration, never an HTTP DTO.
@@ -193,6 +219,10 @@ func (t *Tenant) ConfirmRunEstimate(id int64, verifiedPlan domain.ExecutionPlan,
 			classified = ErrEstimateExpired
 			return classified
 		}
+		if err := tx.validateEstimateBindings(plan, actor); err != nil {
+			classified = err
+			return err
+		}
 		run, err = t.createRunInTransaction(tx, plan, limits, encoded, requestKey)
 		return err
 	})
@@ -200,4 +230,49 @@ func (t *Tenant) ConfirmRunEstimate(id int64, verifiedPlan domain.ExecutionPlan,
 		return RunRecord{}, classified
 	}
 	return run, runEstimateError(err)
+}
+
+// Lock order is identical to target edits: target then catalog. Terminal
+// prechecks are immutable and bind the exact target and Secret versions.
+func (tx *TenantTransaction) validateEstimateBindings(plan domain.ExecutionPlan, actor int64) error {
+	permissions, err := managementPermissions(tx.db, tx.orgID, actor)
+	if err != nil {
+		return persistenceError(err)
+	}
+	if plan.Package == "custom" && !slices.Contains(permissions, "run.custom") {
+		return ErrManagementPermission
+	}
+	if (plan.Package == "deep" || plan.Budget.MaxRequests > 60 || plan.Budget.MaxTokens > 50000 || (plan.Budget.MaxCostMicros != nil && *plan.Budget.MaxCostMicros > 2000000)) && !slices.Contains(permissions, "run.high-cost") {
+		return ErrManagementPermission
+	}
+	state, err := tx.LockTargetForRun(plan.Target.ID, plan.Target.Version)
+	if err != nil {
+		return err
+	}
+	if plan.PrecheckID > 0 {
+		var precheck PrecheckRecord
+		if err := tx.db.Where("organization_id = ? AND id = ?", tx.orgID, plan.PrecheckID).First(&precheck).Error; err != nil {
+			return persistenceError(err)
+		}
+		if precheck.Status != "passed" || precheck.TargetID != plan.Target.ID || precheck.TargetVersion != plan.Target.Version || precheck.SecretID != plan.Target.SecretID || precheck.SecretVersion != plan.Target.SecretVersion || precheck.MaxOutputParameter != plan.Target.MaxOutputParameter {
+			return ErrEstimateStale
+		}
+	}
+	if plan.ModelProfile != nil {
+		if state.Target.ModelProfileID == nil || *state.Target.ModelProfileID != plan.ModelProfile.ID {
+			return ErrEstimateStale
+		}
+		var profile ModelProfile
+		query := tx.db.Where("organization_id = ? AND id = ? AND deleted_at IS NULL", tx.orgID, plan.ModelProfile.ID)
+		if tx.store.driver == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "SHARE"})
+		}
+		if err := query.First(&profile).Error; err != nil {
+			return persistenceError(err)
+		}
+		if profile.Status != "active" || int64(profile.Version) != plan.ModelProfile.Version {
+			return ErrEstimateStale
+		}
+	}
+	return nil
 }

@@ -361,6 +361,31 @@ func TestCustomWithoutStreamProbeAndStructuredLogRedaction(t *testing.T) {
 	}
 }
 
+func TestCustomExplicitStreamModesAreNotSilentlyRewritten(t *testing.T) {
+	g := testGenerator(t)
+	for _, mode := range []bool{false, true} {
+		o := testOptions()
+		o.Package = "custom"
+		o.Custom = &Custom{Families: []string{"format", "sequence"}, Languages: []string{"en-US"}, Repetitions: 3, Tiers: []int{64, 128}}
+		o.StreamModes = []bool{mode}
+		m, err := g.Generate(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range m.Samples {
+			if s.Stream != mode {
+				t.Fatal("explicit transport mode ignored")
+			}
+		}
+		if mode {
+			o.SupportsStream = false
+			if _, err := g.Generate(o); err == nil {
+				t.Fatal("unsupported pure stream silently downgraded")
+			}
+		}
+	}
+}
+
 func FuzzManifestVerify(f *testing.F) {
 	g := testGenerator(f)
 	o := testOptions()

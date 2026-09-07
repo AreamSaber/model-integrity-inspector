@@ -34,6 +34,59 @@ func TestPolicyCannotRaiseAdminLimits(t *testing.T) {
 	}
 }
 
+func TestPolicyKnownPricesAlwaysFreezeMonetaryCeiling(t *testing.T) {
+	price := int64(123)
+	for _, ceiling := range []int64{0, 2000000, 1000000000} {
+		limits := DefaultLimits()
+		limits.MaxCostMicros = ceiling
+		policy, err := NewPolicy(limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, requested := range []*int64{nil, new(int64), &price} {
+			plan := domain.ExecutionPlan{Concurrency: 1, Budget: domain.ExecutionBudget{MaxRequests: 10, MaxTokens: 10000, TimeoutSeconds: 60, MaxCostMicros: requested}, Pricing: domain.ExecutionPricing{InputMicrosPerMillion: &price, OutputMicrosPerMillion: &price}}
+			got, _, err := policy.Apply(plan)
+			want := ceiling
+			if requested != nil {
+				want = min(want, *requested)
+			}
+			if err != nil || got.Budget.MaxCostMicros == nil || *got.Budget.MaxCostMicros != want {
+				t.Fatalf("ceiling=%d not enforced: %v", ceiling, err)
+			}
+			if requested != nil && got.Budget.MaxCostMicros == requested {
+				t.Fatal("frozen budget aliases caller pointer")
+			}
+			again, _, err := policy.Apply(got)
+			if err != nil || *again.Budget.MaxCostMicros != want {
+				t.Fatal("frozen policy application not idempotent")
+			}
+		}
+	}
+}
+
+func TestPolicyUnknownAndOneSidedPricesCannotClaimMonetaryBudget(t *testing.T) {
+	price, negative := int64(0), int64(-1)
+	policy, err := NewPolicy(DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pricing := range []domain.ExecutionPricing{{}, {InputMicrosPerMillion: &price}, {OutputMicrosPerMillion: &price}} {
+		plan := domain.ExecutionPlan{Concurrency: 1, Budget: domain.ExecutionBudget{MaxRequests: 10, MaxTokens: 1000, TimeoutSeconds: 60}, Pricing: pricing}
+		got, _, err := policy.Apply(plan)
+		if err != nil || got.Budget.MaxCostMicros != nil {
+			t.Fatal("unknown price fabricated a monetary guarantee")
+		}
+		plan.Budget.MaxCostMicros = &price
+		if _, _, err := policy.Apply(plan); !errors.Is(err, ErrUnknownPrice) {
+			t.Fatal("explicit zero money with unknown pricing accepted")
+		}
+	}
+	plan := domain.ExecutionPlan{Concurrency: 1, Budget: domain.ExecutionBudget{MaxRequests: 1, MaxTokens: 1, TimeoutSeconds: 1}, Pricing: domain.ExecutionPricing{InputMicrosPerMillion: &negative, OutputMicrosPerMillion: &price}}
+	if _, _, err := policy.Apply(plan); !errors.Is(err, ErrPolicy) {
+		t.Fatal("negative price accepted")
+	}
+}
+
 func TestExactCostsOverflowAndConservativeEstimates(t *testing.T) {
 	price := int64(1)
 	pricing := domain.ExecutionPricing{InputMicrosPerMillion: &price, OutputMicrosPerMillion: &price}

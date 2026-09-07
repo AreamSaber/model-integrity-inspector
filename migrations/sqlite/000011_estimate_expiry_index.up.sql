@@ -1,0 +1,1 @@
+-- Shared expiry index is portable; no SQLite-specific statements required.

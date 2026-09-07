@@ -5636,7 +5636,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Estimate"
+                      "$ref": "#/components/schemas/RunQuote"
                     },
                     "request_id": {
                       "type": "string",
@@ -5733,7 +5733,7 @@
           }
         },
         "x-permission": "run.create",
-        "x-development-status": "contract-only",
+        "x-development-status": "http-tested-analysis-pending",
         "requestBody": {
           "required": true,
           "content": {
@@ -5743,7 +5743,8 @@
               }
             }
           }
-        }
+        },
+        "description": "零上游调用；同目标版本passed预检之后生成签名Manifest并保存所有者作用域10分钟草稿，每用户最多20个活跃草稿；不创建Job/Attempt。"
       }
     },
     "/runs": {
@@ -5881,17 +5882,18 @@
           }
         },
         "x-permission": "run.create",
-        "x-development-status": "contract-only",
+        "x-development-status": "http-tested-analysis-pending",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunInput"
+                "$ref": "#/components/schemas/ConfirmRunInput"
               }
             }
           }
-        }
+        },
+        "description": "只确认原草稿/hash；同草稿永久固定执行身份。未知响应可手动重试原body，已有Run即使草稿过期仍恢复同一收据。完整分析处理器未接入时返回MI_EXECUTION_NOT_READY，不发起付费检测。"
       },
       "get": {
         "operationId": "listRuns",
@@ -6265,8 +6267,8 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read",
+        "x-development-status": "http-tested-analysis-pending"
       }
     },
     "/runs/{id}/cancel": {
@@ -6412,7 +6414,7 @@
           }
         },
         "x-permission": "run.cancel-own-or-any",
-        "x-development-status": "contract-only",
+        "x-development-status": "http-tested-analysis-pending",
         "requestBody": {
           "required": true,
           "content": {
@@ -10778,6 +10780,135 @@
         "x-permission": "authenticated",
         "x-development-status": "implemented-local-tests"
       }
+    },
+    "/auth/permissions": {
+      "get": {
+        "operationId": "effectivePermissions",
+        "summary": "读取当前组织的持久有效权限，不从系统管理员标记或角色目录推断",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；只包含授权且脱敏的数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/EffectivePermissions"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "authenticated",
+        "x-development-status": "http-tested"
+      }
     }
   },
   "components": {
@@ -10852,11 +10983,32 @@
                   "MI_SELF_LOCKOUT_FORBIDDEN",
                   "MI_PRECHECK_STALE",
                   "MI_PRECHECK_EXPIRED",
+                  "MI_PRECHECK_ATTEMPTS_EXHAUSTED",
                   "MI_PRECHECK_CANCELLED",
                   "MI_UNCERTAIN_ATTEMPT",
                   "MI_PRECHECK_BUDGET_EXCEEDED",
                   "MI_NETWORK_FAILED",
-                  "MI_TIMEOUT"
+                  "MI_TIMEOUT",
+                  "MI_RUN_ESTIMATE_EXPIRED",
+                  "MI_RUN_ESTIMATE_STALE",
+                  "MI_RUN_ESTIMATE_LIMIT",
+                  "MI_PRECHECK_REQUIRED",
+                  "MI_EXECUTION_NOT_READY",
+                  "MI_PRICE_UNKNOWN",
+                  "MI_PROBE_BUDGET_INSUFFICIENT",
+                  "MI_PROBE_CONFIGURATION_INVALID",
+                  "MI_EXECUTION_CLOSED",
+                  "MI_EXECUTION_TARGET_STALE",
+                  "MI_EXECUTION_BUDGET_EXCEEDED",
+                  "MI_EXECUTION_CANCELLED",
+                  "MI_EXECUTION_CONCURRENCY_LIMIT",
+                  "MI_EXECUTION_RATE_LIMIT",
+                  "MI_NETWORK_TEMPORARY",
+                  "MI_CONNECTION_RESET",
+                  "MI_EXECUTION_CIRCUIT_OPEN",
+                  "MI_CIRCUIT_AUTH_FAILURES",
+                  "MI_CIRCUIT_MODEL_FAILURES",
+                  "MI_CIRCUIT_PROTOCOL_FAILURES"
                 ]
               },
               "message": {
@@ -12184,11 +12336,32 @@
                     "MI_SELF_LOCKOUT_FORBIDDEN",
                     "MI_PRECHECK_STALE",
                     "MI_PRECHECK_EXPIRED",
+                    "MI_PRECHECK_ATTEMPTS_EXHAUSTED",
                     "MI_PRECHECK_CANCELLED",
                     "MI_UNCERTAIN_ATTEMPT",
                     "MI_PRECHECK_BUDGET_EXCEEDED",
                     "MI_NETWORK_FAILED",
-                    "MI_TIMEOUT"
+                    "MI_TIMEOUT",
+                    "MI_RUN_ESTIMATE_EXPIRED",
+                    "MI_RUN_ESTIMATE_STALE",
+                    "MI_RUN_ESTIMATE_LIMIT",
+                    "MI_PRECHECK_REQUIRED",
+                    "MI_EXECUTION_NOT_READY",
+                    "MI_PRICE_UNKNOWN",
+                    "MI_PROBE_BUDGET_INSUFFICIENT",
+                    "MI_PROBE_CONFIGURATION_INVALID",
+                    "MI_EXECUTION_CLOSED",
+                    "MI_EXECUTION_TARGET_STALE",
+                    "MI_EXECUTION_BUDGET_EXCEEDED",
+                    "MI_EXECUTION_CANCELLED",
+                    "MI_EXECUTION_CONCURRENCY_LIMIT",
+                    "MI_EXECUTION_RATE_LIMIT",
+                    "MI_NETWORK_TEMPORARY",
+                    "MI_CONNECTION_RESET",
+                    "MI_EXECUTION_CIRCUIT_OPEN",
+                    "MI_CIRCUIT_AUTH_FAILURES",
+                    "MI_CIRCUIT_MODEL_FAILURES",
+                    "MI_CIRCUIT_PROTOCOL_FAILURES"
                   ]
                 }
               },
@@ -12246,29 +12419,6 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "stream_modes": {
-            "type": "array",
-            "items": {
-              "type": "boolean"
-            },
-            "maxItems": 2,
-            "minItems": 1,
-            "uniqueItems": true
-          },
-          "repetitions": {
-            "type": "integer",
-            "minimum": 3,
-            "maximum": 10
-          },
-          "max_output_levels": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1048576
-            },
-            "maxItems": 10
-          },
           "max_requests": {
             "type": "integer",
             "minimum": 1,
@@ -12277,7 +12427,7 @@
           "max_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 1000000000
+            "maximum": 10000000
           },
           "max_cost_micros": {
             "type": [
@@ -12285,12 +12435,12 @@
               "null"
             ],
             "minimum": 0,
-            "maximum": 9007199254740991
+            "maximum": 1000000000
           },
           "max_minutes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 180
+            "maximum": 45
           },
           "concurrency": {
             "type": "integer",
@@ -12302,27 +12452,77 @@
             "minimum": 0,
             "maximum": 2
           },
-          "early_stop": {
-            "type": "boolean"
+          "repetitions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "max_output_levels": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 131072
+            },
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "仅custom；严格递增；sequence/jsonl必须有档位。"
           },
           "probe_types": {
             "type": "array",
             "items": {
               "type": "string",
-              "maxLength": 64
+              "enum": [
+                "sequence",
+                "jsonl",
+                "format",
+                "neutral",
+                "differential",
+                "style",
+                "self_report"
+              ]
             },
-            "maxItems": 32
+            "maxItems": 7,
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "stream_modes": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "uniqueItems": true
           }
         },
-        "required": []
+        "required": [],
+        "description": "已实现开发范围：非custom只能覆写预算/并发/重试；custom必须给probe_types、languages和repetitions，支持固定单模式或流式比较。管理员限制在生成Manifest前收紧。baseline、early_stop和观察模式仍待后续M5接入，当前请求不得传入。"
       },
       "RunInput": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "target_id": {
-            "type": "string",
-            "pattern": "^[1-9][0-9]{0,18}$"
+            "$ref": "#/components/schemas/ID"
+          },
+          "target_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
           },
           "package": {
             "type": "string",
@@ -12333,21 +12533,14 @@
               "custom"
             ]
           },
-          "baseline_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[1-9][0-9]{0,18}$"
-          },
           "options": {
             "$ref": "#/components/schemas/RunOptions"
           }
         },
         "required": [
           "target_id",
-          "package",
-          "options"
+          "target_version",
+          "package"
         ]
       },
       "Estimate": {
@@ -12356,18 +12549,19 @@
         "properties": {
           "requests": {
             "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
+            "minimum": 1,
+            "maximum": 150
           },
           "input_tokens": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 2147483647
+            "maximum": 10000000
           },
           "max_output_tokens": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 2147483647
+            "maximum": 10000000,
+            "description": "所有计划逻辑样本的输出上限之和，不是单请求上限。"
           },
           "cost_micros": {
             "type": [
@@ -12379,8 +12573,8 @@
           },
           "duration_seconds": {
             "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
+            "minimum": 1,
+            "maximum": 2700
           },
           "usage_safety_factor": {
             "type": "number",
@@ -12390,9 +12584,9 @@
             "type": "array",
             "items": {
               "type": "string",
-              "maxLength": 256
+              "pattern": "^MI_[A-Z0-9_]{1,80}$"
             },
-            "maxItems": 1000
+            "maxItems": 128
           },
           "completeness": {
             "type": "string",
@@ -12408,9 +12602,11 @@
           "max_output_tokens",
           "cost_micros",
           "duration_seconds",
+          "usage_safety_factor",
           "warnings",
           "completeness"
-        ]
+        ],
+        "description": "仅计划首次Attempt；input_tokens为保守预算估算。重试独立预留，费用不是上游账单保证。"
       },
       "Versions": {
         "type": "object",
@@ -12418,19 +12614,19 @@
         "properties": {
           "rule_bundle": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           },
           "template_bundle": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           },
           "scoring": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           },
           "tokenizer_bundle": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           }
         },
         "required": [
@@ -12477,17 +12673,17 @@
           },
           "manifest_hash": {
             "type": "string",
-            "maxLength": 64
+            "pattern": "^[a-f0-9]{64}$"
           },
           "request_count": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 2147483647
+            "maximum": 100000
           },
           "token_count": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 2147483647
+            "maximum": 9007199254740991
           },
           "estimated_cost_micros": {
             "type": [
@@ -12504,8 +12700,8 @@
           },
           "planned_samples": {
             "type": "integer",
-            "minimum": 0,
-            "maximum": 2147483647
+            "minimum": 1,
+            "maximum": 1000
           },
           "completed_samples": {
             "type": "integer",
@@ -12548,11 +12744,32 @@
                     "MI_SELF_LOCKOUT_FORBIDDEN",
                     "MI_PRECHECK_STALE",
                     "MI_PRECHECK_EXPIRED",
+                    "MI_PRECHECK_ATTEMPTS_EXHAUSTED",
                     "MI_PRECHECK_CANCELLED",
                     "MI_UNCERTAIN_ATTEMPT",
                     "MI_PRECHECK_BUDGET_EXCEEDED",
                     "MI_NETWORK_FAILED",
-                    "MI_TIMEOUT"
+                    "MI_TIMEOUT",
+                    "MI_RUN_ESTIMATE_EXPIRED",
+                    "MI_RUN_ESTIMATE_STALE",
+                    "MI_RUN_ESTIMATE_LIMIT",
+                    "MI_PRECHECK_REQUIRED",
+                    "MI_EXECUTION_NOT_READY",
+                    "MI_PRICE_UNKNOWN",
+                    "MI_PROBE_BUDGET_INSUFFICIENT",
+                    "MI_PROBE_CONFIGURATION_INVALID",
+                    "MI_EXECUTION_CLOSED",
+                    "MI_EXECUTION_TARGET_STALE",
+                    "MI_EXECUTION_BUDGET_EXCEEDED",
+                    "MI_EXECUTION_CANCELLED",
+                    "MI_EXECUTION_CONCURRENCY_LIMIT",
+                    "MI_EXECUTION_RATE_LIMIT",
+                    "MI_NETWORK_TEMPORARY",
+                    "MI_CONNECTION_RESET",
+                    "MI_EXECUTION_CIRCUIT_OPEN",
+                    "MI_CIRCUIT_AUTH_FAILURES",
+                    "MI_CIRCUIT_MODEL_FAILURES",
+                    "MI_CIRCUIT_PROTOCOL_FAILURES"
                   ]
                 },
                 "count": {
@@ -12573,16 +12790,28 @@
             "format": "date-time"
           },
           "started_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           },
           "finished_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           },
           "execution_closed_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ID"
           }
         },
         "required": [
@@ -12591,7 +12820,21 @@
           "package",
           "status",
           "version",
-          "versions"
+          "versions",
+          "estimate",
+          "manifest_hash",
+          "request_count",
+          "token_count",
+          "estimated_cost_micros",
+          "valid_sample_count",
+          "planned_samples",
+          "completed_samples",
+          "error_summary",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "execution_closed_at",
+          "created_by"
         ]
       },
       "Progress": {
@@ -12677,11 +12920,32 @@
               "MI_SELF_LOCKOUT_FORBIDDEN",
               "MI_PRECHECK_STALE",
               "MI_PRECHECK_EXPIRED",
+              "MI_PRECHECK_ATTEMPTS_EXHAUSTED",
               "MI_PRECHECK_CANCELLED",
               "MI_UNCERTAIN_ATTEMPT",
               "MI_PRECHECK_BUDGET_EXCEEDED",
               "MI_NETWORK_FAILED",
-              "MI_TIMEOUT"
+              "MI_TIMEOUT",
+              "MI_RUN_ESTIMATE_EXPIRED",
+              "MI_RUN_ESTIMATE_STALE",
+              "MI_RUN_ESTIMATE_LIMIT",
+              "MI_PRECHECK_REQUIRED",
+              "MI_EXECUTION_NOT_READY",
+              "MI_PRICE_UNKNOWN",
+              "MI_PROBE_BUDGET_INSUFFICIENT",
+              "MI_PROBE_CONFIGURATION_INVALID",
+              "MI_EXECUTION_CLOSED",
+              "MI_EXECUTION_TARGET_STALE",
+              "MI_EXECUTION_BUDGET_EXCEEDED",
+              "MI_EXECUTION_CANCELLED",
+              "MI_EXECUTION_CONCURRENCY_LIMIT",
+              "MI_EXECUTION_RATE_LIMIT",
+              "MI_NETWORK_TEMPORARY",
+              "MI_CONNECTION_RESET",
+              "MI_EXECUTION_CIRCUIT_OPEN",
+              "MI_CIRCUIT_AUTH_FAILURES",
+              "MI_CIRCUIT_MODEL_FAILURES",
+              "MI_CIRCUIT_PROTOCOL_FAILURES"
             ]
           }
         },
@@ -14037,6 +14301,140 @@
           "version",
           "secret_version",
           "auth"
+        ]
+      },
+      "EffectivePermissions": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9.-]{0,127}$"
+            },
+            "maxItems": 1000,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "organization_id",
+          "user_id",
+          "permissions"
+        ]
+      },
+      "ConfirmRunInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "estimate_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "manifest_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "confirm_cost": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "estimate_id",
+          "manifest_hash",
+          "confirm_cost"
+        ]
+      },
+      "RunQuote": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "target_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "target_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "package": {
+            "type": "string",
+            "enum": [
+              "quick",
+              "standard",
+              "deep",
+              "custom"
+            ]
+          },
+          "manifest_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/Versions"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "budgets": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "max_requests": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              },
+              "max_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "max_cost_micros": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1000000000
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2700
+              }
+            },
+            "required": [
+              "max_requests",
+              "max_tokens",
+              "max_cost_micros",
+              "timeout_seconds"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "target_version",
+          "package",
+          "manifest_hash",
+          "versions",
+          "estimate",
+          "expires_at",
+          "budgets"
         ]
       }
     }

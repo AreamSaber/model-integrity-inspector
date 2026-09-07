@@ -42,6 +42,12 @@ var label = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 var noncePattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 func validateOptions(o Options) bool {
+	if o.PrecheckID < 0 || (o.ModelProfile != nil && (o.ModelProfile.ID <= 0 || o.ModelProfile.Version <= 0)) {
+		return false
+	}
+	if o.StreamModes != nil && (len(o.StreamModes) < 1 || len(o.StreamModes) > 2 || (len(o.StreamModes) == 2 && o.StreamModes[0] == o.StreamModes[1]) || (len(o.StreamModes) == 1 && o.StreamModes[0] && !o.SupportsStream)) {
+		return false
+	}
 	if o.OrganizationID <= 0 || o.Target.ID <= 0 || o.Target.Version <= 0 || o.Target.SecretID <= 0 || o.Target.SecretVersion <= 0 || o.Target.Protocol != "openai_chat" || (o.Target.MaxOutputParameter != "max_tokens" && o.Target.MaxOutputParameter != "max_completion_tokens") || len(o.Target.Model) == 0 || len(o.Target.Model) > 256 || !utf8.ValidString(o.Target.Model) || strings.ContainsAny(o.Target.Model, "\x00\r\n") {
 		return false
 	}
@@ -237,10 +243,24 @@ func (g *Generator) Generate(options Options) (Manifest, error) {
 	if options.Package == "quick" {
 		m.Warnings = append(m.Warnings, "MI_QUICK_NO_HIGH_CONFIDENCE_NEGATIVE")
 	}
+	if options.ModelLimitsAssumed {
+		m.Warnings = append(m.Warnings, "MI_MODEL_LIMITS_CONSERVATIVE_ASSUMPTION")
+	}
+	if options.Pricing.InputMicrosPerMillion == nil || options.Pricing.OutputMicrosPerMillion == nil {
+		// Unknown or one-sided prices cannot support a monetary guarantee.
+		// Explicit monetary budgets are rejected by validateOptions/Policy.
+		m.Warnings = append(m.Warnings, "MI_PRICE_UNKNOWN_REQUEST_TOKEN_ONLY")
+	}
 	wantsStreamComparison := options.Custom == nil || slices.Contains(options.Custom.Families, "sequence") || slices.Contains(options.Custom.Families, "jsonl")
-	if wantsStreamComparison && !options.SupportsStream {
+	if wantsStreamComparison && !options.SupportsStream && (len(options.StreamModes) == 0 || slices.Contains(options.StreamModes, true)) {
 		m.Warnings = append(m.Warnings, "MI_STREAM_COMPARISON_NOT_APPLICABLE")
 		m.Completeness = "PARTIAL"
+	}
+	if wantsStreamComparison && len(options.StreamModes) == 1 {
+		m.Warnings = append(m.Warnings, "MI_STREAM_COMPARISON_DISABLED")
+		if options.Custom == nil {
+			m.Completeness = "PARTIAL"
+		}
 	}
 	if options.Custom != nil && options.Custom.Repetitions < 3 {
 		m.Warnings = append(m.Warnings, "MI_REPETITIONS_INSUFFICIENT")
@@ -327,7 +347,7 @@ func (g *Generator) expand(m Manifest, group conditionGroup, sharedVariables map
 			// Both languages/format variants and differential arms share variables.
 			// Stream pairs additionally share variables across adjacent repetitions.
 			ladder := c.family == "sequence" || c.family == "jsonl"
-			if ladder {
+			if ladder && m.Options.SupportsStream && len(m.Options.StreamModes) != 1 {
 				key = c.family + ".stream-pair." + strconv.Itoa(repetition/2)
 			}
 			v, exists := sharedVariables[key]
@@ -364,7 +384,9 @@ func (g *Generator) expand(m Manifest, group conditionGroup, sharedVariables map
 				s.PairID = v.pairID
 				s.Arm = []string{"A", "B"}[c.variant-1]
 			}
-			if ladder {
+			if len(m.Options.StreamModes) == 1 {
+				s.Stream = m.Options.StreamModes[0]
+			} else if ladder {
 				s.Stream = m.Options.SupportsStream && repetition%2 == 1
 			}
 			request, err := g.request(m.Options, s)

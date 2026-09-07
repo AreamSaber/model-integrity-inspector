@@ -128,6 +128,11 @@ func TestExecutionCustomAndHighCostPermissionsRevalidated(t *testing.T) {
 			t.Fatal("deep permission bypass", err)
 		}
 		plan.Package = "standard"
+		if _, err := tenant.CreateRun(plan, policy, "nil-money-high-denied"); !errors.Is(err, ErrManagementPermission) {
+			t.Fatal("known-price nil money bypassed high-cost ceiling", err)
+		}
+		money = 2000000 // The public service's ordinary known-price default.
+		plan.Budget.MaxCostMicros = &money
 		if _, err := tenant.CreateRun(plan, policy, "standard-allowed"); err != nil {
 			t.Fatal("standard baseline unexpectedly denied", err)
 		}

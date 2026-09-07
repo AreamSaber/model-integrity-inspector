@@ -113,7 +113,7 @@ func validateJSONValue(decoder *json.Decoder, shape reflect.Type, nullable bool,
 			}
 			// These optional target references are explicitly nullable. Other
 			// fields must be omitted to request a default/no change.
-			allowNull := (name == "provider_id" || name == "model_profile_id" || name == "input_price_micros_per_million" || name == "output_price_micros_per_million") && (child == nil || child == reflect.TypeFor[json.RawMessage]() || child.Kind() == reflect.Pointer)
+			allowNull := (name == "provider_id" || name == "model_profile_id" || name == "input_price_micros_per_million" || name == "output_price_micros_per_million" || name == "max_cost_micros") && (child == nil || child == reflect.TypeFor[json.RawMessage]() || child.Kind() == reflect.Pointer)
 			if err := validateJSONValue(decoder, child, allowNull, depth+1); err != nil {
 				return err
 			}

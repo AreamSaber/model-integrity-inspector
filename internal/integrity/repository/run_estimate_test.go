@@ -11,9 +11,14 @@ import (
 	"time"
 
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
+	"model-integrity-inspector.local/mii/internal/integrity/scheduler"
 )
 
 func estimateFixturePlan(plan domain.ExecutionPlan) domain.ExecutionPlan {
+	// The service applies policy before signing. Repository fixtures freeze the
+	// same known-price ceiling instead of relying on formerly unbounded nil.
+	ceiling := scheduler.DefaultLimits().MaxCostMicros
+	plan.Budget.MaxCostMicros = &ceiling
 	plan.Manifest = json.RawMessage(`{"development_fixture":"synthetic-reproduction-canary"}`)
 	hash := sha256.Sum256(plan.Manifest)
 	plan.ManifestHash = hex.EncodeToString(hash[:])
