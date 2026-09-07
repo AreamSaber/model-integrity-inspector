@@ -42,7 +42,7 @@ func TestAPIContract(t *testing.T) {
 	}
 	checkRefs(spec)
 	paths := spec["paths"].(map[string]any)
-	for _, path := range []string{"/setup/status", "/setup/initialize", "/auth/login", "/auth/logout", "/auth/me", "/auth/change-password", "/users", "/organizations", "/organizations/{id}/members", "/roles", "/providers", "/model-profiles", "/targets", "/targets/{id}/precheck", "/targets/{id}/rotate-secret", "/runs", "/runs/estimate", "/runs/{id}/events", "/runs/{id}/retry-probes", "/runs/{id}/result", "/runs/{id}/findings", "/runs/{id}/samples/{sampleId}", "/runs/{id}/reviews", "/runs/{id}/reports", "/reports/{reportId}/download", "/baselines", "/baselines/{id}/approve", "/rule-bundles/{id}/publish", "/audit-logs", "/system/health", "/system/backups"} {
+	for _, path := range []string{"/setup/status", "/setup/initialize", "/auth/login", "/auth/logout", "/auth/me", "/auth/change-password", "/users", "/organizations", "/organizations/{id}/members", "/roles", "/providers", "/model-profiles", "/targets", "/targets/{id}/precheck", "/targets/{id}/rotate-secret", "/runs", "/runs/trends", "/runs/estimate", "/runs/{id}/events", "/runs/{id}/retry-probes", "/runs/{id}/result", "/runs/{id}/findings", "/runs/{id}/samples/{sampleId}", "/runs/{id}/reviews", "/runs/{id}/reports", "/reports/{reportId}/download", "/baselines", "/baselines/{id}/approve", "/rule-bundles/{id}/publish", "/audit-logs", "/system/health", "/system/backups"} {
 		if paths[path] == nil {
 			t.Errorf("missing P0 API path: %s", path)
 		}

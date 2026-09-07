@@ -11,6 +11,314 @@
     }
   ],
   "paths": {
+    "/runs/trends": {
+      "get": {
+        "operationId": "listRunTrends",
+        "summary": "List one target's persisted per-Run risk, confidence and attempt trends",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "description": "Opaque signed cursor, valid for 24 hours, bound to reader user, organization, trends resource/revision 1, normalized filters and q. Cannot be reused for /runs, another reader/organization or different filters. Page size may change. Newest created_at DESC,id DESC ordering; a normal anchor status change does not invalidate its position."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "x-max-utf8-bytes": 128
+            },
+            "description": "Trimmed UTF-8 text, at most 128 bytes; NUL/CR/LF and duplicate parameters are rejected. Matches current live target metadata, not the frozen historical request. Literal case-insensitive substring of current target name/model; wildcard characters are escaped."
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "required": true,
+            "description": "Required positive decimal ID. A nonexistent or foreign target produces an empty page within the already-authorized organization; this endpoint does not disclose target existence. Deleted targets retain historical target_id."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RunStatus"
+            }
+          },
+          {
+            "name": "package",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "quick",
+                "standard",
+                "deep",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "x-max-utf8-bytes": 128
+            },
+            "description": "Trimmed UTF-8 text, at most 128 bytes; NUL/CR/LF and duplicate parameters are rejected. Matches current live target metadata, not the frozen historical request. Exact current model filter; explicitly empty values are rejected."
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "x-max-utf8-bytes": 128
+            },
+            "description": "Trimmed UTF-8 text, at most 128 bytes; NUL/CR/LF and duplicate parameters are rejected. Matches current live target metadata, not the frozen historical request. Exact current channel_id filter; explicitly empty values are rejected."
+          },
+          {
+            "name": "risk_level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "watch",
+                "medium",
+                "high",
+                "critical",
+                "insufficient"
+              ]
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "maxLength": 64
+            },
+            "description": "Inclusive Run created_at boundary, parsed as RFC3339Nano and normalized to UTC for cursor binding. date_from must not be later than date_to."
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "maxLength": 64
+            },
+            "description": "Inclusive Run created_at boundary, parsed as RFC3339Nano and normalized to UTC for cursor binding. date_from must not be later than date_to."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded S1 trend page with at most 100 Run items and an opaque next_cursor. success_rate_percent=100*succeeded/dispatched, including retries and uncertain/in-flight dispatches in the explicit denominator; not a future probability or sample completion rate. Unknown/in-flight are not labelled failed. Latency uses observed completed successes and failures only; missing latency is null, genuine 0ms is retained, UNCERTAIN recovery placeholders are excluded. Current target metadata is live and may be null after deletion. Values are not aggregated across this page or claimed representative of all historical Runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RunTrendItem"
+                          },
+                          "maxItems": 100
+                        },
+                        "next_cursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "scope": {
+                          "type": "string",
+                          "const": "run_page"
+                        },
+                        "analysis_revision": {
+                          "type": "integer",
+                          "const": 1
+                        },
+                        "success_rate_basis": {
+                          "type": "string",
+                          "const": "confirmed_successes_over_all_dispatches_percent"
+                        },
+                        "latency_basis": {
+                          "type": "string",
+                          "const": "completed_attempts_with_observed_duration"
+                        },
+                        "development": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "calibrated": {
+                          "type": "boolean",
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "next_cursor",
+                        "scope",
+                        "analysis_revision",
+                        "success_rate_basis",
+                        "latency_basis",
+                        "development",
+                        "calibrated"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "request_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/malformed target_id or organization header; invalid/duplicate/unknown filters, invalid date range, or malformed/expired/tampered/wrong-scope cursor. No raw parameters or bodies are returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_INVALID_REQUEST"
+            ]
+          },
+          "401": {
+            "description": "Missing, expired or revoked session, disabled user or password/session invalidation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SESSION_REQUIRED"
+            ]
+          },
+          "403": {
+            "description": "Missing or revoked organization membership/run.read, disabled organization, or mandatory password change. Evidence permission is not required for these aggregate S1 statistics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_PERMISSION_DENIED",
+              "MI_PASSWORD_CHANGE_REQUIRED"
+            ]
+          },
+          "409": {
+            "description": "The application has not yet completed first-time initialization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SETUP_REQUIRED"
+            ]
+          },
+          "429": {
+            "description": "Reserved common gateway rate-limit contract. The current trends handler does not implement an independent rate limiter; this declaration does not claim one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_RATE_LIMITED"
+            ]
+          },
+          "500": {
+            "description": "Closed error from the common unexpected-panic protection; no raw exception text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SERVICE_UNAVAILABLE"
+            ]
+          },
+          "503": {
+            "description": "Unavailable database/reader authority or invalid persisted S1 data. Unknown versions/status/validity, broken Run/sample/Attempt binding, request_count mismatch, out-of-range duration or resource bounds fail closed. Never substitute an empty success page or fabricated zero statistics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_ANALYSIS_RESULT_INVALID",
+              "MI_SERVICE_UNAVAILABLE"
+            ]
+          }
+        },
+        "x-permission": "run.read",
+        "x-development-status": "implemented-database-backed",
+        "description": "Requires run.read and a current session in X-Organization-ID, revalidated in the same read snapshot as the Run page and its attempt aggregates. target_id is mandatory. Returns only this bounded newest-first Run page, never a whole-target/global summary. Published risk/confidence uses revision 1 with frozen version identifiers and development/uncalibrated limitations. Independent target prechecks are not Run attempts. Request counters must match persisted dispatched attempts; malformed S1 data fails closed rather than inventing a denominator. No request/response bodies, evidence ciphertext or raw upstream errors are read.",
+        "x-query-policy": "Only declared query parameters are accepted once each. target_id must be present. analysis_revision/include are not accepted: the result revision is fixed at 1."
+      }
+    },
     "/reports/{reportId}": {
       "get": {
         "operationId": "getReport",
@@ -12499,6 +12807,145 @@
         ],
         "type": "object"
       },
+      "RunTrendItem": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "$ref": "#/components/schemas/AttemptTrend"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunHistoryItem"
+          }
+        },
+        "required": [
+          "run",
+          "attempts"
+        ],
+        "type": "object"
+      },
+      "AttemptTrend": {
+        "additionalProperties": false,
+        "properties": {
+          "dispatched": {
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Known COMPLETED attempts with non-valid final outcomes, including HTTP/protocol/safety/cancellation failures. Does not include UNCERTAIN or DISPATCHED attempts.",
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "in_flight": {
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "latency_max_ms": {
+            "anyOf": [
+              {
+                "maximum": 86400000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observed client-side total duration in milliseconds; null when latency_samples=0. Real observed 0ms is retained. Not time-to-first-token, P95, server compute time or an inferred latency for missing observations."
+          },
+          "latency_mean_ms": {
+            "anyOf": [
+              {
+                "maximum": 86400000,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observed client-side total duration in milliseconds; null when latency_samples=0. Real observed 0ms is retained. Not time-to-first-token, P95, server compute time or an inferred latency for missing observations."
+          },
+          "latency_min_ms": {
+            "anyOf": [
+              {
+                "maximum": 86400000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observed client-side total duration in milliseconds; null when latency_samples=0. Real observed 0ms is retained. Not time-to-first-token, P95, server compute time or an inferred latency for missing observations."
+          },
+          "latency_samples": {
+            "description": "COMPLETED successful or failed attempts with a non-null observed duration_ms in [0,86400000]. Missing duration, in-flight attempts and UNCERTAIN recovery zero placeholders are excluded.",
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "logical_samples": {
+            "description": "Distinct persisted logical sample IDs with an attempt. Retrying a sample does not create an independent statistical sample.",
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retry_attempts": {
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "succeeded": {
+            "description": "COMPLETED attempts with VALID or VALID_WITH_WARNING validity, HTTP 200, no error and valid start/finish timestamps. COMPLETED alone is not success.",
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "success_rate_denominator": {
+            "description": "Equals dispatched, including every retry, UNCERTAIN and in-flight attempt. Never Run completed_samples, valid_sample_count or a substitute request counter.",
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "success_rate_percent": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "100 * succeeded / dispatched. Null only when dispatched=0. This is the confirmed-success fraction of observed dispatch records, not a future probability; uncertain and in-flight attempts remain in the denominator but are not labelled failed."
+          },
+          "uncertain": {
+            "maximum": 3000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dispatched",
+          "logical_samples",
+          "retry_attempts",
+          "succeeded",
+          "failed",
+          "uncertain",
+          "in_flight",
+          "success_rate_percent",
+          "success_rate_denominator",
+          "latency_samples",
+          "latency_mean_ms",
+          "latency_min_ms",
+          "latency_max_ms"
+        ],
+        "type": "object"
+      },
       "ID": {
         "type": "string",
         "pattern": "^[1-9][0-9]{0,18}$"
@@ -12552,6 +12999,7 @@
                   "MI_RUN_CONFLICT",
                   "MI_INSUFFICIENT_SAMPLES",
                   "MI_ANALYSIS_FAILED",
+                  "MI_ANALYSIS_RESULT_INVALID",
                   "MI_SECRET_UNAVAILABLE",
                   "MI_PERMISSION_DENIED",
                   "MI_SERVICE_UNAVAILABLE",

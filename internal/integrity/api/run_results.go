@@ -14,6 +14,7 @@ import (
 
 func (c *control) registerRunResultRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/runs", c.listRunHistory)
+	mux.HandleFunc("GET /api/v1/runs/trends", c.listRunTrends)
 	mux.HandleFunc("GET /api/v1/runs/{id}/result", c.getRunResult)
 	mux.HandleFunc("GET /api/v1/runs/{id}/findings", c.listRunFindings)
 	mux.HandleFunc("GET /api/v1/runs/{id}/samples", c.listRunSamples)

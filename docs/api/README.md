@@ -30,8 +30,33 @@
 
 ## Run 控制链路（持续开发）
 
-当前52路径/71操作/80 schema；有效权限读取及 Run estimate/confirm/read/cancel、SSE、历史/结果/S1证据均有真实HTTP测试。`RunQuote`包含草稿ID/有效期、冻结版本、预算和保守估算；`ConfirmRunInput`不接受完整执行计划或第二套选项。自定义选项与当前生成器上限一致；未来baseline/early_stop仍列为待实现，当前严格拒绝传入。运行时现接入实际分析和可读结果，确认按真实 readiness 与版本/费用/权限准入开放；依赖未就绪仍明确503。
+当前54路径/73操作/99 schema；这些数量包括尚未实现的计划接口，不是交付完成数量。有效权限读取及 Run estimate/confirm/read/cancel、SSE、历史/结果/S1证据与目标趋势均有真实HTTP测试。`RunQuote`包含草稿ID/有效期、冻结版本、预算和保守估算；`ConfirmRunInput`不接受完整执行计划或第二套选项。自定义选项与当前生成器上限一致；未来baseline/early_stop仍列为待实现，当前严格拒绝传入。运行时现接入实际分析和可读结果，确认按真实 readiness 与版本/费用/权限准入开放；依赖未就绪仍明确503。
 
 已确认草稿的重复确认使用同一owner/org/hash Run收据，保留于Run而非即将过期的S2草稿行；被清理的未确认草稿为404，尚未清理但过期为409。金额未知不等于零费用；默认已知价格金额上限和所有管理员收紧均在报价/签名前生效。详细开发限制见DEV-RUNTIME-V1.md。
 
-`GET /runs` 使用轻量 RunHistoryItem。五条历史/结果/证据 route 已标记 implemented-database-backed；现仅支持固定修订1，默认结果只需 run.read，statistics/Finding/Sample/Attempt 另需 evidence.read。结果只返回闭集 S1、开发/未校准状态和C/D；未执行或缺失不伪造分数。schema 与15个实际 Go DTO 的字段/必填/可空/封闭结构由 `TestPublicRunReadSchemasMatchActualClosedDTOs` 比较；辅助 `go run scripts/read-contract-schemas.go` 只打印候选 schema，仍需人工复核领域语义及 API 失败路径，不能代替权限测试。
+`GET /runs` 使用轻量 RunHistoryItem。历史/结果/证据及趋势六条 route 已标记 implemented-database-backed；现仅支持固定修订1，默认结果和趋势只需 run.read，statistics/Finding/Sample/Attempt 另需 evidence.read。结果只返回闭集 S1、开发/未校准状态和C/D；未执行或缺失不伪造分数。schema 与35个实际 Go 投影（含报告）的字段/必填/可空/封闭结构由 `TestPublicRunReadSchemasMatchActualClosedDTOs` 比较；辅助 `go run scripts/read-contract-schemas.go` 只打印候选 schema，仍需人工复核领域语义及 API 失败路径，不能代替权限测试。生成输出不是完整 OpenAPI，不得整体覆盖其他未注册 schema；本次仅定向合并新增的 RunTrendItem / AttemptTrend。
+
+## 目标历史趋势（HIS-001 后端开发单元）
+
+`GET /api/v1/runs/trends?target_id=<ID>` 对应 operationId `listRunTrends`。必须携带当前会话 Cookie、`X-Organization-ID` 及正十进制字符串 `target_id`，权限为 `run.read`；S1 聚合不要求 `evidence.read`。每次请求在同一个只读快照中复验持久会话/账号/组织/成员/权限并读取 Run 与 Attempt。不是前端过滤授权，也不重新解密响应；该后端单元不等于趋势前端已接入或正式审核通过。
+
+筛选沿用历史列表：`q`、`status`、`package`、`model`、`channel_id`、`risk_level`、`date_from`、`date_to`，另有 `limit`（默认25，范围1–100）和 opaque `cursor`。日期为包含边界的 Run 创建时间，接受 RFC3339Nano 并规范为 UTC；起点不得晚于终点。`q` 是当前目标名称/模型的大小写不敏感字面子串；`model`、`channel_id` 匹配当前实时目标档案，均不是冻结历史请求。三项文本最多128个 UTF-8 字节，拒绝 NUL/CR/LF；显式空的 model/channel_id 拒绝，空 q 表示无搜索条件。重复或未知参数拒绝；不接受 `analysis_revision`、`include`，修订固定为1。
+
+按 `created_at DESC,id DESC` 返回 `{data:{items:[{run:RunHistoryItem,attempts:AttemptTrend}],next_cursor,scope,analysis_revision,success_rate_basis,latency_basis,development,calibrated},request_id}`。`next_cursor` 无下一页时为 null；签名游标有效期24小时，绑定 reader、组织、趋势资源/修订、规范化筛选和 q，不能用于 `/runs` 或更换范围。改变 limit 不改变范围；锚点正常状态变更保留创建时间/ID位置。未知/其他组织的 target 在已经授权的当前组织中返回200空页，不泄漏对象是否存在；已删除目标仍按 target_id 保留历史，当前档案字段可为 null。
+
+每个 Run 独立返回固定 revision 1 的已发布风险/置信度、版本和真实派发 Attempt 聚合。尚无发布结果时 `run.result=null`。`scope` 固定 `run_page`：最多100条当前页及只用于判断下一页的一条探测行，不提供全部目标、全部组织或全历史汇总；翻页之间运行状态可以合法变化。
+
+| 字段 | 真实口径与缺失处理 |
+|---|---|
+| dispatched / retry_attempts / logical_samples | 包含每次重试的派发记录数 / attempt_no>1 的记录数 / 已派发的不同逻辑样本数。独立预检不包含在此 Run 口径内；重试不变成独立统计样本。 |
+| succeeded / failed | 成功须同时是 COMPLETED、VALID/VALID_WITH_WARNING、HTTP 200、无 error 且开始/完成时间有效。failed 是其余已知完成且无效的结算，包括协议、安全、取消等失败；COMPLETED 本身不是成功。 |
+| uncertain / in_flight | 分别为 UNCERTAIN 和尚未结算的 DISPATCHED，单独展示，不能当作已知失败或成功。 |
+| success_rate_percent / success_rate_denominator | `100 × succeeded / dispatched`，分母明确包含重试、unknown和在途；无派发时百分比为 null，分母为0。仅未知/在途但没有已证实成功时百分比可为0，这不是“它们都失败”，更不是未来成功概率。 |
+| latency_samples | 有合法非空 duration_ms 的已结算 COMPLETED Attempt 数，包含成功和失败。缺失观测、在途与 UNCERTAIN 恢复的占位0均排除；实际观测到的0毫秒保留。 |
+| latency_mean_ms / latency_min_ms / latency_max_ms | 上述有效观测的均值/最小/最大值，`latency_samples=0` 时三者均为 null。表示客户端总耗时，不是 P95、TTFT 或供应商内部计算时间。 |
+
+`dispatched=succeeded+failed+uncertain+in_flight`，同时等于 `logical_samples+retry_attempts`；不使用 Run 完成数/有效样本数替代调用分母。当前实现尚不清理 Attempt 元数据，因此 request_count 与派发记录数不一致时拒绝结果，而不是猜测缺失记录。SQL 仅按选定 Run 和组织读取 S1 聚合，内部最多读取3001条记录并对超过3000条的 Run 拒绝；未知 status/validity/error、断裂身份绑定、负数或超过86400000毫秒的 duration 等损坏数据返回503 `MI_ANALYSIS_RESULT_INVALID`，不降级成空页或0。不会读取请求快照、响应正文、证据密文或 conclusion_json。
+
+错误边界：400 `MI_INVALID_REQUEST`（参数/游标/范围）；401 `MI_SESSION_REQUIRED`；403 `MI_PERMISSION_DENIED` 或 `MI_PASSWORD_CHANGE_REQUIRED`；409 `MI_SETUP_REQUIRED`（尚未初始化）；500 通用 panic 保护及503数据库/读依赖不可用使用闭合 `MI_SERVICE_UNAVAILABLE`。共用契约保留429网关限流响应，但当前趋势 handler 没有独立限流器，声明不表示限流已实现。所有错误不带上游正文或原始异常。`development=true`、`calibrated=false`；风险仍受C/D等级及黑盒替代解释限制，不证明模型真假或供应商内部行为。
+
+`tests/contracts/run_trends_test.go` 检查真实 Go 路由/handler 的注册、授权和固定响应常量，检查参数、operation、错误枚举、分页上限、可空分母与递归无S2闭集。实际双库行为回归位于 `internal/integrity/api/run_trends_test.go` 和 `internal/integrity/repository/run_trends_test.go`；契约检查不替代这些请求/并发快照/权限测试。

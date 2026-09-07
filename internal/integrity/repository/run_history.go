@@ -188,38 +188,48 @@ func (t *Tenant) ListRunHistory(page ListOptions, filters RunFilters) ([]RunHist
 	}
 	rows := []RunHistoryRecord{}
 	err := t.resultReadTransaction(false, func(tx *gorm.DB) error {
-		q := historyQuery(tx, t.orgID)
-		if filters.TargetID > 0 {
-			q = q.Where("r.target_id=?", filters.TargetID)
+		q, err := historyPageQuery(tx, t.orgID, page.AfterID, filters)
+		if err != nil {
+			return err
 		}
-		for _, v := range []struct{ column, value string }{{"r.status", filters.Status}, {"r.package", filters.Package}, {"t.model", filters.Model}, {"t.channel_id", filters.ChannelID}, {"rr.risk_level", filters.RiskLevel}} {
-			if v.value != "" {
-				q = q.Where(v.column+"=?", v.value)
-			}
-		}
-		if filters.Query != "" {
-			pattern := "%" + strings.ToLower(strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(filters.Query)) + "%"
-			q = q.Where("(LOWER(t.name) LIKE ? ESCAPE '!' OR LOWER(t.model) LIKE ? ESCAPE '!')", pattern, pattern)
-		}
-		if filters.From != nil {
-			q = q.Where("r.created_at>=?", *filters.From)
-		}
-		if filters.To != nil {
-			q = q.Where("r.created_at<=?", *filters.To)
-		}
-		if page.AfterID > 0 {
-			var anchor struct{ CreatedAt time.Time }
-			// The HTTP cursor binds reader/org/filters. Its immutable ordering
-			// anchor must survive ordinary status/current-target metadata changes.
-			if err := tx.Table("integrity_runs").Select("created_at").Where("organization_id=? AND id=?", t.orgID, page.AfterID).Take(&anchor).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return ErrConfiguration
-				}
-				return err
-			}
-			q = q.Where("(r.created_at < ? OR (r.created_at = ? AND r.id < ?))", anchor.CreatedAt, anchor.CreatedAt, page.AfterID)
-		}
-		return q.Order("r.created_at DESC, r.id DESC").Limit(page.Limit).Scan(&rows).Error
+		return q.Limit(page.Limit).Scan(&rows).Error
 	})
 	return rows, err
+}
+
+// Shared ordering/filter construction only; callers retain their own fixed
+// page bounds and snapshot authorization requirements.
+func historyPageQuery(tx *gorm.DB, orgID, afterID int64, filters RunFilters) (*gorm.DB, error) {
+	q := historyQuery(tx, orgID)
+	if filters.TargetID > 0 {
+		q = q.Where("r.target_id=?", filters.TargetID)
+	}
+	for _, v := range []struct{ column, value string }{{"r.status", filters.Status}, {"r.package", filters.Package}, {"t.model", filters.Model}, {"t.channel_id", filters.ChannelID}, {"rr.risk_level", filters.RiskLevel}} {
+		if v.value != "" {
+			q = q.Where(v.column+"=?", v.value)
+		}
+	}
+	if filters.Query != "" {
+		pattern := "%" + strings.ToLower(strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(filters.Query)) + "%"
+		q = q.Where("(LOWER(t.name) LIKE ? ESCAPE '!' OR LOWER(t.model) LIKE ? ESCAPE '!')", pattern, pattern)
+	}
+	if filters.From != nil {
+		q = q.Where("r.created_at>=?", *filters.From)
+	}
+	if filters.To != nil {
+		q = q.Where("r.created_at<=?", *filters.To)
+	}
+	if afterID > 0 {
+		var anchor struct{ CreatedAt time.Time }
+		// The HTTP cursor binds reader/org/filters. Its immutable ordering
+		// anchor must survive ordinary status/current-target metadata changes.
+		if err := tx.Table("integrity_runs").Select("created_at").Where("organization_id=? AND id=?", orgID, afterID).Take(&anchor).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrConfiguration
+			}
+			return nil, err
+		}
+		q = q.Where("(r.created_at < ? OR (r.created_at = ? AND r.id < ?))", anchor.CreatedAt, anchor.CreatedAt, afterID)
+	}
+	return q.Order("r.created_at DESC, r.id DESC"), nil
 }

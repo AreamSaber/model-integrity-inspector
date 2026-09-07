@@ -51,4 +51,5 @@ func exerciseRepeatedDetection(t *testing.T, p *pipelineHTTP, targetID, original
 	if len(history.Items) != 2 || history.Items[0].ID != repeated.ID || history.Items[1].ID != originalID || history.Items[0].Result == nil || history.Items[1].Result == nil {
 		t.Fatal("target history did not retain both distinct published detections")
 	}
+	exerciseActualRunTrends(t, p, targetID, originalID, repeated.ID)
 }

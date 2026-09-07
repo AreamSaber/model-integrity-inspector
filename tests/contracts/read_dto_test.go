@@ -28,6 +28,7 @@ func TestPublicRunReadSchemasMatchActualClosedDTOs(t *testing.T) {
 	}
 	types := map[string]reflect.Type{
 		"RunHistoryItem": reflect.TypeFor[runservice.HistoryItem](), "ResultSummary": reflect.TypeFor[runservice.ResultSummary](),
+		"RunTrendItem": reflect.TypeFor[runservice.TrendItem](), "AttemptTrend": reflect.TypeFor[runservice.AttemptTrendView](),
 		"Versions": reflect.TypeFor[runservice.VersionsView](), "Result": reflect.TypeFor[runservice.ResultView](),
 		"TokenAnalysis": reflect.TypeFor[runservice.TokenAnalysisView](), "TokenTier": reflect.TypeFor[runservice.TokenTierView](), "TokenPlateau": reflect.TypeFor[runservice.TokenPlateauView](),
 		"BehaviorAnalysis": reflect.TypeFor[runservice.BehaviorAnalysisView](), "BehaviorPattern": reflect.TypeFor[runservice.PatternView](), "BehaviorDifference": reflect.TypeFor[runservice.DifferenceView](),

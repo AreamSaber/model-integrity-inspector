@@ -27,6 +27,8 @@ type reportArtifact struct {
 
 var names = map[reflect.Type]string{
 	reflect.TypeFor[runservice.HistoryItem]():          "RunHistoryItem",
+	reflect.TypeFor[runservice.TrendItem]():            "RunTrendItem",
+	reflect.TypeFor[runservice.AttemptTrendView]():     "AttemptTrend",
 	reflect.TypeFor[runservice.ResultSummary]():        "ResultSummary",
 	reflect.TypeFor[runservice.VersionsView]():         "Versions",
 	reflect.TypeFor[runservice.ResultView]():           "Result",
@@ -182,6 +184,25 @@ func main() {
 		result[name] = objectSchema(t)
 	}
 	properties := func(name string) schema { return result[name].(schema)["properties"].(schema) }
+	trend := properties("AttemptTrend")
+	for _, field := range []string{"dispatched", "retry_attempts", "succeeded", "failed", "uncertain", "in_flight", "success_rate_denominator", "latency_samples"} {
+		trend[field] = schema{"type": "integer", "minimum": 0, "maximum": 3000}
+	}
+	trend["logical_samples"] = schema{"type": "integer", "minimum": 0, "maximum": 1000}
+	trend["success_rate_percent"] = nullable(schema{"type": "number", "minimum": 0, "maximum": 100})
+	trend["success_rate_percent"].(schema)["description"] = "100 * succeeded / dispatched. Null only when dispatched=0. This is the confirmed-success fraction of observed dispatch records, not a future probability; uncertain and in-flight attempts remain in the denominator but are not labelled failed."
+	trend["success_rate_denominator"].(schema)["description"] = "Equals dispatched, including every retry, UNCERTAIN and in-flight attempt. Never Run completed_samples, valid_sample_count or a substitute request counter."
+	trend["logical_samples"].(schema)["description"] = "Distinct persisted logical sample IDs with an attempt. Retrying a sample does not create an independent statistical sample."
+	trend["succeeded"].(schema)["description"] = "COMPLETED attempts with VALID or VALID_WITH_WARNING validity, HTTP 200, no error and valid start/finish timestamps. COMPLETED alone is not success."
+	trend["failed"].(schema)["description"] = "Known COMPLETED attempts with non-valid final outcomes, including HTTP/protocol/safety/cancellation failures. Does not include UNCERTAIN or DISPATCHED attempts."
+	trend["latency_samples"].(schema)["description"] = "COMPLETED successful or failed attempts with a non-null observed duration_ms in [0,86400000]. Missing duration, in-flight attempts and UNCERTAIN recovery zero placeholders are excluded."
+	trend["latency_mean_ms"] = nullable(schema{"type": "number", "minimum": 0, "maximum": 86400000})
+	for _, field := range []string{"latency_min_ms", "latency_max_ms"} {
+		trend[field] = nullable(schema{"type": "integer", "minimum": 0, "maximum": 86400000})
+	}
+	for _, field := range []string{"latency_mean_ms", "latency_min_ms", "latency_max_ms"} {
+		trend[field].(schema)["description"] = "Observed client-side total duration in milliseconds; null when latency_samples=0. Real observed 0ms is retained. Not time-to-first-token, P95, server compute time or an inferred latency for missing observations."
+	}
 	props := properties("Baseline")
 	props["status"] = schema{"type": "string", "enum": []string{"draft", "approved", "expired", "retired"}}
 	props["eligible_for_scoring"] = schema{"type": "boolean", "const": false}

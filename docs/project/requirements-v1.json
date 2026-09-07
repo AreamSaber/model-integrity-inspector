@@ -1394,10 +1394,19 @@
         "M7-01"
       ],
       "test_case": "REQ-HIS-001",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/repository/run_trends.go",
+        "internal/integrity/run/trends.go",
+        "internal/integrity/api/run_trends.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_trends_test.go",
+        "internal/integrity/run/trends_test.go",
+        "internal/integrity/api/run_trends_test.go",
+        "internal/app/trends_pipeline_test.go"
+      ],
+      "notes": "按目标的有界Run页趋势后端及真实TLS应用双库已验证；成功率为确认成功/全部派发Attempt，未知与在途独立列出；延迟只用完成且有观测值的Attempt，缺失null，不含预检。前端集成验证继续；非全目标汇总或已校准预测。",
       "goal_included": true
     },
     {
@@ -1440,10 +1449,18 @@
         "M7-01"
       ],
       "test_case": "REQ-HIS-003",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/repository/run_history.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/history/RunHistory.tsx"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_trends_test.go",
+        "internal/integrity/api/run_trends_test.go",
+        "web/src/components/history/RunHistory.test.tsx"
+      ],
+      "notes": "历史筛选和趋势共用目标/状态/包/当前模型与渠道/日期/风险/文本条件；签名游标绑定组织用户及筛选，分页锚点不随状态变化失效。当前目标字段不冒充历史冻结模型；完整页面筛选浏览器验收仍待收口。",
       "goal_included": true
     },
     {
