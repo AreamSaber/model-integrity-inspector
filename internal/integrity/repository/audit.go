@@ -118,7 +118,11 @@ func (s *Store) auditUserOrganizations(ctx context.Context, tx *gorm.DB, userID 
 		return persistenceError(err)
 	}
 	if len(memberships) == 0 {
-		return audit.ErrIntegrity
+		orgID, err := initialAuditOrganization(tx)
+		if err != nil {
+			return err
+		}
+		return s.appendAudit(ctx, tx, orgID, command, nil)
 	}
 	for _, membership := range memberships {
 		if err := s.appendAudit(ctx, tx, membership.OrganizationID, command, nil); err != nil {
@@ -126,6 +130,20 @@ func (s *Store) auditUserOrganizations(ctx context.Context, tx *gorm.DB, userID 
 		}
 	}
 	return nil
+}
+
+// An account without memberships still has an authentication audit trail. This
+// anchor grants neither membership nor access to the initial organization.
+func initialAuditOrganization(tx *gorm.DB) (int64, error) {
+	var value string
+	if err := tx.Table("system_settings").Select("value_json").Where("setting_key = ?", "initial_organization_id").Scan(&value).Error; err != nil {
+		return 0, persistenceError(err)
+	}
+	orgID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || orgID <= 0 {
+		return 0, audit.ErrIntegrity
+	}
+	return orgID, nil
 }
 
 func auditObject(action, objectType string, objectID int64) AuditCommand {

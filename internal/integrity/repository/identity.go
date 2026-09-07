@@ -316,7 +316,7 @@ func (s *Store) ChangePassword(ctx context.Context, userID int64, expectedHash, 
 	}
 	return persistenceError(s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&User{}).Where("id = ? AND password_hash = ?", userID, expectedHash).
-			Updates(map[string]any{"password_hash": newHash, "password_changed_at": now.UTC(), "updated_at": now.UTC(), "failed_login_count": 0, "locked_until": nil})
+			Updates(map[string]any{"password_hash": newHash, "password_changed_at": now.UTC(), "updated_at": now.UTC(), "failed_login_count": 0, "locked_until": nil, "must_change_password": false, "version": gorm.Expr("version + 1")})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -337,13 +337,7 @@ func (s *Store) ListUserMemberships(ctx context.Context, userID int64) ([]Member
 }
 
 func (t *Tenant) PermissionsForUser(userID int64) ([]string, error) {
-	var codes []string
-	err := t.store.db.WithContext(t.ctx).Table("role_permissions AS rp").Distinct("rp.permission_code").
-		Joins("JOIN member_roles AS mr ON mr.organization_id = rp.organization_id AND mr.role_id = rp.role_id").
-		Joins("JOIN organization_members AS om ON om.organization_id = mr.organization_id AND om.id = mr.member_id").
-		Joins("JOIN organizations AS o ON o.id = om.organization_id").
-		Where("rp.organization_id = ? AND om.user_id = ? AND om.status = ? AND o.status = ?", t.orgID, userID, "active", "active").
-		Order("rp.permission_code").Pluck("rp.permission_code", &codes).Error
+	codes, err := managementPermissions(t.store.db.WithContext(t.ctx), t.orgID, userID)
 	return codes, persistenceError(err)
 }
 

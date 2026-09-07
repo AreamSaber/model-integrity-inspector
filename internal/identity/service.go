@@ -269,6 +269,9 @@ func (s *Service) Principal(ctx context.Context, token string, organizationID in
 	if err != nil {
 		return Principal{}, err
 	}
+	if user.MustChangePassword {
+		return Principal{}, ErrPasswordChangeRequired
+	}
 	p := Principal{UserID: user.ID, OrganizationID: organizationID, SystemAdmin: user.IsSystemAdmin}
 	if organizationID <= 0 {
 		return p, nil

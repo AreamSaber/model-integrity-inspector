@@ -419,9 +419,13 @@ func TestQueueMigrationUpgradesExistingJobs(t *testing.T) {
 		if err := store.migrate(t.Context(), set[:1]); err != nil {
 			t.Fatal(err)
 		}
-		initial := requireInitialize(t, store)
 		now := time.Now().UTC()
-		legacy := Job{ID: 10, OrganizationID: initial.Organization.ID, Type: string(JobRetentionDelete), ObjectID: initial.Organization.ID, IdempotencyKey: "pre-upgrade", Status: "pending", AvailableAt: now, MaxAttempts: 3, CreatedAt: now, UpdatedAt: now}
+		// Historical fixtures use their historical column shape: today's models
+		// deliberately require columns introduced by later migrations.
+		if err := store.db.Exec("INSERT INTO organizations (id,name,status,timezone,quota_json,created_at,updated_at) VALUES (1,'Legacy','active','UTC','{}',?,?)", now, now).Error; err != nil {
+			t.Fatal(err)
+		}
+		legacy := Job{ID: 10, OrganizationID: 1, Type: string(JobRetentionDelete), ObjectID: 1, IdempotencyKey: "pre-upgrade", Status: "pending", AvailableAt: now, MaxAttempts: 3, CreatedAt: now, UpdatedAt: now}
 		if err := store.db.Create(&legacy).Error; err != nil {
 			t.Fatal(err)
 		}
