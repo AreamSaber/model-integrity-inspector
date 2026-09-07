@@ -12,16 +12,16 @@ import (
 // Analyze has no configurable trust flags or arbitrary score inputs. Its caller
 // must assemble the projections from the authenticated immutable Run snapshot.
 func Analyze(input Input) (Result, error) {
-	return analyze(input, releasePolicy{})
+	return builtinEngine().Analyze(input)
 }
 
-func analyze(input Input, policy releasePolicy) (Result, error) {
-	byID, err := validate(input)
+func (e *Engine) analyze(input Input, policy releasePolicy) (Result, error) {
+	byID, err := e.validate(input)
 	if err != nil {
 		return Result{}, err
 	}
-	rules := Parameters()
-	out := Result{Version: Version, RulesHash: RulesHash(), Development: !policy.calibrated(), Calibrated: policy.calibrated(), ExpectedSamples: input.ExpectedSamples, Completeness: "COMPLETE", EvidenceGrade: "D", RiskLevel: "insufficient", Conclusion: "INSUFFICIENT_EVIDENCE", Limitations: []string{"MI_BASELINE_UNAVAILABLE", "MI_GATEWAY_EVIDENCE_UNAVAILABLE"}}
+	rules := e.rules
+	out := Result{Version: rules.Version, RulesHash: e.hash, Development: !policy.calibrated(e.hash), Calibrated: policy.calibrated(e.hash), ExpectedSamples: input.ExpectedSamples, Completeness: "COMPLETE", EvidenceGrade: "D", RiskLevel: "insufficient", Conclusion: "INSUFFICIENT_EVIDENCE", Limitations: []string{"MI_BASELINE_UNAVAILABLE", "MI_GATEWAY_EVIDENCE_UNAVAILABLE"}}
 	if !out.Calibrated {
 		out.Limitations = append(out.Limitations, "MI_DEVELOPMENT_RULES_UNCALIBRATED")
 	}
@@ -34,11 +34,11 @@ func analyze(input Input, policy releasePolicy) (Result, error) {
 	}
 	out.IndependentFamilies = len(families)
 	var support map[string]*familySupport
-	out.Prompt, support, err = prompt(input, byID)
+	out.Prompt, support, err = e.prompt(input, byID)
 	if err != nil {
 		return Result{}, err
 	}
-	out.StableHitFamilies = stableFamilies(support)
+	out.StableHitFamilies = e.stableFamilies(support)
 	if input.Tokens != nil {
 		out.TokenRulesHash = input.Tokens.RulesHash
 		out.Token = fromTokenAggregate(input.Tokens.Token)
@@ -47,7 +47,7 @@ func analyze(input Input, policy releasePolicy) (Result, error) {
 		out.Token = missingDimension("MI_TOKEN_AGGREGATE_UNAVAILABLE")
 		out.Response = missingDimension("MI_RESPONSE_AGGREGATE_UNAVAILABLE")
 	}
-	out.Protocol = protocolRisk(input, out.ValidSamples)
+	out.Protocol = e.protocolRisk(input, out.ValidSamples)
 	out.Overall = Dimension{Components: []Component{}, Limitations: []string{}}
 	for i, item := range []struct {
 		name string
@@ -69,7 +69,7 @@ func analyze(input Input, policy releasePolicy) (Result, error) {
 		out.Completeness = "PARTIAL"
 		out.Limitations = appendCode(out.Limitations, "MI_PARTIAL_RESULT")
 	}
-	out.Confidence = confidence(input, support, out.Completeness == "PARTIAL", policy)
+	out.Confidence = e.confidence(input, support, out.Completeness == "PARTIAL", policy)
 	for _, code := range out.Confidence.Limitations {
 		out.Limitations = appendCode(out.Limitations, code)
 	}
@@ -81,7 +81,7 @@ func analyze(input Input, policy releasePolicy) (Result, error) {
 		out.Completeness = "INSUFFICIENT"
 		out.Limitations = appendCode(out.Limitations, "MI_CRITICAL_EVIDENCE_INSUFFICIENT")
 	} else {
-		out.RiskLevel = level(*out.Overall.Score)
+		out.RiskLevel = e.level(*out.Overall.Score)
 		if hasAnomaly(out) {
 			out.EvidenceGrade = "C"
 			out.Conclusion = "OBSERVED_ANOMALY_REQUIRES_REVIEW"
@@ -90,7 +90,7 @@ func analyze(input Input, policy releasePolicy) (Result, error) {
 		}
 		// A cannot be produced here: no verified gateway evidence capability.
 		// A future authenticated calibration admission may enable statistical B.
-		if policy.calibrated() && out.Completeness == "COMPLETE" && out.Confidence.Score >= int(rules.HighEvidenceConfidence) && (out.StableHitFamilies >= rules.MinimumHitFamilies && *out.Overall.Score >= rules.HighEvidenceRisk || !hasAnomaly(out)) {
+		if policy.calibrated(e.hash) && out.Completeness == "COMPLETE" && out.Confidence.Score >= int(rules.HighEvidenceConfidence) && (out.StableHitFamilies >= rules.MinimumHitFamilies && *out.Overall.Score >= rules.HighEvidenceRisk || !hasAnomaly(out)) {
 			out.EvidenceGrade = "B"
 		}
 	}
@@ -126,7 +126,10 @@ func hasAnomaly(r Result) bool {
 	return false
 }
 func level(n float64) string {
-	for i, v := range Parameters().Bands {
+	return builtinEngine().level(n)
+}
+func (e *Engine) level(n float64) string {
+	for i, v := range e.rules.Bands {
 		if n < v {
 			return []string{"low", "attention", "medium", "high"}[i]
 		}
@@ -134,8 +137,8 @@ func level(n float64) string {
 	return "severe_black_box_statistical_judgment"
 }
 
-func protocolRisk(input Input, valid int) Dimension {
-	rules := Parameters()
+func (e *Engine) protocolRisk(input Input, valid int) Dimension {
+	rules := e.rules
 	d := Dimension{Components: make([]Component, 6), Limitations: []string{"MI_PROTOCOL_SCORE_NOT_PROVIDER_MISCONDUCT"}}
 	for i, name := range []string{"usage_quality", "http_content_type", "model_echo", "finish_reason", "tokenizer_unavailable", "valid_sample_rate"} {
 		d.Components[i] = Component{Name: name, Weight: rules.ProtocolWeights[i]}
@@ -188,8 +191,8 @@ func criticalFraction(input Input) float64 {
 	return ratio(critical, valid)
 }
 
-func confidence(input Input, support map[string]*familySupport, partial bool, policy releasePolicy) Confidence {
-	rules := Parameters()
+func (e *Engine) confidence(input Input, support map[string]*familySupport, partial bool, policy releasePolicy) Confidence {
+	rules := e.rules
 	c := Confidence{BaselineFactor: rules.NoBaselineFactor, Limitations: []string{"MI_BASELINE_UNAVAILABLE"}}
 	valid, aux := 0, 0
 	quality, applicable := 0.0, 0.0
@@ -278,7 +281,7 @@ func confidence(input Input, support map[string]*familySupport, partial bool, po
 	if partial {
 		value = math.Min(value, rules.PartialConfidenceCeiling)
 	}
-	if !policy.calibrated() {
+	if !policy.calibrated(e.hash) {
 		value = math.Min(value, rules.DevelopmentConfidenceCeiling)
 		c.Limitations = appendCode(c.Limitations, "MI_UNCALIBRATED_CONFIDENCE_LIMIT")
 	}

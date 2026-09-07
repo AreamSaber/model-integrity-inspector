@@ -1494,10 +1494,20 @@
         "M7-01"
       ],
       "test_case": "REQ-CFG-001",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/bundle/artifact.go",
+        "internal/integrity/bundle/runtime.go",
+        "internal/integrity/analysis/tokenrisk/runtime.go",
+        "internal/integrity/analysis/scoring/runtime.go"
+      ],
+      "tests": [
+        "internal/integrity/bundle/runtime_test.go",
+        "internal/integrity/bundle/runtime_analysis_test.go",
+        "internal/integrity/analysis/tokenrisk/runtime_golden_test.go",
+        "internal/integrity/analysis/scoring/runtime_golden_test.go"
+      ],
+      "notes": "受支持typed artifact、内容哈希、有限开发参数实际计算及旧版本完整输出保持已验证；未知模板/tokenizer/算法语义拒绝。尚未实现持久化候选生命周期、发布准入和Run选择多版本；开发运行时不代表校准。",
       "goal_included": true
     },
     {
@@ -1513,10 +1523,19 @@
         "M7-01"
       ],
       "test_case": "REQ-CFG-002",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/repository/run_version.go",
+        "internal/integrity/repository/bootstrap_bundles.go",
+        "internal/integrity/bundle/runtime.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_version_test.go",
+        "internal/integrity/repository/bootstrap_bundles_test.go",
+        "internal/integrity/bundle/runtime_test.go",
+        "internal/app/repeated_pipeline_test.go"
+      ],
+      "notes": "当前内置包估算/确认内容绑定及已发布结果不可变已验证；新增纯核resolver拒绝同版本不同内容，仅进程内保护。多版本持久化、退役与历史重分析仍待实现。",
       "goal_included": true
     },
     {

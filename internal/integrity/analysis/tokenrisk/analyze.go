@@ -46,17 +46,21 @@ func capAggregate(result *Aggregate, code string, limit float64) {
 }
 
 func Analyze(input Input) (Result, error) {
-	rules := Parameters()
-	samples, result, err := normalize(input)
+	return builtinEngine().Analyze(input)
+}
+
+func (e *Engine) analyze(input Input) (Result, error) {
+	rules := e.rules
+	samples, result, err := e.normalize(input)
 	if err != nil {
 		return result, err
 	}
-	result.Series, result.Plateaus, err = plateauAnalysis(samples, input)
+	result.Series, result.Plateaus, err = e.plateauAnalysis(samples, input)
 	if err != nil {
 		return result, err
 	}
-	result.Usage = usageAnalysis(samples)
-	result.Stream = streamAnalysis(samples)
+	result.Usage = e.usageAnalysis(samples)
+	result.Stream = e.streamAnalysis(samples)
 	plateauStrength := 0.0
 	for _, p := range result.Plateaus {
 		plateauStrength = math.Max(plateauStrength, p.Strength)
@@ -148,7 +152,7 @@ func Analyze(input Input) (Result, error) {
 	if reasoning > 0 {
 		capAggregate(&result.Token, "MI_REASONING_UNSEPARATED", rules.WeakCeiling)
 	}
-	if ladderCount > 0 && ratio(naturalEOS, ladderCount) >= Parameters().NaturalEOSFraction {
+	if ladderCount > 0 && ratio(naturalEOS, ladderCount) >= rules.NaturalEOSFraction {
 		capAggregate(&result.Token, "MI_NATURAL_EOS_ALTERNATIVE", rules.WeakCeiling)
 	}
 	for _, p := range result.Plateaus {

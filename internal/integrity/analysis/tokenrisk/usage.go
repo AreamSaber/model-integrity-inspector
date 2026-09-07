@@ -6,8 +6,8 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 )
 
-func usageAnalysis(samples []Sample) UsageResult {
-	rules := Parameters()
+func (e *Engine) usageAnalysis(samples []Sample) UsageResult {
+	rules := e.rules
 	result := UsageResult{Limitations: []string{}}
 	trusted, heuristic := []Sample{}, []Sample{}
 	groups := map[string]bool{}
@@ -36,7 +36,7 @@ func usageAnalysis(samples []Sample) UsageResult {
 	result.Available = len(trusted) > 0 || len(heuristic) > 0
 	chosen := trusted
 	threshold := rules.UsageExactMismatch
-	if len(chosen) < Parameters().MinUsageSamples && len(heuristic) >= Parameters().MinUsageSamples {
+	if len(chosen) < rules.MinUsageSamples && len(heuristic) >= rules.MinUsageSamples {
 		chosen = heuristic
 		threshold = rules.UsageHeuristicMismatch
 	}
@@ -73,7 +73,7 @@ func usageAnalysis(samples []Sample) UsageResult {
 	}
 	result.ConsistentFraction = ratio(result.Consistent, len(chosen))
 	result.MedianRelativeError = median(errors)
-	result.Candidate = result.Consistent >= Parameters().MinUsageSamples && result.ConsistentFraction >= Parameters().UsageDirectionFraction
+	result.Candidate = result.Consistent >= rules.MinUsageSamples && result.ConsistentFraction >= rules.UsageDirectionFraction
 	if result.Candidate {
 		result.Strength = bounded(rules.StrengthBase + rules.StrengthScale*math.Min(1, (result.MedianRelativeError-threshold)/rules.UsageStrengthRange))
 		if threshold == rules.UsageHeuristicMismatch || result.IndependentGroups < rules.MinIndependentGroups {

@@ -125,6 +125,7 @@ func (b *Builder) Build(input Input) (*Batch, error) {
 		ordered[sample.Ordinal] = sample
 	}
 	batch := &Batch{engine: b.behavior, features: Result{Version: Version, OrganizationID: strconv.FormatInt(run.OrganizationID, 10), RunID: strconv.FormatInt(run.ID, 10), ManifestHash: plan.ManifestHash, Expected: len(m.Samples), Samples: []SampleFeature{}, Limitations: []string{}}, tokens: tokenrisk.Input{OrganizationID: run.OrganizationID, RunID: run.ID, ExpectedSamples: len(m.Samples)}, behavior: []behavior.Sample{}}
+	batch.templateHash, batch.tokenizerHash = m.TemplateHash, m.TokenizerHash
 	if m.Options.MaxOutputTokens > 0 {
 		value := int64(m.Options.MaxOutputTokens)
 		batch.tokens.DeclaredModelOutputLimit = &value

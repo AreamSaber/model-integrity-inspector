@@ -17,8 +17,8 @@ func behaviorEligible(f behavior.Features, s Observation) bool {
 	return included(s) && behaviorFamily(s.Family) && f.State == behavior.Analyzed && f.RegistryMatch
 }
 
-func prompt(input Input, byID map[string]Observation) (Dimension, map[string]*familySupport, error) {
-	rules := Parameters()
+func (e *Engine) prompt(input Input, byID map[string]Observation) (Dimension, map[string]*familySupport, error) {
+	rules := e.rules
 	d := Dimension{Components: make([]Component, 5), Limitations: []string{"MI_BASELINE_UNAVAILABLE"}}
 	for i, name := range []string{"format_contract", "stable_unknown_affix", "neutral_refusal", "identity_style", "trusted_baseline_difference"} {
 		d.Components[i] = Component{Name: name, Weight: rules.PromptWeights[i]}
@@ -93,7 +93,7 @@ func prompt(input Input, byID map[string]Observation) (Dimension, map[string]*fa
 		}
 	}
 	combine(&d)
-	stable := stableFamilies(families)
+	stable := e.stableFamilies(families)
 	if anyHit && !nonIdentityHit {
 		capDimension(&d, rules.WeakCeiling, "MI_IDENTITY_STYLE_ONLY")
 	}
@@ -105,9 +105,9 @@ func prompt(input Input, byID map[string]Observation) (Dimension, map[string]*fa
 	return d, families, nil
 }
 
-func stableFamilies(families map[string]*familySupport) int {
+func (e *Engine) stableFamilies(families map[string]*familySupport) int {
 	n := 0
-	rules := Parameters()
+	rules := e.rules
 	for _, f := range families {
 		if f.positive >= rules.MinimumFamilyHits && len(f.hitClusters) >= rules.MinimumFamilyClusters && ratio(f.positive, f.applicable) >= rules.StableFraction {
 			n++

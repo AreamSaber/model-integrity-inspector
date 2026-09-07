@@ -127,6 +127,6 @@ type releasePolicy struct {
 }
 type verifiedCalibration struct{ rulesHash string }
 
-func (p releasePolicy) calibrated() bool {
-	return p.calibration != nil && p.calibration.rulesHash == RulesHash()
+func (p releasePolicy) calibrated(hash string) bool {
+	return p.calibration != nil && p.calibration.rulesHash == hash
 }

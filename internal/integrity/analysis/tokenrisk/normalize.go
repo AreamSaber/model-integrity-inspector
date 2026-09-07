@@ -91,8 +91,8 @@ func validateSample(s Sample) bool {
 	return true
 }
 
-func normalize(input Input) ([]Sample, Result, error) {
-	r := Result{Version: Version, RulesHash: RulesHash(), Development: true, Calibrated: false, Partial: input.Partial, Warnings: []string{"MI_DEVELOPMENT_RULES_UNCALIBRATED", "MI_MULTIPLE_COMPARISONS_EXPLORATORY", "MI_BASELINE_UNAVAILABLE"}, Series: []Series{}, Plateaus: []Plateau{}}
+func (e *Engine) normalize(input Input) ([]Sample, Result, error) {
+	r := Result{Version: e.rules.Version, RulesHash: e.hash, Development: true, Calibrated: false, Partial: input.Partial, Warnings: []string{"MI_DEVELOPMENT_RULES_UNCALIBRATED", "MI_MULTIPLE_COMPARISONS_EXPLORATORY", "MI_BASELINE_UNAVAILABLE"}, Series: []Series{}, Plateaus: []Plateau{}}
 	if input.OrganizationID <= 0 || input.RunID <= 0 || input.ExpectedSamples < 0 || input.ExpectedSamples > MaxSamples || (input.DeclaredModelOutputLimit != nil && (*input.DeclaredModelOutputLimit < 1 || *input.DeclaredModelOutputLimit > 10000000)) {
 		return nil, r, ErrInput
 	}
@@ -181,8 +181,8 @@ func normalize(input Input) ([]Sample, Result, error) {
 	}
 	r.NetworkErrorRate = ratio(network, observed)
 	r.SSEAttributionFactor = 1
-	if r.NetworkErrorRate > Parameters().NetworkErrorThreshold {
-		r.SSEAttributionFactor = Parameters().NetworkAttributionFactor
+	if r.NetworkErrorRate > e.rules.NetworkErrorThreshold {
+		r.SSEAttributionFactor = e.rules.NetworkAttributionFactor
 		r.Warnings = append(r.Warnings, "MI_NETWORK_ERRORS_REDUCE_ATTRIBUTION")
 	}
 	return result, r, nil

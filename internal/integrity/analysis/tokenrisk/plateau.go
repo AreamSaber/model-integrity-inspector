@@ -70,7 +70,7 @@ func summarizeTier(samples []Sample) Tier {
 	return t
 }
 
-func summarizeModes(samples []Sample) ModeTier {
+func (e *Engine) summarizeModes(samples []Sample) ModeTier {
 	left, right := []Sample{}, []Sample{}
 	for _, s := range samples {
 		if s.Stream {
@@ -89,7 +89,7 @@ func summarizeModes(samples []Sample) ModeTier {
 	m.Covered = len(left) > 0 && len(right) > 0
 	if m.Covered {
 		m.RelativeMedianDifference = math.Abs(m.Stream.Median-m.Nonstream.Median) / math.Max(m.Nonstream.Median, 1)
-		m.Comparable = m.RelativeMedianDifference <= Parameters().StreamEffect
+		m.Comparable = m.RelativeMedianDifference <= e.rules.StreamEffect
 	}
 	return m
 }
@@ -114,7 +114,7 @@ func grouped(samples []Sample) map[string]groupData {
 	}
 	return groups
 }
-func tierInterval(low, high []Sample, key string) (Interval, bool) {
+func (e *Engine) tierInterval(low, high []Sample, key string) (Interval, bool) {
 	l, r := grouped(low), grouped(high)
 	shared := []string{}
 	for id := range l {
@@ -131,7 +131,7 @@ func tierInterval(low, high []Sample, key string) (Interval, bool) {
 				right = append(right, r[id].values)
 			}
 		}
-		return bootstrap(left, right, true, key), len(left) != len(l) || len(right) != len(r)
+		return e.bootstrap(left, right, true, key), len(left) != len(l) || len(right) != len(r)
 	}
 	for side, groups := range []map[string]groupData{l, r} {
 		ids := []string{}
@@ -150,10 +150,10 @@ func tierInterval(low, high []Sample, key string) (Interval, bool) {
 			}
 		}
 	}
-	return bootstrap(left, right, false, key), false
+	return e.bootstrap(left, right, false, key), false
 }
 
-func plateauAnalysis(samples []Sample, input Input) ([]Series, []Plateau, error) {
+func (e *Engine) plateauAnalysis(samples []Sample, input Input) ([]Series, []Plateau, error) {
 	groups := map[string][]Sample{}
 	for _, s := range samples {
 		if countable(s) && ladder(s) {
@@ -169,7 +169,7 @@ func plateauAnalysis(samples []Sample, input Input) ([]Series, []Plateau, error)
 	}
 	slices.Sort(keys)
 	series, candidates := []Series{}, []Plateau{}
-	rules := Parameters()
+	rules := e.rules
 	for _, key := range keys {
 		all := groups[key]
 		first := all[0]
@@ -185,7 +185,7 @@ func plateauAnalysis(samples []Sample, input Input) ([]Series, []Plateau, error)
 		slices.Sort(values)
 		for _, value := range values {
 			entry.Tiers = append(entry.Tiers, summarizeTier(tiers[value]))
-			entry.Modes = append(entry.Modes, summarizeModes(tiers[value]))
+			entry.Modes = append(entry.Modes, e.summarizeModes(tiers[value]))
 		}
 		series = append(series, entry)
 		for i := 1; i < len(values); i++ {
@@ -209,7 +209,7 @@ func plateauAnalysis(samples []Sample, input Input) ([]Series, []Plateau, error)
 			p.CombinedRobustCV = robustCV(local)
 			p.Responsiveness = (high.Median - low.Median) / float64(high.RequestedMaxTokens-low.RequestedMaxTokens)
 			var incompletePairs bool
-			p.DifferenceCI, incompletePairs = tierInterval(left, right, key+"/"+strconv.FormatInt(values[i], 10))
+			p.DifferenceCI, incompletePairs = e.tierInterval(left, right, key+"/"+strconv.FormatInt(values[i], 10))
 			p.Candidate = low.Median > 0 && high.Median > 0 && p.GrowthRatio < rules.GrowthRatio && p.CombinedRobustCV < rules.RobustCV && high.Median < rules.PlateauRatio*float64(high.RequestedMaxTokens) && support > 0
 			if p.Candidate {
 				p.Strength = rules.StrengthBase + rules.StrengthScale*ratio(support, len(combined))

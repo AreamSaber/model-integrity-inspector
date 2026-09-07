@@ -185,10 +185,20 @@ type UsageFeature struct {
 // Batch has no plaintext accessors. Features returns an independent S1 copy.
 // Kernel inputs are ephemeral capabilities with only pure analysis methods.
 type Batch struct {
-	features Result
-	tokens   tokenrisk.Input
-	behavior []behavior.Sample
-	engine   *behavior.Engine
+	features                    Result
+	tokens                      tokenrisk.Input
+	behavior                    []behavior.Sample
+	engine                      *behavior.Engine
+	templateHash, tokenizerHash string
+}
+
+// ArtifactHashes comes only from Builder's verified artifact/Manifest binding.
+// Hashes are S1 identifiers, not release approval or plaintext accessors.
+func (b *Batch) ArtifactHashes() (templateHash, tokenizerHash string) {
+	if b == nil {
+		return "", ""
+	}
+	return b.templateHash, b.tokenizerHash
 }
 
 func (b *Batch) Features() Result {
@@ -233,6 +243,15 @@ func (i OpaqueTokenInput) Analyze() (tokenrisk.Result, error) {
 		return tokenrisk.Result{}, ErrConfiguration
 	}
 	return tokenrisk.Analyze(i.batch.tokens)
+}
+
+// AnalyzeWith retains the same ephemeral capability boundary; callers cannot
+// retrieve token inputs or keep using them after WithTokenInput returns.
+func (i OpaqueTokenInput) AnalyzeWith(engine *tokenrisk.Engine) (tokenrisk.Result, error) {
+	if i.batch == nil || i.active == nil || !i.active.Load() || engine == nil {
+		return tokenrisk.Result{}, ErrConfiguration
+	}
+	return engine.Analyze(i.batch.tokens)
 }
 func (i OpaqueBehaviorInput) AnalyzeBatch() (behavior.Batch, error) {
 	if i.batch == nil || i.active == nil || !i.active.Load() {

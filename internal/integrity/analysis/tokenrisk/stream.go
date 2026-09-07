@@ -8,8 +8,8 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 )
 
-func streamAnalysis(samples []Sample) StreamResult {
-	rules := Parameters()
+func (e *Engine) streamAnalysis(samples []Sample) StreamResult {
+	rules := e.rules
 	result := StreamResult{Limitations: []string{}}
 	groups := map[string][]Sample{}
 	for _, s := range samples {
@@ -56,9 +56,9 @@ func streamAnalysis(samples []Sample) StreamResult {
 		blocks[left.SeriesID+"/"+left.GroupID] = append(blocks[left.SeriesID+"/"+left.GroupID], difference)
 		result.Pairs++
 		tiers[left.RequestedMaxTokens] = true
-		if difference > Parameters().StreamEffect {
+		if difference > rules.StreamEffect {
 			positive++
-		} else if difference < -Parameters().StreamEffect {
+		} else if difference < -rules.StreamEffect {
 			negative++
 		}
 		if abnormalSupport(left) || abnormalSupport(right) {
@@ -81,7 +81,7 @@ func streamAnalysis(samples []Sample) StreamResult {
 		left = append(left, make([]float64, len(values)))
 		right = append(right, values)
 	}
-	result.DifferenceCI = bootstrap(left, right, true, "stream/nonstream")
+	result.DifferenceCI = e.bootstrap(left, right, true, "stream/nonstream")
 	consistent := max(positive, negative)
 	result.Candidate = result.Pairs >= rules.MinPairs && ratio(consistent, result.Pairs) >= rules.UsageDirectionFraction && math.Abs(result.MedianRelativeDifference) > rules.StreamEffect && result.DifferenceCI.Available && (result.DifferenceCI.Lower > rules.StreamIntervalEffect || result.DifferenceCI.Upper < -rules.StreamIntervalEffect)
 	if result.Candidate {

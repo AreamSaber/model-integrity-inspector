@@ -74,10 +74,15 @@ func percentile(sorted []float64, p float64) float64 {
 // arms jointly; missing paired blocks are not silently turned into unpaired
 // observations. Every caller sorts identifiers before deriving these blocks.
 func bootstrap(left, right [][]float64, paired bool, key string) Interval {
-	result := Interval{Paired: paired, Units: min(len(left), len(right)), Replicates: Parameters().BootstrapReplicates, Method: "exploratory_percentile_cluster_bootstrap"}
-	if len(left) < Parameters().MinBootstrapGroups || len(right) < Parameters().MinBootstrapGroups || (paired && len(left) != len(right)) {
+	return builtinEngine().bootstrap(left, right, paired, key)
+}
+func (e *Engine) bootstrap(left, right [][]float64, paired bool, key string) Interval {
+	result := Interval{Paired: paired, Units: min(len(left), len(right)), Replicates: e.rules.BootstrapReplicates, Method: "exploratory_percentile_cluster_bootstrap"}
+	if len(left) < e.rules.MinBootstrapGroups || len(right) < e.rules.MinBootstrapGroups || (paired && len(left) != len(right)) {
 		return result
 	}
+	// The RNG domain identifies the installed algorithm, not the candidate's
+	// display/version label. Renaming unchanged rules must not select a new CI.
 	random := deterministicRandom{key: sha256.Sum256([]byte(Version + "/bootstrap/" + key))}
 	values := make([]float64, result.Replicates)
 	for i := range values {
@@ -97,8 +102,8 @@ func bootstrap(left, right [][]float64, paired bool, key string) Interval {
 		values[i] = median(r) - median(l)
 	}
 	sort.Float64s(values)
-	result.Lower = percentile(values, Parameters().Alpha/2)
-	result.Upper = percentile(values, 1-Parameters().Alpha/2)
+	result.Lower = percentile(values, e.rules.Alpha/2)
+	result.Upper = percentile(values, 1-e.rules.Alpha/2)
 	result.Available = true
 	return result
 }

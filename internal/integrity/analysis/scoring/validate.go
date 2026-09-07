@@ -45,7 +45,7 @@ func validState(s ObservationState) bool {
 	return slices.Contains([]ObservationState{Unobserved, Normal, Anomalous, Missing, Invalid}, s)
 }
 
-func validate(input Input) (map[string]Observation, error) {
+func (e *Engine) validate(input Input) (map[string]Observation, error) {
 	if len(input.Samples) > MaxSamples {
 		return nil, ErrLimit
 	}
@@ -123,13 +123,13 @@ func validate(input Input) (map[string]Observation, error) {
 	}
 	if input.Tokens != nil {
 		t := input.Tokens
-		if t.Version != tokenrisk.Version || t.RulesHash != tokenrisk.RulesHash() || !t.Development || t.Calibrated || t.ExpectedSamples != input.ExpectedSamples || t.ValidSamples != valid || t.FinalSamples < valid || t.FinalSamples > len(input.Samples) || t.ObservedLogicalSamples < t.FinalSamples || t.ObservedLogicalSamples > len(input.Samples) || t.IgnoredAttempts < 0 || t.DuplicateFinals < 0 || t.MissingFinals != t.ObservedLogicalSamples-t.FinalSamples {
+		if t.Version != e.rules.TokenVersion || t.RulesHash != e.rules.TokenRulesHash || !t.Development || t.Calibrated || t.ExpectedSamples != input.ExpectedSamples || t.ValidSamples != valid || t.FinalSamples < valid || t.FinalSamples > len(input.Samples) || t.ObservedLogicalSamples < t.FinalSamples || t.ObservedLogicalSamples > len(input.Samples) || t.IgnoredAttempts < 0 || t.DuplicateFinals < 0 || t.MissingFinals != t.ObservedLogicalSamples-t.FinalSamples {
 			return nil, ErrInput
 		}
 		if len(t.Series) > tokenrisk.MaxSeries || len(t.Plateaus) > MaxSamples || len(t.Token.Limitations) > 128 || len(t.Response.Limitations) > 128 {
 			return nil, ErrLimit
 		}
-		rules := tokenrisk.Parameters()
+		rules := e.tokens.Rules()
 		if !validAggregate(t.Token, []string{"plateau", "termination", "usage", "stream_difference"}, rules.TokenWeights) || !validAggregate(t.Response, []string{"sse_termination", "fixed_suffix", "metadata_consistency", "protocol_anomaly"}, rules.ResponseWeights) {
 			return nil, ErrInput
 		}

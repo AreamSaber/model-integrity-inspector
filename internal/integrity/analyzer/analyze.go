@@ -30,13 +30,29 @@ type Document struct {
 // family is never selected after observing which differences were significant.
 // These exploratory paired results are not a trusted-baseline risk component.
 func Analyze(batch *features.Batch) (Document, error) {
+	tokens, err := tokenrisk.NewDevelopment(tokenrisk.Parameters())
+	if err != nil {
+		return Document{}, err
+	}
+	scores, err := scoring.NewDevelopment(scoring.Parameters(), tokens)
+	if err != nil {
+		return Document{}, err
+	}
+	engine, err := NewDevelopment(tokens, scores)
+	if err != nil {
+		return Document{}, err
+	}
+	return engine.Analyze(batch)
+}
+
+func (e *Engine) analyze(batch *features.Batch) (Document, error) {
 	if batch == nil {
 		return Document{}, ErrInput
 	}
 	out := Document{SchemaVersion: SchemaVersion, Features: batch.Features(), Differences: []behavior.Difference{}}
 	if err := batch.WithTokenInput(func(input features.OpaqueTokenInput) error {
 		var err error
-		out.Tokens, err = input.Analyze()
+		out.Tokens, err = input.AnalyzeWith(e.tokens)
 		return err
 	}); err != nil {
 		return Document{}, err
@@ -78,7 +94,7 @@ func Analyze(batch *features.Batch) (Document, error) {
 		}
 		input.Samples = append(input.Samples, s)
 	}
-	out.Scores, err = scoring.Analyze(input)
+	out.Scores, err = e.scores.Analyze(input)
 	if err != nil {
 		return Document{}, err
 	}
