@@ -82,6 +82,8 @@ func TestBundleRejectsDriftUnknownFieldsAndRenderingSyntax(t *testing.T) {
 		func(v *Bundle) { v.Templates[1].ID = v.Templates[0].ID },
 		func(v *Bundle) { v.Templates[0].Prompt = string([]byte{0xff}) },
 		func(v *Bundle) { v.Templates[9].AuxiliaryOnly = false },
+		func(v *Bundle) { v.Version = "1.0.0-" + strings.Repeat("a", 128) },
+		func(v *Bundle) { v.Templates[0].Version = "1.0.0-" + strings.Repeat("a", 128) },
 	} {
 		mutated := Builtin()
 		change(&mutated)

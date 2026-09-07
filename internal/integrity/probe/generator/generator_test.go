@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -78,6 +79,10 @@ func TestPackagesCountsConditionsAndFrozenReplay(t *testing.T) {
 			}
 			if !bytes.Equal(plan.Manifest, raw) || plan.ManifestHash != hash || len(plan.Probes) != expected {
 				t.Fatal("plan lost reproduction artifact")
+			}
+			*again.Probes[0].Samples[0].Request.Temperature = 1.5
+			if *again.Probes[1].Samples[0].Request.Temperature != 0 || *plan.Probes[0].Samples[0].Request.Temperature != 0 {
+				t.Fatal("replay requests share mutable parameter pointers")
 			}
 			ladder := map[int]map[bool]int{}
 			for i, s := range m.Samples {
@@ -323,6 +328,36 @@ func TestCustomSelectionAndInputRejection(t *testing.T) {
 		if _, err := g.Generate(copyOptions); err == nil {
 			t.Fatal("invalid custom/trusted metadata accepted")
 		}
+	}
+}
+
+func TestCustomWithoutStreamProbeAndStructuredLogRedaction(t *testing.T) {
+	g := testGenerator(t)
+	o := testOptions()
+	o.Package = "custom"
+	o.SupportsStream = false
+	o.Custom = &Custom{Families: []string{"format"}, Languages: []string{"en-US"}, Repetitions: 3}
+	m, err := g.Generate(o)
+	if err != nil || len(m.Samples) != 9 || m.Completeness != "COMPLETE" || slices.Contains(m.Warnings, "MI_STREAM_COMPARISON_NOT_APPLICABLE") {
+		t.Fatal("unrequested stream comparison reduced completeness", err)
+	}
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	logger.Info("synthetic-check", slog.Any("manifest", m), slog.Any("sample", m.Samples[0]), slog.Any("variables", m.Samples[0].Variables), slog.Any("bundle", g.bundle), slog.Any("template", g.bundle.Templates[0]))
+	for _, s := range m.Samples {
+		if strings.Contains(output.String(), s.Variables.Nonce) {
+			t.Fatal("structured JSON logger leaked nonce")
+		}
+	}
+	if strings.Contains(output.String(), "生成编号") || strings.Contains(output.String(), "TemplateVersion") || strings.Contains(output.String(), "sample_nonce") {
+		t.Fatal("structured logger serialized S2 contents")
+	}
+	if !strings.Contains(output.String(), "[S2 probe manifest]") {
+		t.Fatal("missing explicit redaction")
+	}
+	raw, _, err := m.Canonical()
+	if err != nil || !bytes.Contains(raw, []byte(m.Samples[0].Variables.Nonce)) {
+		t.Fatal("explicit reproduction persistence was disabled")
 	}
 }
 

@@ -237,7 +237,8 @@ func (g *Generator) Generate(options Options) (Manifest, error) {
 	if options.Package == "quick" {
 		m.Warnings = append(m.Warnings, "MI_QUICK_NO_HIGH_CONFIDENCE_NEGATIVE")
 	}
-	if !options.SupportsStream {
+	wantsStreamComparison := options.Custom == nil || slices.Contains(options.Custom.Families, "sequence") || slices.Contains(options.Custom.Families, "jsonl")
+	if wantsStreamComparison && !options.SupportsStream {
 		m.Warnings = append(m.Warnings, "MI_STREAM_COMPARISON_NOT_APPLICABLE")
 		m.Completeness = "PARTIAL"
 	}
@@ -401,7 +402,17 @@ func (g *Generator) request(o Options, s Sample) (domain.NormalizedRequest, erro
 	if err != nil {
 		return domain.NormalizedRequest{}, ErrIntegrity
 	}
-	return domain.NormalizedRequest{Model: o.Target.Model, Messages: []domain.NormalizedMessage{{Role: "user", Content: prompt}}, Temperature: o.Temperature, Seed: s.Seed, MaxOutputTokens: s.MaxOutputTokens, Stream: s.Stream}, nil
+	var temperature *float64
+	var seed *int64
+	if o.Temperature != nil {
+		value := *o.Temperature
+		temperature = &value
+	}
+	if s.Seed != nil {
+		value := *s.Seed
+		seed = &value
+	}
+	return domain.NormalizedRequest{Model: o.Target.Model, Messages: []domain.NormalizedMessage{{Role: "user", Content: prompt}}, Temperature: temperature, Seed: seed, MaxOutputTokens: s.MaxOutputTokens, Stream: s.Stream}, nil
 }
 
 func project(o Options, samples []Sample) (Projection, error) {

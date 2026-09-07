@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -41,14 +42,16 @@ func (Template) String() string               { return "[probe template]" }
 func (v Template) Format(w fmt.State, _ rune) { _, _ = io.WriteString(w, v.String()) }
 func (Bundle) String() string                 { return "[probe template bundle]" }
 func (v Bundle) Format(w fmt.State, _ rune)   { _, _ = io.WriteString(w, v.String()) }
+func (t Template) LogValue() slog.Value       { return slog.StringValue(t.String()) }
+func (b Bundle) LogValue() slog.Value         { return slog.StringValue(b.String()) }
 
 func (b Bundle) Validate() error {
-	if !version.MatchString(b.Version) || len(b.Templates) < 1 || len(b.Templates) > 256 {
+	if len(b.Version) > 128 || !version.MatchString(b.Version) || len(b.Templates) < 1 || len(b.Templates) > 256 {
 		return ErrBundle
 	}
 	seen := map[string]bool{}
 	for _, t := range b.Templates {
-		if !identifier.MatchString(t.ID) || !version.MatchString(t.Version) || seen[t.ID] || (t.Language != "zh-CN" && t.Language != "en-US") || t.Variant < 1 || t.Variant > 32 || len(t.Prompt) == 0 || len(t.Prompt) > 8192 || !utf8.ValidString(t.Prompt) || strings.ContainsRune(t.Prompt, 0) || len(t.Assertions) == 0 || len(t.Assertions) > 8 {
+		if !identifier.MatchString(t.ID) || len(t.Version) > 128 || !version.MatchString(t.Version) || seen[t.ID] || (t.Language != "zh-CN" && t.Language != "en-US") || t.Variant < 1 || t.Variant > 32 || len(t.Prompt) == 0 || len(t.Prompt) > 8192 || !utf8.ValidString(t.Prompt) || strings.ContainsRune(t.Prompt, 0) || len(t.Assertions) == 0 || len(t.Assertions) > 8 {
 			return ErrBundle
 		}
 		seen[t.ID] = true

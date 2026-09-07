@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
@@ -124,6 +125,9 @@ func (Sample) String() string                  { return "[S2 probe sample]" }
 func (s Sample) Format(w fmt.State, _ rune)    { _, _ = io.WriteString(w, s.String()) }
 func (Variables) String() string               { return "[S2 probe variables]" }
 func (v Variables) Format(w fmt.State, _ rune) { _, _ = io.WriteString(w, v.String()) }
+func (m Manifest) LogValue() slog.Value        { return slog.StringValue(m.String()) }
+func (s Sample) LogValue() slog.Value          { return slog.StringValue(s.String()) }
+func (v Variables) LogValue() slog.Value       { return slog.StringValue(v.String()) }
 
 func (m Manifest) Canonical() ([]byte, string, error) {
 	data, err := json.Marshal(m)
