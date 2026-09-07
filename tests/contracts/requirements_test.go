@@ -11,15 +11,15 @@ import (
 
 func TestRequirementsTraceability(t *testing.T) {
 	root := filepath.Join("..", "..")
-	prd, err := os.ReadFile(filepath.Join(root, "模型真实性检测系统-PRD-V1.0.md"))
+	prd, err := os.ReadFile("../../模型真实性检测系统-PRD-V1.0.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := os.ReadFile(filepath.Join(root, "模型真实性检测系统-开发计划与审核表-V1.0.md"))
+	plan, err := os.ReadFile("../../模型真实性检测系统-开发计划与审核表-V1.0.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(root, "docs", "project", "requirements-v1.json"))
+	raw, err := os.ReadFile("../../docs/project/requirements-v1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
