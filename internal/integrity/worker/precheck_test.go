@@ -524,15 +524,16 @@ func TestPrecheckTimeoutIsBoundedAndDoesNotRetry(t *testing.T) {
 
 func TestRunnerLeaseLossStopsHTTPAndCannotCommitSuccess(t *testing.T) {
 	eachWorkerDatabase(t, func(t *testing.T, f workerFixture) {
-		started, stopped := make(chan struct{}, 1), make(chan struct{}, 1)
+		started, stopped := make(chan struct{}, 1), make(chan bool, 1)
 		config := tlsPrecheckConfig(t, f, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			_, _ = io.Copy(io.Discard, r.Body)
 			started <- struct{}{}
 			select {
 			case <-r.Context().Done():
+				stopped <- true
 			case <-time.After(4 * time.Second):
+				stopped <- false
 			}
-			stopped <- struct{}{}
 		}))
 		handler, err := NewPrecheckHandler(config)
 		if err != nil {
@@ -568,12 +569,15 @@ func TestRunnerLeaseLossStopsHTTPAndCannotCommitSuccess(t *testing.T) {
 		if !runner.Ready() {
 			t.Fatal("running consumer not ready")
 		}
-		if _, err := f.db.ExecContext(f.ctx, "UPDATE integrity_jobs SET lease_owner = $1, attempt_count = attempt_count + 1, lease_until = $2 WHERE organization_id = $3 AND id = $4", "replacement-owner", time.Now().UTC().Add(time.Minute), f.orgID, queued.JobID); err != nil {
-			t.Fatal("lease replacement fixture failed")
-		}
+		replacedAt := replacePrecheckLeaseForTest(t, f, runner, queued.JobID)
+		stopDeadline := time.NewTimer(time.Until(replacedAt.Add(2 * time.Second)))
+		defer stopDeadline.Stop()
 		select {
-		case <-stopped:
-		case <-time.After(2 * time.Second):
+		case cancelled := <-stopped:
+			if !cancelled {
+				t.Fatal("upstream fixture timed out instead of observing request cancellation")
+			}
+		case <-stopDeadline.C:
 			t.Fatal("lost lease did not close outbound request")
 		}
 		select {
