@@ -86,9 +86,15 @@ func migrationStatements(script string) []string {
 	var statements []string
 	var current strings.Builder
 	for _, line := range strings.Split(script, "\n") {
+		// A comment ending in ';' is not SQL. Some SQLite drivers return a nil
+		// result for comment-only Exec, which GORM cannot treat as a statement.
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
 		current.WriteString(line)
 		current.WriteByte('\n')
-		if strings.HasSuffix(strings.TrimSpace(line), ";") {
+		if strings.HasSuffix(trimmed, ";") {
 			statements = append(statements, current.String())
 			current.Reset()
 		}
