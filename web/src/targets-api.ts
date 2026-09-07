@@ -22,6 +22,7 @@ export interface Target extends TargetInput {
 // Write-only. Never merge this object into a Target or persist it in a store.
 export interface Credentials { type: 'bearer' | 'custom_header'; api_key: string; header_name?: string; headers?: Record<string, string> }
 export interface Page<T> { items: T[]; next_cursor: string | null }
+export interface TargetFilters { q: string; model: string; environment: string; status: '' | 'active' | 'disabled' }
 
 function integer(value: unknown, max = 2147483647): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= max
@@ -64,9 +65,10 @@ function targetPath(targetID: string) {
   if (!id(targetID)) throw new ApiError('MI_INVALID_REQUEST')
   return `/targets/${targetID}`
 }
-function listQuery(cursor = '') {
+function listQuery(cursor = '', filters?: TargetFilters) {
   const parameters = new URLSearchParams({ limit: '25' })
   if (cursor) parameters.set('cursor', cursor)
+  if (filters) for (const key of ['q', 'model', 'environment', 'status'] as const) { if (filters[key]) parameters.set(key, filters[key]) }
   return `?${parameters}`
 }
 function configuration(input: TargetInput): TargetInput {
@@ -77,7 +79,7 @@ function configuration(input: TargetInput): TargetInput {
       tls_verify: true, timeout_seconds: input.options.timeout_seconds, concurrency: input.options.concurrency, rpm: input.options.rpm } }
 }
 export const targetsApi = {
-  list: (org: string, cursor = '', signal?: AbortSignal): Promise<Page<Target>> => request(`/targets${listQuery(cursor)}`, page(target), { headers: scope(org), signal }),
+  list: (org: string, cursor = '', signal?: AbortSignal, filters?: TargetFilters): Promise<Page<Target>> => request(`/targets${listQuery(cursor, filters)}`, page(target), { headers: scope(org), signal }),
   get: (org: string, targetID: string, signal?: AbortSignal) => request(targetPath(targetID), target, { headers: scope(org), signal }),
   create: (org: string, csrf: string, input: TargetInput, auth: Credentials, signal?: AbortSignal) => request('/targets', target, { body: { ...configuration(input), auth }, headers: scope(org, csrf), signal }),
   update: (org: string, csrf: string, targetID: string, input: TargetInput, status: 'active' | 'disabled', version: number, signal?: AbortSignal) => request(targetPath(targetID), target, { method: 'PATCH', body: { ...configuration(input), status, version }, headers: scope(org, csrf), signal }),

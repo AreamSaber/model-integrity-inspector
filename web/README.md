@@ -53,7 +53,18 @@ Do not disable the server's Origin/CSRF checks to make development requests pass
   after successful or failed requests. The target read DTO rejects credential,
   header, ciphertext and fingerprint fields; only masked metadata is displayed.
   Conflicts offer explicit reload rather than automatic overwrite or replay.
+  Target search, exact model/environment and status filters use server queries,
+  preserve filters across cursor paging, and reset the cursor on filter changes.
+  Saving/deleting restores focus and scroll to the list heading.
   See `src/components/targets/README.md` for the target boundary details.
+- Explicit target prechecks, with cost acknowledgement and a maximum three
+  upstream requests. POST uses one in-memory cryptographic idempotency key per
+  logical action; uncertain results offer manual same-key retry, never automatic
+  new submissions. Polling follows one precise precheck/job/target-version ID
+  tuple, stops on terminal/error/unmount and is bounded to 300 reads. Separate
+  latest-record viewing is explicitly read-only and never substitutes another
+  record for an uncertain submission. Only classified safe results are rendered;
+  passing means capability checks, not model authenticity or integrity.
 - System-user creation, display-name/status changes, login-lock reset and versioned
   temporary-password reset. New users are ordinary accounts; no system-admin
   promotion or user deletion is exposed. Temporary passwords are write-only,
@@ -86,16 +97,17 @@ that invents session, organization, role, detection or report data.
 ## Deliberate limitations
 
 Target CRUD has passed local type/build/lint checks and real-client interaction
-tests against controlled network responses. Real-Go/catalog browser integration
-is still pending. Precheck and Run controls are explicitly disabled; saving a
-target does not make an upstream call or report simulated precheck success.
+tests against controlled network responses. Root's real-Go browser smoke verified
+catalog options and a target configuration update. Precheck UI-to-real-worker
+browser integration is still pending; the current tests use controlled network
+responses and no real upstream calls. Run controls are explicitly disabled.
+Saving a target never makes an upstream call or reports simulated precheck success.
 
 Runs, reports, baselines, rules, audit and system administration routes remain
 explicitly marked “尚未接入”. Overview statistics are not implemented and are not
 rendered as zero. Provider/model-profile CRUD and pagination on the legacy
 read-only role page are not yet implemented in the UI (member grant forms do
-load the full role catalog). Target search/filter controls are not yet wired to
-the backend; a current-page filter is not presented as a full search.
+load the full role catalog).
 TLS verification cannot be disabled, and client URL
 checks never substitute for server-side SSRF/DNS/network controls.
 Logout ends the current session; password change invalidates every session.
@@ -103,9 +115,11 @@ Logout ends the current session; password change invalidates every session.
 Tests drive rendered forms/navigation through the actual API client and a
 controlled `fetch` boundary. These tests are not production fake implementations
 and do not replace real-browser, real-Go API, mobile visual or deployment smoke
-tests. No paid upstream calls are made by these pages or tests.
+tests. Tests do not make paid upstream calls; the real precheck action can incur
+upstream charges only after explicit user confirmation.
 
-The management checkpoint has 96 tests, including 24 management request/DTO cases.
+The current checkpoint has 116 tests, including 24 management request/DTO cases
+and 20 precheck/filter request cases.
 Management browser integration with the actual Go API is still pending; local
 controlled-network tests are not a substitute for that integration check.
 Vitest uses at most two thread

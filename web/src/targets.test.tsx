@@ -66,17 +66,17 @@ async function createForm() {
 function writes(calls: ReturnType<typeof network>, method: string) { return calls.mock.calls.filter(([, options]) => options?.method === method) }
 
 describe('target management API boundary', () => {
-  it('loads string-ID targets for the current organization, with real masked metadata and unavailable precheck/run controls', async () => {
+  it('loads string-ID targets with real metadata, explicit precheck entry and unavailable run controls', async () => {
     const calls = network()
     renderTargets()
     await screen.findByText('Primary target')
     expect(screen.getByText('********test · v3')).toBeTruthy()
-    expect((screen.getByRole('button', { name: '预检（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '预检 Primary target' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByRole('button', { name: '发起检测（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
     const call = calls.mock.calls.find(([url]) => String(url).includes('/targets?'))!
     expect(String(call[0])).toBe('/api/v1/targets?limit=25')
     expect(new Headers(call[1]?.headers).get('X-Organization-ID')).toBe(org)
-    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.getByRole('searchbox', { name: '搜索名称、模型或渠道' })).toBeTruthy()
     expect(writes(calls, 'POST')).toHaveLength(0)
   })
 
@@ -91,6 +91,7 @@ describe('target management API boundary', () => {
     expect((screen.getByLabelText('供应商档案（可选）') as HTMLSelectElement).value).toBe(providerID)
     await user.click(screen.getByRole('button', { name: '创建目标' }))
     await screen.findByText('New target')
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: '组织检测目标' }))
     const options = writes(calls, 'POST')[0][1]!
     expect(new Headers(options.headers).get('X-CSRF-Token')).toBe(csrf)
     expect(new Headers(options.headers).get('X-Organization-ID')).toBe(org)
@@ -112,6 +113,7 @@ describe('target management API boundary', () => {
     fireEvent.change(screen.getByLabelText('目标名称'), { target: { value: 'Updated target' } })
     fireEvent.submit(screen.getByRole('form', { name: '编辑目标配置' }))
     await screen.findByText('Updated target')
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: '组织检测目标' }))
     const body = JSON.parse(writes(calls, 'PATCH')[0][1]!.body as string)
     expect(body.version).toBe(4)
     expect(body.status).toBe('active')
@@ -190,6 +192,7 @@ describe('target management API boundary', () => {
     fireEvent.change(screen.getByLabelText('输入目标名称确认删除'), { target: { value: 'Primary target' } })
     fireEvent.submit(screen.getByRole('form', { name: '确认删除目标' }))
     await screen.findByText('当前页没有检测目标。可新建目标，或返回上一页。')
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: '组织检测目标' }))
     const options = writes(calls, 'DELETE')[0][1]!
     expect(JSON.parse(options.body as string)).toEqual({ version: 4 })
     expect(new Headers(options.headers).get('X-CSRF-Token')).toBe(csrf)
