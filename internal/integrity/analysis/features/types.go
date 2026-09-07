@@ -116,32 +116,43 @@ type Result struct {
 }
 
 type SampleFeature struct {
-	SampleID             string              `json:"sample_id"`
-	AttemptID            string              `json:"attempt_id,omitempty"`
-	Ordinal              int                 `json:"ordinal"`
-	AttemptNumber        int                 `json:"attempt_number"`
-	Validity             string              `json:"validity"`
-	Included             bool                `json:"included"`
-	AuxiliaryOnly        bool                `json:"auxiliary_only"`
-	ReasoningUnseparated bool                `json:"reasoning_unseparated"`
-	Family               string              `json:"family"`
-	Language             string              `json:"language"`
-	TemplateID           string              `json:"template_id"`
-	TemplateVersion      string              `json:"template_version"`
-	ConditionHash        string              `json:"condition_hash"`
-	SeriesHash           string              `json:"series_hash"`
-	ClusterHash          string              `json:"cluster_hash"`
-	PairHash             string              `json:"pair_hash,omitempty"`
-	ManifestRequestHash  string              `json:"manifest_request_hash"`
-	WireRequestHash      string              `json:"wire_request_hash,omitempty"`
-	RequestedMaxTokens   int                 `json:"requested_max_tokens"`
-	Stream               bool                `json:"stream"`
-	Protocol             *ProtocolFeature    `json:"protocol,omitempty"`
-	Local                *tokenizer.Estimate `json:"local,omitempty"`
-	Usage                *UsageFeature       `json:"usage,omitempty"`
-	Structure            *structure.Features `json:"structure,omitempty"`
-	Behavior             *behavior.Features  `json:"behavior,omitempty"`
-	Limitations          []string            `json:"limitations"`
+	SampleID             string                `json:"sample_id"`
+	AttemptID            string                `json:"attempt_id,omitempty"`
+	Ordinal              int                   `json:"ordinal"`
+	AttemptNumber        int                   `json:"attempt_number"`
+	Validity             string                `json:"validity"`
+	Included             bool                  `json:"included"`
+	AuxiliaryOnly        bool                  `json:"auxiliary_only"`
+	ReasoningUnseparated bool                  `json:"reasoning_unseparated"`
+	Family               string                `json:"family"`
+	Language             string                `json:"language"`
+	TemplateID           string                `json:"template_id"`
+	TemplateVersion      string                `json:"template_version"`
+	ConditionHash        string                `json:"condition_hash"`
+	SeriesHash           string                `json:"series_hash"`
+	ClusterHash          string                `json:"cluster_hash"`
+	PairHash             string                `json:"pair_hash,omitempty"`
+	ManifestRequestHash  string                `json:"manifest_request_hash"`
+	WireRequestHash      string                `json:"wire_request_hash,omitempty"`
+	RequestedMaxTokens   int                   `json:"requested_max_tokens"`
+	Stream               bool                  `json:"stream"`
+	Protocol             *ProtocolFeature      `json:"protocol,omitempty"`
+	Observations         *ProtocolObservations `json:"protocol_observations,omitempty"`
+	Local                *tokenizer.Estimate   `json:"local,omitempty"`
+	Usage                *UsageFeature         `json:"usage,omitempty"`
+	Structure            *structure.Features   `json:"structure,omitempty"`
+	Behavior             *behavior.Features    `json:"behavior,omitempty"`
+	Limitations          []string              `json:"limitations"`
+}
+
+// These closed states preserve measurements on excluded final attempts too.
+// Absence of a parse is unobserved, not a checked-and-missing field.
+type ProtocolObservations struct {
+	Usage       string `json:"usage"`
+	HTTP        string `json:"http"`
+	ModelEcho   string `json:"model_echo"`
+	Finish      string `json:"finish"`
+	Termination string `json:"termination"`
 }
 
 type ProtocolFeature struct {

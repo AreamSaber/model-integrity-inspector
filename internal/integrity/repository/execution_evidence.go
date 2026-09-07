@@ -207,5 +207,5 @@ func (q *JobQueue) ReconcileRunJobs(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return q.ReconcileAnalyses(ctx)
 }

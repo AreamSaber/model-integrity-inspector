@@ -55,6 +55,7 @@ func (b *Builder) sample(run RunBinding, m generator.Manifest, row SampleBinding
 		f.Limitations = append(f.Limitations, "MI_FEATURE_EVIDENCE_MISSING")
 		return f, t, nil
 	}
+	f.Observations = protocolObservations(a.Evidence.response, s.Stream, m.Options.Target.Model)
 	if a.Validity != "VALID" && a.Validity != "VALID_WITH_WARNING" {
 		code := "MI_FEATURE_FINAL_ATTEMPT_INVALID"
 		if a.Validity == "INVALID_SAFETY_LIMIT" {
