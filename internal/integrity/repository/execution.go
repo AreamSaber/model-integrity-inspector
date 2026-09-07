@@ -30,6 +30,11 @@ var (
 )
 
 func executionKnownError(err error) error {
+	for _, known := range []error{ErrAnalysisSource, ErrAnalysisLimit} {
+		if errors.Is(err, known) {
+			return known
+		}
+	}
 	for _, known := range []error{ErrExecutionBudget, ErrExecutionLimit, ErrExecutionRPM, ErrExecutionClosed, ErrExecutionCancelled, ErrExecutionStale, ErrAttemptUncertain, ErrExecutionCircuitOpen, scheduler.ErrOverflow, scheduler.ErrPolicy, scheduler.ErrUnknownPrice} {
 		if errors.Is(err, known) {
 			return known
