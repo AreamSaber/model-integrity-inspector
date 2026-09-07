@@ -101,11 +101,18 @@ func runHTTPConfirm(q runHTTPQuote) string {
 }
 func runHTTPAssertNoS2(t *testing.T, data string) {
 	t.Helper()
-	for _, forbidden := range []string{targetHTTPKey, "nonce", "messages", "request_plan", "snapshot_json", "api_key", "secret_id", "manifest\"", "1000000", "ciphertext"} {
+	// The public Count=1000000 probe parameter is not a unique canary: random
+	// decimal IDs / hexadecimal hashes can contain those digits legitimately.
+	// Check its private variables container and actual sensitive fields instead.
+	for _, forbidden := range []string{targetHTTPKey, "nonce", "messages", "request_plan", "snapshot_json", "api_key", "secret_id", "manifest\"", "variables", "ciphertext"} {
 		if strings.Contains(data, forbidden) {
 			t.Fatalf("S2 field disclosed: %s", forbidden)
 		}
 	}
+}
+
+func TestRunHTTPS2AssertionAcceptsDigitsInPublicIdentity(t *testing.T) {
+	runHTTPAssertNoS2(t, `{"id":"8100000051243","manifest_hash":"aaaaaaaa1000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 }
 
 func TestRunHTTPRuntimeVersionChangeRejectsDraftButPreservesReceipt(t *testing.T) {

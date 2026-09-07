@@ -95,6 +95,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	}
 	if cfg.Runs != nil {
 		c.registerRunRoutes(mux)
+		c.registerRunEventRoutes(mux)
 	}
 	mux.HandleFunc("GET /api/v1/system/version", c.systemVersion)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

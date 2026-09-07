@@ -180,21 +180,5 @@ func (c *control) respondRun(w http.ResponseWriter, r *http.Request, org, id int
 		c.runError(w, r, err)
 		return
 	}
-	versions, estimate := quoteFields(q)
-	var cost *int64
-	if record.CostKnown {
-		cost = &record.EstimatedCostMicros
-	}
-	// No provider diagnostics are allowed into the summary. More detailed
-	// per-class sample counts are supplied by the later analysis projection.
-	summary := []map[string]any{}
-	if record.ErrorSummary != nil {
-		code := "MI_SERVICE_UNAVAILABLE"
-		switch *record.ErrorSummary {
-		case "MI_EXECUTION_BUDGET_EXCEEDED", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE", "MI_UNCERTAIN_ATTEMPT", "MI_TIMEOUT", "MI_EXECUTION_CIRCUIT_OPEN", "MI_AUTH_FAILED", "MI_MODEL_NOT_FOUND", "MI_PROTOCOL_UNSUPPORTED", "MI_CIRCUIT_AUTH_FAILURES", "MI_CIRCUIT_MODEL_FAILURES", "MI_CIRCUIT_PROTOCOL_FAILURES", "MI_ANALYSIS_FAILED":
-			code = *record.ErrorSummary
-		}
-		summary = append(summary, map[string]any{"code": code, "count": 1})
-	}
-	c.success(w, r, status, map[string]any{"id": strconv.FormatInt(record.ID, 10), "target_id": strconv.FormatInt(record.TargetID, 10), "created_by": strconv.FormatInt(record.CreatedBy, 10), "package": record.Package, "status": record.Status, "version": record.Version, "versions": versions, "estimate": estimate, "manifest_hash": record.ManifestHash, "request_count": record.RequestCount, "token_count": record.TokenCount, "estimated_cost_micros": cost, "valid_sample_count": record.ValidSampleCount, "planned_samples": planned, "completed_samples": completed, "created_at": record.CreatedAt, "started_at": record.StartedAt, "finished_at": record.FinishedAt, "execution_closed_at": record.ExecutionClosedAt, "error_summary": summary})
+	c.success(w, r, status, runProgressDTO(record, q, planned, completed))
 }

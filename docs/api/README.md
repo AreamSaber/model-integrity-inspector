@@ -13,7 +13,7 @@
 - 写请求使用精确大小写的JSON字段；拒绝重复字段（含嵌套对象）、未知字段、重复文档、无效UTF-8及超过32层的嵌套，正文上限64KiB。不可空字段显式null拒绝；PATCH通过省略字段表示不变。已实现管理与目标接口均使用此解码边界。
 - 乐观锁更新携带 version；冲突 409，客户端重新拉取。写请求有最大体积限制，未知字段拒绝（additionalProperties=false）；模板参数、Header 和 Endpoint 仍须领域层校验。
 - Run 创建/预检/报告/回放/备份返回 202，后台由数据库 Job 执行。预检已增加 GET 读取结果；不在 Handler 同步等待上游。
-- SSE 使用带同源 Cookie 和组织 Header 的 fetch 流；Last-Event-ID 仅携带事件游标。重连可先收到当前快照，客户端按版本丢弃旧事件，再 GET 最终状态/冻结结果；不依赖浏览器 EventSource 传自定义 Header。事件不含正文和凭证。
+- SSE 使用带同源 Cookie 和组织 Header 的 fetch 流；Last-Event-ID 是与路径相同的 `<Run ID>:<持久版本>`，不是授权。每次连接必发当前数据库快照（终态也发），其 data 与 GET Run 相同而不带 envelope；客户端拒绝身份/冻结配置变化或版本倒退，断线及终态通知后 GET 原 ID 核对，最多12连接/1小时。每2秒重验持久会话/账号/成员/权限，DB与写操作1秒期限，10秒心跳，单连接5分钟；撤权发闭合错误码后关闭。每进程64连接、每用户4连接，超限429 Retry-After:5。不依赖 EventSource 传自定义 Header，绝不自动重发 POST。事件不含正文和凭证。
 - 下载使用已授权数据库记录解析的路径，不接受用户文件路径；返回 attachment、nosniff、HTML sandbox CSP。下载/正文读取需审计。报告不包括 S3 凭证，默认导出脱敏证据；canonical hash 对去除 content_hash 的 JSON 计算，需版本化规范。
 - 自定义 Header 整体 writeOnly，与 API Key 同一加密 Secret；目标读接口只返回掩码/版本。保留 Header、CRLF 和不安全地址拒绝，Key 更换使用独立权限。
 - report、risk、confidence 与人工 review 分离；只读接口绝不从 Secret 重新构造内容；黑盒最高 B，无有效样本必须 insufficient。

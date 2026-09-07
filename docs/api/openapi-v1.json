@@ -6586,7 +6586,7 @@
     "/runs/{id}/events": {
       "get": {
         "operationId": "runEvents",
-        "summary": "runEvents",
+        "summary": "Stream persisted Run progress with live session and organization authorization",
         "security": [
           {
             "SessionCookie": []
@@ -6614,13 +6614,14 @@
             "in": "header",
             "schema": {
               "type": "string",
+              "pattern": "^[1-9][0-9]{0,18}:[1-9][0-9]{0,18}$",
               "maxLength": 128
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "SSE: event: progress; id: monotonic persisted version; data: Progress JSON. Heartbeat comments; reconnect uses Last-Event-ID, old/unknown cursor sends current snapshot. No body or credentials. Organization sent via fetch SSE header, never query-string credentials.",
+            "description": "SSE progress: event: progress; id: <run ID>:<persisted version>; data: the same explicit public Run JSON object as GET /runs/{id}, without envelope. Always sends the current snapshot, including terminal reconnects; Last-Event-ID must match the path ID and is not authorization. Heartbeat comments every 10s; session/user/membership/run.read revalidated every 2s with 1s operation/write bounds; one connection at most 5min. Terminal snapshot then EOF. Revocation/failure after headers emits event: error without id and data:{code,request_id}, then EOF. Error codes are MI_SESSION_REQUIRED, MI_PASSWORD_CHANGE_REQUIRED, MI_PERMISSION_DENIED, MI_NOT_FOUND, MI_SERVICE_UNAVAILABLE. Per-handler/process limits: 64 global, 4 per user; excess handshake returns 429 Retry-After:5. No S2 body, prompt, private variables or credentials; fetch uses same-origin Cookie and organization header, never query credentials.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -6710,8 +6711,8 @@
             }
           }
         },
-        "x-permission": "authenticated",
-        "x-development-status": "contract-only"
+        "x-permission": "run.read",
+        "x-development-status": "implemented-database-backed"
       }
     },
     "/runs/{id}/result": {
