@@ -185,3 +185,21 @@ B1 完成最多意味着：两个真实受控 TLS 开发捕获，实际最终 At
 - 完整计算、序列化与输出大小检查成功后，才在已经验证并持有句柄的私有输出目录内随机独占创建临时文件。创建瞬间即0600（Unix）或 owner+SYSTEM ACL（Windows）；写完、Sync 并再次检查取消后，Windows 使用句柄相对 `FileRenameInformation` 且 `ReplaceIfExists=false`，Unix 使用同目录 `linkat` no-replace 后回收临时项，原子发布最终名字。已有目标绝不覆盖；提交前失败/取消不留下半份最终输出。清理仅限本次创建且句柄/目录 identity 匹配的临时项，不删除任何已有目标。发布成功后的持久化错误属于提交结果不确定，可能保留完整最终文件，不能回滚删除它或声称没有输出。
 - built CLI 测试须真实启动可执行文件，覆盖输入损坏/未知字段、键替换、取消/期限、目标已存在、目录/pipe/device/link/unsafe 权限、失败不泄漏路径或源正文。禁止网络的 OS 环境演练作为单独证据；不把 AST guard 或关闭 mock 等同于已做 OS 禁网，也不自行建立防火墙规则。
 - B1-3 明确支持 Windows + Linux；其他平台 fail closed。Linux `Fstatfs` 只允许 ext/XFS/Btrfs/tmpfs/overlay/ramfs/F2FS，未知/NFS/CIFS/FUSE/pseudo-filesystem 拒绝。文件系统 magic（包括 overlay）只是输入边界，不能证明 backing storage 或整个进程已经 OS 禁网。Windows 本地真实执行测试与 Linux 交叉编译证据须分别记录，不混称双平台运行通过。
+
+## 13. B1-4 Ubuntu CI 的 OS 网络隔离验证
+
+本子单元使用 `linux && replay_netns` build tag 的独立测试，复用 B1-3 的真实 built CLI 和明确标为 synthetic 的开发 capture。普通套件不触发特权命名空间操作；现有 `quality` job 新增必跑的 `scripts/test-replay-netns.ps1` 步骤。required 依赖、原有检查、双库回归和阈值不变。测试/脚本没有“环境不支持则跳过”的通过路径；缺少 sudo、unshare、setpriv、namespace 能力或依赖缓存均使这个 CI 步骤失败。
+
+1. 原 runner UID 必须非零。先由该 UID 在私有 0700 目录建立 0600 输入文件（独立开发 Manifest key，不是 master），完成实际 CLI 基准回放；所有编译、词表和规则准备在隔离前完成。宿主父进程启动随机端口的 loopback TCP 正控制，并先证明其可连接。
+2. `sudo -n unshare --net` 只创建子进程的非持久网络命名空间，随后立即用 `setpriv` 降到原 UID/GID、清空 supplementary groups 与全部 capabilities、设置 `NoNewPrivs=1`。再用 `env -i` 启动已编译测试子进程；只传入本次测试的路径、父 namespace identity、数值 UID/GID 和正控制地址，不传 GITHUB token、DSN、master、capture 或 key 内容。没有用户命名空间、host firewall 修改、接口配置、持久 namespace 文件或系统参数变更。
+3. 子进程实测 real/effective/saved/fs UID/GID 均一致且非零，CapInh/Prm/Eff/Bnd/Amb 全零、groups 清空；拒绝继承的 socket FD。验证 netns identity 不同、只有 DOWN 的 lo、没有可用 IPv4/IPv6 路由（内核 reject 路由不视为可用路由）。此后才尝试连接仍存活的父 loopback 服务和文档保留地址 IPv4/IPv6，要求明确即时不可达，不以 DNS 失败或超时等同断网。
+4. 在同一无特权隔离子进程运行实际 CLI，S1 预测必须与正常环境基准逐字一致，文件 owner 仍为 runner、mode 0600。再执行损坏 capture、换 key、已有输出不变，并以启动前已取消的 context 确定性验证“不得启动 child”；这不是中途取消或 graceful SIGINT 的证明。同 netns 运行预编译 localfile 测试二进制，包含写完并 Sync 后、提交前由屏障触发的真正中途取消、并发 no-replace、链接/权限/本地文件系统边界。不得依赖 Start 后抢先 cancel 或 sleep 来假定子进程尚未执行完。
+5. 父进程完成后再次验证原 namespace identity 和正控制仍连通，证明没有修改宿主网络。所有清理由本次 Go `t.TempDir` 生命周期和自身进程/句柄负责；没有跨 shell 删除。单 CLI、子测试、父命名空间进程和 CI 步骤均有有界期限。
+
+常规返回会清理本次 TempDir；进程或 runner 被强制终止时可能留下本次私有目录，禁止上传这些输入/key，最终由隔离 runner 生命周期清理，不执行宽泛兜底删除。
+
+该机制验证本 CLI 所用 IPv4/IPv6 网络路径的 OS 隔离，不宣称完整恶意代码 sandbox 或文件系统/所有 IPC 隔离。没有通过共享宿主 socket 代理外连的测试替代路径。
+
+包装脚本仅在这一步禁用 Go proxy/sumdb，并拒绝隐式 GOFLAGS/child-mode 覆盖。它检查实际 `go test -json` 的精确 test run + test pass + package pass、禁止 skip/fail、要求 8 个闭集 proof stage 各出现一次；零测试、名字或 tag 配错、仅输出“成功”字符串不被接受。脚本内策略回归会在每次实际运行前执行；`-PolicyOnly` 只允许本地验证 framing，输出明确 `NOT_OS_EVIDENCE`，workflow 契约禁止将它替换真实步骤。公开日志仅输出闭集 S1 阶段码，不上传 S2 capture 或开发 key。
+
+机制依据为上游 [network_namespaces(7)](https://man7.org/linux/man-pages/man7/network_namespaces.7.html)、[unshare(1)](https://man7.org/linux/man-pages/man1/unshare.1.html) 与 [setpriv(1)](https://man7.org/linux/man-pages/man1/setpriv.1.html)。实现交付时本机只有 Windows，Linux namespace **尚未实际执行**；交叉编译/lint/策略测试不等于 OS 验证完成，必须由本提交后实际 Ubuntu CI 结果补足。即使 CI 通过，本子单元也只证明合成开发回放在该隔离环境下工作，不是生产导出、真实官方渠道、独立校准、QA 准入或规则发布能力；真实 Worker export 另行接入。

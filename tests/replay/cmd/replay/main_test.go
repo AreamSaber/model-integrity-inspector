@@ -213,25 +213,22 @@ func TestBuiltCLI(t *testing.T) {
 			}
 		})
 	}
-	t.Run("caller-cancellation-during-process-startup", func(t *testing.T) {
+	t.Run("caller-cancellation-before-process-start", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
+		cancel()
 		output := filepath.Join(dir, "canceled-process.json")
 		// #nosec G204 -- same test-built executable; no shell. This specifically
-		// checks external caller cancellation, not graceful OS signal delivery.
+		// checks a canceled caller cannot start the process, not mid-execution
+		// cancellation or graceful OS signal delivery. No scheduler race/sleep.
 		cmd := exec.CommandContext(ctx, binary, withArg(args, "--output", output)...)
 		var diagnostics bytes.Buffer
 		cmd.Stdout = &diagnostics
 		cmd.Stderr = &diagnostics
-		if err := cmd.Start(); err != nil {
-			t.Fatal(err)
-		}
-		cancel()
-		if err := cmd.Wait(); err == nil {
-			t.Fatal("canceled process unexpectedly succeeded")
+		if err := cmd.Start(); !errors.Is(err, context.Canceled) || cmd.Process != nil {
+			t.Fatal("already-canceled caller started a process")
 		}
 		if _, err := os.Stat(output); !os.IsNotExist(err) {
-			t.Fatal("startup cancellation created output")
+			t.Fatal("pre-start cancellation created output")
 		}
 	})
 }

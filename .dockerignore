@@ -1,5 +1,8 @@
 .git
-.github
+.github/*
+!.github/workflows
+.github/workflows/*
+!.github/workflows/ci.yml
 .tools
 artifacts
 coverage

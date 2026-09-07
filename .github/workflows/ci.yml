@@ -60,6 +60,10 @@ jobs:
       - name: Test and build
         shell: pwsh
         run: ./scripts/build.ps1
+      - name: Offline replay OS network isolation
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/test-replay-netns.ps1
       - name: SQLite and PostgreSQL race regression
         env:
           MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
