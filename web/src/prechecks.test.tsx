@@ -53,7 +53,7 @@ describe('explicit bounded target precheck workflow', () => {
     fireEvent.submit(screen.getByRole('form', { name: '确认目标预检' }))
     await screen.findByText('请先确认预检会向该目标发起请求，且可能产生上游费用。')
     expect(posts(calls)).toHaveLength(0)
-    expect((screen.getByRole('button', { name: '发起检测（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/api/v1/runs'))).toBe(false)
   })
   it('posts the fresh target version with CSRF/org/fixed idempotency key and tracks its precise precheck ID', async () => {
     // Supply the wire fixtures directly. A nested fetch wrapper that drains and

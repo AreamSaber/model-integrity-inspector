@@ -65,6 +65,30 @@ Do not disable the server's Origin/CSRF checks to make development requests pass
   latest-record viewing is explicitly read-only and never substitutes another
   record for an uncertain submission. Only classified safe results are rendered;
   passing means capability checks, not model authenticity or integrity.
+- Target-row Run configuration, estimate/explicit-cost confirmation and fixed-ID
+  progress. Only opening Run configuration reads `/auth/permissions`; this is the
+  actual current user/organization effective grant set, refreshed before each
+  estimate, creation and cancellation. Missing/failed permissions disable writes;
+  system-admin flags and role definitions never substitute for effective grants.
+  Quick/standard/deep defaults and custom families, languages, repetitions, output
+  tiers and stream modes are sent as configured. Non-custom requests never include
+  custom-only options. Service hard maxima and high-cost/custom permissions are
+  validated without silently removing choices; server limits remain authoritative.
+  Estimates create only short-lived drafts and never implicitly precheck a target.
+  Unknown prices stay unknown. Version/hash/budget/coverage warnings are displayed
+  before the user explicitly accepts charges; public development templates and
+  conservative missing model limits are not presented as approved vendor claims.
+- Run creation uses one fixed estimate ID/hash body; uncertain POST results do not
+  automatically retry or create another draft. Manual recovery uses the same body.
+  Unused expired quotes require a new explicit estimate; an existing Run can still
+  be recovered after expiry under the backend's one-draft/one-Run contract. Progress
+  follows only that returned Run, verifies immutable identities and monotonic
+  versions, and polls every five seconds for at most 600 reads before manual
+  continuation. Cancellation requires confirmation and fresh cancel-own/any
+  permission, posts the current version, and is disabled once execution closes.
+  Unknown cancellation results trigger only a fixed-ID read. Leaving, switching
+  organizations or losing the session aborts local reads, not the backend Run.
+  `ANALYZING` is not completion; result/report buttons remain unavailable.
 - System-user creation, display-name/status changes, login-lock reset and versioned
   temporary-password reset. New users are ordinary accounts; no system-admin
   promotion or user deletion is exposed. Temporary passwords are write-only,
@@ -100,10 +124,13 @@ Target CRUD has passed local type/build/lint checks and real-client interaction
 tests against controlled network responses. Root's real-Go browser smoke verified
 catalog options and a target configuration update. Precheck UI-to-real-worker
 browser integration is still pending; the current tests use controlled network
-responses and no real upstream calls. Run controls are explicitly disabled.
+responses and no real upstream calls. Run configuration/estimate/confirmation UI
+is connected to real API routes, but the runtime may return
+`MI_EXECUTION_NOT_READY` until its analysis worker is available. This is shown as
+an error, never as an invented Run. Real-Go Run browser integration is pending.
 Saving a target never makes an upstream call or reports simulated precheck success.
 
-Runs, reports, baselines, rules, audit and system administration routes remain
+The standalone Run list, reports, baselines, rules, audit and system administration routes remain
 explicitly marked “尚未接入”. Overview statistics are not implemented and are not
 rendered as zero. Provider/model-profile CRUD and pagination on the legacy
 read-only role page are not yet implemented in the UI (member grant forms do
@@ -115,12 +142,14 @@ Logout ends the current session; password change invalidates every session.
 Tests drive rendered forms/navigation through the actual API client and a
 controlled `fetch` boundary. These tests are not production fake implementations
 and do not replace real-browser, real-Go API, mobile visual or deployment smoke
-tests. Tests do not make paid upstream calls; the real precheck action can incur
-upstream charges only after explicit user confirmation.
+tests. Tests do not make paid upstream calls; real precheck and Run execution can
+incur upstream charges only after their explicit user confirmations. Run draft
+and recovery state is in-memory and is not restored after a full page reload;
+do not recreate an uncertain submission by opening another configuration.
 
-The current checkpoint has 116 tests, including 24 management request/DTO cases
-and 20 precheck/filter request cases.
-Management browser integration with the actual Go API is still pending; local
-controlled-network tests are not a substitute for that integration check.
+The current checkpoint has 151 tests, including 35 Run request/DTO cases,
+24 management cases and 20 precheck/filter cases. Root's real-Go browser smoke
+has also verified user/member reads; broader management mutation and Run browser
+integration remain separate checks. Controlled-network tests do not replace them.
 Vitest uses at most two thread
 workers to avoid Windows fork-startup contention; this does not relax assertions.

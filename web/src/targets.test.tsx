@@ -66,13 +66,13 @@ async function createForm() {
 function writes(calls: ReturnType<typeof network>, method: string) { return calls.mock.calls.filter(([, options]) => options?.method === method) }
 
 describe('target management API boundary', () => {
-  it('loads string-ID targets with real metadata, explicit precheck entry and unavailable run controls', async () => {
+  it('loads string-ID targets with real metadata and explicit precheck/run configuration entries without automatic writes', async () => {
     const calls = network()
     renderTargets()
     await screen.findByText('Primary target')
     expect(screen.getByText('********test · v3')).toBeTruthy()
     expect((screen.getByRole('button', { name: '预检 Primary target' }) as HTMLButtonElement).disabled).toBe(false)
-    expect((screen.getByRole('button', { name: '发起检测（尚未接入）' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '配置检测 Primary target' }) as HTMLButtonElement).disabled).toBe(false)
     const call = calls.mock.calls.find(([url]) => String(url).includes('/targets?'))!
     expect(String(call[0])).toBe('/api/v1/targets?limit=25')
     expect(new Headers(call[1]?.headers).get('X-Organization-ID')).toBe(org)

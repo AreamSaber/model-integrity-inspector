@@ -30,8 +30,12 @@ promise memory zeroization. No old credentials are retrieved or reused by UI.
 
 URL validation is a usability check, not SSRF enforcement. TLS verification is
 always enabled; authoritative URL/DNS/network restrictions remain on the server.
-Run is disabled and labeled not connected. Precheck is a real, potentially billed
-operation: it requires opening one target, reading its current version, and
+The target-row Run entry reads the current target version and opens the separate
+configuration, estimate, cost-confirmation and progress workflow. It never
+automatically prechecks, estimates or creates a Run. The standalone Run list and
+result/report pages are not yet connected. See `../runs/README.md`.
+Precheck is a real, potentially billed operation: it requires opening one target,
+reading its current version, and
 explicitly acknowledging the maximum three upstream requests. List rendering,
 opening the panel, saving configuration and background reads never POST prechecks.
 

@@ -95,7 +95,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
         <div className="page-heading"><p className="eyebrow">{organization?.name ?? '尚未选择组织'}</p><h1 ref={heading} tabIndex={-1}>{title}</h1></div>
         <ErrorNotice error={error} id="workspace-error" />
         {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
-          route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
+          route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
           route === 'account' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> :
           route === 'users' ? <UsersPage {...management} /> :
           route === 'organization-management' ? <OrganizationsPage {...management} onChanged={(org) => {

@@ -69,7 +69,7 @@ export function PrecheckPanel({ current, onCancel, onReload, ...context }: Targe
       </div>
       {busy && <Loading>正在处理预检请求…</Loading>}
     </>}
-    <div className="form-actions"><button onClick={onCancel}>返回目标列表</button></div><p className="field-help">离开此页会停止本页读取，不会取消已提交的后台任务。发起新预检始终需要重新确认；正式检测 Run 尚未接入。</p>
+    <div className="form-actions"><button onClick={onCancel}>返回目标列表</button></div><p className="field-help">离开此页会停止本页读取，不会取消已提交的后台任务。发起新预检始终需要重新确认；正式检测须返回目标列表，另行配置并确认费用。</p>
   </section>
 }
 

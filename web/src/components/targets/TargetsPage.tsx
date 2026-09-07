@@ -6,9 +6,10 @@ import { TargetForm, type TargetCallbacks } from './TargetForm'
 import { SecretForm } from './SecretForm'
 import { PrecheckPanel } from './PrecheckPanel'
 import { emptyFilters, TargetFilters } from './TargetFilters'
+import { RunWorkflow } from '../runs/RunWorkflow'
 
-type Editor = { mode: 'create' } | { mode: 'edit' | 'rotate' | 'delete' | 'precheck'; target: Target } | null
-export function TargetsPage({ organizationID, csrfToken, onSignedOut, onPasswordRequired }: TargetCallbacks) {
+type Editor = { mode: 'create' } | { mode: 'edit' | 'rotate' | 'delete' | 'precheck' | 'run'; target: Target } | null
+export function TargetsPage({ organizationID, csrfToken, userID, onSignedOut, onPasswordRequired }: TargetCallbacks & { userID: string }) {
   const [page, setPage] = useState<Page<Target> | null>(null)
   const [cursor, setCursor] = useState('')
   const [history, setHistory] = useState<string[]>([])
@@ -45,7 +46,7 @@ export function TargetsPage({ organizationID, csrfToken, onSignedOut, onPassword
   }, [organizationID, cursor, attempt, filters, handleError])
   function refresh() { setLoading(true); setError(null); setAttempt((value) => value + 1) }
   const cancel = () => { restoreListFocus.current = true; setEditor(null); setError(null) }
-  async function open(mode: 'edit' | 'rotate' | 'delete' | 'precheck', targetID: string) {
+  async function open(mode: 'edit' | 'rotate' | 'delete' | 'precheck' | 'run', targetID: string) {
     if (pending.current) return
     pending.current = true
     const controller = new AbortController()
@@ -91,6 +92,8 @@ export function TargetsPage({ organizationID, csrfToken, onSignedOut, onPassword
         ? <SecretForm key={`${editor.target.id}-${editor.target.version}`} {...callbacks} current={editor.target} onSaved={saved} onCancel={cancel} onReload={() => void open('rotate', editor.target.id)} />
         : editor?.mode === 'precheck'
           ? <PrecheckPanel key={`${editor.target.id}-${editor.target.version}`} {...callbacks} current={editor.target} onCancel={cancel} onReload={() => void open('precheck', editor.target.id)} />
+        : editor?.mode === 'run'
+          ? <RunWorkflow key={`${editor.target.id}-${editor.target.version}`} {...callbacks} userID={userID} current={editor.target} onCancel={cancel} />
         : editor?.mode === 'delete'
           ? <section className="panel delete-panel" aria-labelledby="delete-title"><h2 id="delete-title">删除目标：{editor.target.name}</h2><p>此操作删除目标及当前加密凭证，无法从此页面恢复。历史样本和结果按保留策略保留，不会因删除目标而伪造或清空历史。</p><form aria-label="确认删除目标" onSubmit={remove}><fieldset disabled={busy}><legend className="sr-only">删除确认</legend><div className="field"><label htmlFor="confirm_name">输入目标名称确认删除</label><input id="confirm_name" name="confirm_name" autoComplete="off" /></div><div className="form-actions"><button className="danger-button" type="submit">确认删除目标</button><button type="button" onClick={cancel}>取消</button><button type="button" onClick={() => void open('delete', editor.target.id)}>重新读取目标</button></div></fieldset></form></section>
           : <section className="panel" aria-labelledby="target-list-title">
@@ -100,9 +103,9 @@ export function TargetsPage({ organizationID, csrfToken, onSignedOut, onPassword
             {loading && <Loading>正在读取目标列表…</Loading>}
             {Boolean(error) && page && <p className="empty-note">读取失败，下方保留上次成功的列表，可能已过期；请刷新后操作。</p>}
             {!loading && !error && page?.items.length === 0 && <p className="empty-note">当前页没有检测目标。可新建目标，或返回上一页。</p>}
-            {page && page.items.length > 0 && <div className="table-scroll"><table><caption className="sr-only">当前组织目标列表</caption><thead><tr><th scope="col">目标 / 模型</th><th scope="col">Endpoint / 环境</th><th scope="col">状态 / 凭证</th><th scope="col">操作</th></tr></thead><tbody>{page.items.map((item) => <tr key={item.id}><th scope="row"><strong>{item.name}</strong><small className="cell-detail">{item.model}<br />ID {item.id} · v{item.version}</small></th><td>{item.endpoint}<small className="cell-detail">{item.environment || '未标注环境'} · {item.channel_id || '未标注渠道'}</small></td><td>{item.status === 'active' ? '启用' : item.status === 'disabled' ? '停用' : '已删除'}<small className="cell-detail">{item.secret.mask} · v{item.secret.version}</small></td><td><div className="row-actions"><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('edit', item.id)} aria-label={`编辑 ${item.name}`}>编辑</button><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('rotate', item.id)} aria-label={`轮换凭证 ${item.name}`}>轮换凭证</button><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('delete', item.id)} aria-label={`删除 ${item.name}`}>删除</button><button disabled={busy || loading || Boolean(error) || item.status !== 'active'} onClick={() => void open('precheck', item.id)} aria-label={`预检 ${item.name}`}>预检</button></div></td></tr>)}</tbody></table></div>}
+            {page && page.items.length > 0 && <div className="table-scroll"><table><caption className="sr-only">当前组织目标列表</caption><thead><tr><th scope="col">目标 / 模型</th><th scope="col">Endpoint / 环境</th><th scope="col">状态 / 凭证</th><th scope="col">操作</th></tr></thead><tbody>{page.items.map((item) => <tr key={item.id}><th scope="row"><strong>{item.name}</strong><small className="cell-detail">{item.model}<br />ID {item.id} · v{item.version}</small></th><td>{item.endpoint}<small className="cell-detail">{item.environment || '未标注环境'} · {item.channel_id || '未标注渠道'}</small></td><td>{item.status === 'active' ? '启用' : item.status === 'disabled' ? '停用' : '已删除'}<small className="cell-detail">{item.secret.mask} · v{item.secret.version}</small></td><td><div className="row-actions"><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('edit', item.id)} aria-label={`编辑 ${item.name}`}>编辑</button><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('rotate', item.id)} aria-label={`轮换凭证 ${item.name}`}>轮换凭证</button><button disabled={busy || loading || Boolean(error) || item.status === 'deleted'} onClick={() => void open('delete', item.id)} aria-label={`删除 ${item.name}`}>删除</button><button disabled={busy || loading || Boolean(error) || item.status !== 'active'} onClick={() => void open('precheck', item.id)} aria-label={`预检 ${item.name}`}>预检</button><button disabled={busy || loading || Boolean(error) || item.status !== 'active'} onClick={() => void open('run', item.id)} aria-label={`配置检测 ${item.name}`}>配置检测</button></div></td></tr>)}</tbody></table></div>}
             <div className="pagination"><button disabled={loading || busy || history.length === 0} onClick={() => { setCursor(history[history.length - 1]); setHistory((previous) => previous.slice(0, -1)); setPage(null); setLoading(true); setError(null) }}>上一页</button><span>第 {history.length + 1} 页</span><button disabled={loading || busy || !page?.next_cursor || Boolean(error)} onClick={() => { if (page?.next_cursor) { setHistory((previous) => [...previous, cursor]); setCursor(page.next_cursor); setPage(null); setLoading(true); setError(null) } }}>下一页</button></div>
           </section>}
-    <section className="panel"><div className="section-heading"><h2>正式检测</h2><span className="status-label">Run 尚未接入</span></div><p className="muted">目标行的预检仅检查连接与协议能力，需主动确认并可能计费。正式检测 Run 尚未连接后端，不会返回模拟检测成功。</p><button disabled>发起检测（尚未接入）</button></section>
+    {!editor && <section className="panel"><div className="section-heading"><h2>正式检测</h2><span className="status-label">先预估，再确认费用</span></div><p className="muted">从目标行“配置检测”开始：读取当前有效权限、提交无上游调用的预估，确认费用后才创建真实 Run。需要当前目标版本通过预检；服务未就绪时会明确报错。分析结果和报告尚未接入。</p></section>}
   </>
 }
