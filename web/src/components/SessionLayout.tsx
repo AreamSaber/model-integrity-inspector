@@ -13,6 +13,8 @@ import { decimalID } from '../runs-history-api'
 import { BaselinesPage } from './baselines/BaselinesPage'
 import { ComparisonPage } from './comparison/ComparisonPage'
 import { comparisonRoute } from '../comparison-api'
+import { TrendsPage } from './trends/TrendsPage'
+import { trendsRoute } from '../trends-api'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -22,6 +24,7 @@ const navigation = [
   ['runs', '检测任务', '检测'],
   ['reports', '结果与报告', '检测'],
   ['compare', '任务对比', '检测'],
+  ['trends', '目标趋势', '检测'],
   ['baselines', '基线管理', '治理'],
   ['rules', '规则与模板', '治理'],
   ['audit', '审计日志', '治理'],
@@ -49,8 +52,9 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
   const resultID = segments.length === 3 && segments[0] === 'results' && decimalID(segments[1]) && segments[2] === '1' ? segments[1] : null
   const comparison = comparisonRoute(route)
   const validComparison = comparison && comparison.kind !== 'invalid'
-  const activeRoute = historicalID ? 'runs' : resultID ? 'reports' : validComparison ? 'compare' : route
-  const title = validComparison ? '两任务固定修订对比' : resultID ? '固定修订分析结果' : historicalID ? '检测进度与状态' : navigation.find(([key]) => key === route)?.[1] ?? '页面不存在'
+  const trend = trendsRoute(route), validTrend = trend && trend.kind !== 'invalid'
+  const activeRoute = historicalID ? 'runs' : resultID ? 'reports' : validComparison ? 'compare' : validTrend ? 'trends' : route
+  const title = validTrend ? '单目标调用与风险趋势' : validComparison ? '两任务固定修订对比' : resultID ? '固定修订分析结果' : historicalID ? '检测进度与状态' : navigation.find(([key]) => key === route)?.[1] ?? '页面不存在'
   const management = { csrfToken: session.csrf_token, userID: session.user.id, systemAdmin: session.user.system_admin === true, onSignedOut, onPasswordRequired }
   useEffect(() => {
     const change = () => setRoute(currentRoute())
@@ -111,6 +115,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
         <div className="page-heading"><p className="eyebrow">{organization?.name ?? '尚未选择组织'}</p><h1 ref={heading} tabIndex={-1}>{title}</h1></div>
         <ErrorNotice error={error} id="workspace-error" />
         {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
+          validTrend ? (organization ? <TrendsPage key={`${organization.id}-${session.user.id}-${route}`} {...management} organizationID={organization.id} targetID={trend.kind === 'target' ? trend.targetID : undefined} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取目标趋势。</p></section>) :
           validComparison ? (organization ? <ComparisonPage key={`${organization.id}-${session.user.id}-${route}`} {...management} organizationID={organization.id} selection={comparison.kind === 'pair' ? comparison.selection : undefined} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取两任务对比。</p></section>) :
           route === 'runs' || route === 'reports' || historicalID || resultID ? (organization ? (resultID ? <ResultsPage key={`${organization.id}-result-${resultID}`} {...management} organizationID={organization.id} runID={resultID} /> : historicalID ? <HistoricalRun key={`${organization.id}-run-${historicalID}`} {...management} organizationID={organization.id} runID={historicalID} /> : <RunHistory key={`${organization.id}-${route}`} {...management} organizationID={organization.id} resultsOnly={route === 'reports'} />) : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取检测历史和结果。</p></section>) :
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
@@ -139,7 +144,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
 function Overview({ organization, username }: { organization?: Organization; username: string }) {
   return <>
     <section className="welcome-panel"><span className="section-number">01 / WORKSPACE</span><h2>欢迎回来，{username}</h2><p>{organization ? `当前工作空间：${organization.name}。后续检测与证据将在此组织范围内查看。` : '请先选择组织。如果没有可访问的组织，请联系管理员。'}</p><a className="button-link" href="#/organizations">查看组织与角色 →</a></section>
-    <section className="panel"><div className="section-heading"><h2>检测数据</h2><span className="status-label">组织范围内读取</span></div><p className="muted">检测历史与已有分析结果可从下方入口读取。总览聚合统计和风险趋势尚未接入，不展示示例记录或虚假的零值。</p><div className="workflow-links"><a href="#/targets">目标与模型档案 <span>→</span></a><a href="#/runs">检测任务 <span>→</span></a><a href="#/reports">结果与报告 <span>→</span></a></div></section>
+    <section className="panel"><div className="section-heading"><h2>检测数据</h2><span className="status-label">组织范围内读取</span></div><p className="muted">检测历史与已有分析结果可从下方入口读取。组织总览聚合统计尚未接入；单目标当前页趋势可按需读取，不展示示例记录或虚假的零值。</p><div className="workflow-links"><a href="#/targets">目标与模型档案 <span>→</span></a><a href="#/runs">检测任务 <span>→</span></a><a href="#/reports">结果与报告 <span>→</span></a><a href="#/trends">目标趋势 <span>→</span></a></div></section>
     <p className="security-note">这里的账号和组织信息来自真实会话。前端导航仅提供交互引导，不授予任何业务权限。</p>
   </>
 }

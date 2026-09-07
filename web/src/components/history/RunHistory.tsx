@@ -8,6 +8,7 @@ import { RunProgress, statusLabels } from '../runs/RunProgress'
 import { cost } from '../runs/RunQuote'
 import type { TargetCallbacks } from '../targets/TargetForm'
 import { comparisonHref } from '../../comparison-api'
+import { trendsHref } from '../../trends-api'
 
 export type ReadContext = TargetCallbacks & { userID: string }
 export function RunHistory(context: ReadContext & { resultsOnly?: boolean }) { return <RunHistoryScope key={`${context.organizationID}-${context.userID}-${context.resultsOnly}`} {...context} /> }
@@ -40,7 +41,7 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
   }
   function reset() { setLoading(true); setResult(null); setError(null) }
   return <section className="panel" aria-labelledby="history-title">
-    <div className="section-heading"><h2 id="history-title">{context.resultsOnly ? '历史检测与已有结果' : '检测任务历史'}</h2><div className="form-actions"><a href="#/compare">输入两个任务进行对比 →</a><a href="#/targets">从目标创建检测 →</a></div></div>
+    <div className="section-heading"><h2 id="history-title">{context.resultsOnly ? '历史检测与已有结果' : '检测任务历史'}</h2><div className="form-actions"><a href="#/compare">输入两个任务进行对比 →</a><a href="#/trends">按目标读取趋势 →</a><a href="#/targets">从目标创建检测 →</a></div></div>
     {context.resultsOnly && <p className="notice warning">此处读取已有分析修订；结果页已支持显式生成和下载脱敏 S1 JSON/HTML 报告。正式审核尚未完成，报告不代表软件获批。</p>}
     <p className="muted">服务端组织范围分页，按创建时间由近到远。搜索、模型和渠道筛选使用当前目标档案，不能当作历史快照；已删除目标的任务仍保留目标 ID。</p>
     <form className="history-filters" aria-label="筛选检测历史" onSubmit={search}>
@@ -58,7 +59,7 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
     {error instanceof ApiError && error.status === 403 && <p className="notice warning">任务读取权限不可用，已清除本页缓存。请联系组织管理员。</p>}
     {!loading && !error && result?.items.length === 0 && <p className="empty-note">没有符合条件的检测任务。未返回记录不代表风险为零。</p>}
     {result && result.items.length > 0 && <div className="table-scroll"><table><caption className="sr-only">检测历史与分析修订</caption><thead><tr><th>任务 / 目标</th><th>状态 / 检测包</th><th>采样与费用</th><th>已发布机器分析</th><th>创建时间</th></tr></thead><tbody>{result.items.map((item) => <tr key={item.id}>
-      <th scope="row"><a href={`#/runs/${item.id}`}>Run {item.id}</a><span className="cell-detail">目标 ID {item.target_id}</span><span className="cell-detail">评分版本 {item.versions.scoring}</span></th>
+      <th scope="row"><a href={`#/runs/${item.id}`}>Run {item.id}</a><span className="cell-detail">目标 ID {item.target_id}</span><span className="cell-detail"><a href={trendsHref(item.target_id)}>目标 {item.target_id} 趋势</a></span><span className="cell-detail">评分版本 {item.versions.scoring}</span></th>
       <td>{statusLabels[item.status]}<span className="cell-detail">{packageLabels[item.package]}</span></td>
       <td>结束 {item.completed_samples} / {item.planned_samples} · 有效 {item.valid_sample_count}<span className="cell-detail">请求 {item.request_count}（含重试） · Token {item.token_count}</span><span className="cell-detail">{cost(item.estimated_cost_micros)}</span></td>
       <td>{item.result ? <><a href={`#/results/${item.id}/1`}>修订 1 · {riskLabels[item.result.risk_level]}</a><span className="cell-detail">风险 {item.result.overall_risk === null ? '不可估' : item.result.overall_risk.toFixed(1)} · 置信度 {item.result.confidence.toFixed(0)} / 100 · 等级 {item.result.evidence_grade}</span><div className="form-actions"><button onClick={() => setCompareLeft(item.id)} aria-label={`将 Run ${item.id} 选为对比左侧`}>选为左侧</button><button onClick={() => setCompareRight(item.id)} aria-label={`将 Run ${item.id} 选为对比右侧`}>选为右侧</button></div></> : '尚无可读取的分析修订'}</td>

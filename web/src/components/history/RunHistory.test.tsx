@@ -11,6 +11,8 @@ describe('real Run history page', () => {
     render(<RunHistory {...context} />)
     expect(await screen.findByRole('link', { name: `Run ${runID}` })).toBeTruthy()
     expect(screen.getByRole('link', { name: '修订 1 · 需关注' }).getAttribute('href')).toBe(`#/results/${runID}/1`)
+    expect(screen.getByRole('link', { name: `目标 ${history().target_id} 趋势` }).getAttribute('href')).toBe(`#/trends/${history().target_id}`)
+    expect(screen.getByRole('link', { name: '按目标读取趋势 →' }).getAttribute('href')).toBe('#/trends')
     expect(screen.getByText('价格未知，无法估算')).toBeTruthy()
     expect(screen.getByText(/已删除目标的任务仍保留目标 ID/)).toBeTruthy()
     expect(calls).toHaveBeenCalledTimes(1)
