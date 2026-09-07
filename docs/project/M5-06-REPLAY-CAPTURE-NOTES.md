@@ -172,3 +172,16 @@ replay --capture <local-file> --rule <local-artifact> --rule-sha256 <sha256>
 B1 完成最多意味着：两个真实受控 TLS 开发捕获，实际最终 Attempt 绑定，离线真实解析/重计数/评分，严格输入边界、无网络依赖与确定性回归。
 
 仍未完成：任意生产证据授权导出、全网络故障/超时回放、独立校准与 held-out 标签、QA 签名 metric receipt、95/90/85/≤5%与100%证据覆盖的正式判定、规则包发布/灰度/退役、运行时冻结/读取接线。开发 capture 签名不是 QA 通过回执，A1 RuntimeRef 不是发布能力。
+
+## 12. B1-3 CLI 与开发文件导出边界（获准实施范围）
+
+本子单元只新增 `tests/replay/cmd/replay/**`、`tests/replay/localfile/**`，不修改 B1-1 核心或生产代码。真实控制端已可在内存中完成 capture；在其 review 冻结解除前，不修改 `capturefixture` 进行导出接线。
+
+- 参数固定为 `--capture`、`--rule`、`--rule-sha256`、`--capture-public-key-file`、`--manifest-key-file`、`--output`、`--timeout`（1–120 秒）。路径必须是用户显式指定的本地常规文件，不从 capture 取路径；没有 stdin、HTTP、URL、标签目录或 `--live` 模式。
+- 信任根由本地显式配置文件提供：封闭开发 Ed25519 公钥 schema（包含固定用途与 key ID）；封闭开发 Manifest HMAC schema（独立随机 key、明确 `ProbeMAC` 用途与开发版本）。这些不是正式 QA 信任根。拒绝裸 32-byte master key、生产 KeyRing 格式、capture 内自带公钥。合法 schema 不能证明材料来源；独立 key 必须由受控导出器新生成。
+- 当前真实 fixture 的 compiler 使用其合成 KeyRing；后续获准导出时改接**单独新生成**的开发 Manifest signer，AES/Audit fixture master 不写入任何导出文件。导出前扫描 decoded Manifest、wire payload、body 和 header 真内容中的控制端密钥/口令，不能只对外层 base64 JSON 做字符串搜索。
+- 文件安全遵循现有 keyfile 的句柄模式：Windows 使用 drive-root-relative `NtCreateFile`、`OBJ_DONT_REPARSE`、regular/nlink 校验与受限 ACL；Unix 逐目录 `openat(O_NOFOLLOW)`，最终文件使用 `O_NONBLOCK` 后验证 regular/nlink/owner/0400或0600。拒绝 URL/UNC/device/ADS、任一 symlink/junction/reparse、hardlink>1，以及别名路径。读取前后校验同一打开句柄与长度；不接受任意阻塞 Reader。
+- 保留 core 的 24/2/1 MiB 等有限输入界限，信任材料文件另设小上限。CLI 对常规文件完整有限读入后只向 Replay 传内存 Reader；取消与总运行期限在读、计算和输出阶段复验。不能宣称该措施可强行取消任何内核 I/O；不允许 pipe/device 是防止无限阻塞的主要边界。
+- 完整计算、序列化与输出大小检查成功后，才在已经验证并持有句柄的私有输出目录内随机独占创建临时文件。创建瞬间即0600（Unix）或 owner+SYSTEM ACL（Windows）；写完、Sync 并再次检查取消后，Windows 使用句柄相对 `FileRenameInformation` 且 `ReplaceIfExists=false`，Unix 使用同目录 `linkat` no-replace 后回收临时项，原子发布最终名字。已有目标绝不覆盖；提交前失败/取消不留下半份最终输出。清理仅限本次创建且句柄/目录 identity 匹配的临时项，不删除任何已有目标。发布成功后的持久化错误属于提交结果不确定，可能保留完整最终文件，不能回滚删除它或声称没有输出。
+- built CLI 测试须真实启动可执行文件，覆盖输入损坏/未知字段、键替换、取消/期限、目标已存在、目录/pipe/device/link/unsafe 权限、失败不泄漏路径或源正文。禁止网络的 OS 环境演练作为单独证据；不把 AST guard 或关闭 mock 等同于已做 OS 禁网，也不自行建立防火墙规则。
+- B1-3 明确支持 Windows + Linux；其他平台 fail closed。Linux `Fstatfs` 只允许 ext/XFS/Btrfs/tmpfs/overlay/ramfs/F2FS，未知/NFS/CIFS/FUSE/pseudo-filesystem 拒绝。文件系统 magic（包括 overlay）只是输入边界，不能证明 backing storage 或整个进程已经 OS 禁网。Windows 本地真实执行测试与 Linux 交叉编译证据须分别记录，不混称双平台运行通过。
