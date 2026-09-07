@@ -309,6 +309,12 @@ func (q *JobQueue) CompleteWith(ctx context.Context, lease JobLease, fn func(*Te
 		}
 		return nil
 	})
+	// A final, typed authorization rejection is not a storage outage. Preserve
+	// only this fixed sentinel so the trusted Worker can terminally fail its
+	// report Job; unknown/SQL/audit/fencing errors keep their existing handling.
+	if errors.Is(err, ErrManagementPermission) {
+		return ErrManagementPermission
+	}
 	return queueError(err)
 }
 

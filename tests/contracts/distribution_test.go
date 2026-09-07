@@ -6,6 +6,33 @@ import (
 	"testing"
 )
 
+func TestImageBuildStageRetainsFrontendTraceabilityEvidence(t *testing.T) {
+	docker, err := os.ReadFile("../../Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, backend, ok := strings.Cut(string(docker), " AS backend\n")
+	if !ok {
+		// The repository's checked-out line endings may be CRLF.
+		_, backend, ok = strings.Cut(strings.ReplaceAll(string(docker), "\r\n", "\n"), " AS backend\n")
+	}
+	if !ok {
+		t.Fatal("missing backend build stage")
+	}
+	build, runtime, ok := strings.Cut(backend, "FROM scratch")
+	if !ok {
+		t.Fatal("missing isolated runtime stage")
+	}
+	source := strings.Index(build, "COPY web/ ./web/")
+	tests := strings.Index(build, "RUN go test ./...")
+	if source < 0 || tests < 0 || source > tests {
+		t.Fatal("backend must retain frontend sources before running requirement traceability tests")
+	}
+	if strings.Contains(runtime, "/src/web") || strings.Contains(runtime, "COPY web/") {
+		t.Fatal("frontend build/test sources must not be copied into the runtime image")
+	}
+}
+
 func TestTokenizerNoticePresentInDistributionRecipes(t *testing.T) {
 	notice, err := os.ReadFile("../../internal/integrity/tokenizer/THIRD_PARTY_NOTICES.md")
 	if err != nil {

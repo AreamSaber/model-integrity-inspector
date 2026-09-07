@@ -7,6 +7,7 @@ import { useFailure } from '../management/shared'
 import { RunProgress, statusLabels } from '../runs/RunProgress'
 import { cost } from '../runs/RunQuote'
 import type { TargetCallbacks } from '../targets/TargetForm'
+import { comparisonHref } from '../../comparison-api'
 
 export type ReadContext = TargetCallbacks & { userID: string }
 export function RunHistory(context: ReadContext & { resultsOnly?: boolean }) { return <RunHistoryScope key={`${context.organizationID}-${context.userID}-${context.resultsOnly}`} {...context} /> }
@@ -19,12 +20,13 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
   const [filterError, setFilterError] = useState('')
+  const [compareLeft, setCompareLeft] = useState(''), [compareRight, setCompareRight] = useState('')
   const cursor = cursors[cursors.length - 1]
   useEffect(() => {
     const controller = new AbortController()
     void historyApi.list(context.organizationID, filters, cursor, controller.signal).then((data) => {
       if (!controller.signal.aborted) setResult(data)
-    }).catch((failure: unknown) => { if (!controller.signal.aborted && !onFailure(failure)) setError(failure) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    }).catch((failure: unknown) => { if (!controller.signal.aborted) { setResult(null); setCompareLeft(''); setCompareRight(''); if (!onFailure(failure)) setError(failure) } }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [context.organizationID, filters, cursor, reload, onFailure])
   function search(event: FormEvent<HTMLFormElement>) {
@@ -38,8 +40,8 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
   }
   function reset() { setLoading(true); setResult(null); setError(null) }
   return <section className="panel" aria-labelledby="history-title">
-    <div className="section-heading"><h2 id="history-title">{context.resultsOnly ? '历史检测与已有结果' : '检测任务历史'}</h2><a href="#/targets">从目标创建检测 →</a></div>
-    {context.resultsOnly && <p className="notice warning">此处读取已有分析修订；报告生成、导出和正式审核尚未接入。</p>}
+    <div className="section-heading"><h2 id="history-title">{context.resultsOnly ? '历史检测与已有结果' : '检测任务历史'}</h2><div className="form-actions"><a href="#/compare">输入两个任务进行对比 →</a><a href="#/targets">从目标创建检测 →</a></div></div>
+    {context.resultsOnly && <p className="notice warning">此处读取已有分析修订；结果页已支持显式生成和下载脱敏 S1 JSON/HTML 报告。正式审核尚未完成，报告不代表软件获批。</p>}
     <p className="muted">服务端组织范围分页，按创建时间由近到远。搜索、模型和渠道筛选使用当前目标档案，不能当作历史快照；已删除目标的任务仍保留目标 ID。</p>
     <form className="history-filters" aria-label="筛选检测历史" onSubmit={search}>
       <label>搜索目标或模型<input name="q" type="search" maxLength={128} /></label>
@@ -59,9 +61,10 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
       <th scope="row"><a href={`#/runs/${item.id}`}>Run {item.id}</a><span className="cell-detail">目标 ID {item.target_id}</span><span className="cell-detail">评分版本 {item.versions.scoring}</span></th>
       <td>{statusLabels[item.status]}<span className="cell-detail">{packageLabels[item.package]}</span></td>
       <td>结束 {item.completed_samples} / {item.planned_samples} · 有效 {item.valid_sample_count}<span className="cell-detail">请求 {item.request_count}（含重试） · Token {item.token_count}</span><span className="cell-detail">{cost(item.estimated_cost_micros)}</span></td>
-      <td>{item.result ? <><a href={`#/results/${item.id}/1`}>修订 1 · {riskLabels[item.result.risk_level]}</a><span className="cell-detail">风险 {item.result.overall_risk === null ? '不可估' : item.result.overall_risk.toFixed(1)} · 置信度 {item.result.confidence.toFixed(0)} / 100 · 等级 {item.result.evidence_grade}</span></> : '尚无可读取的分析修订'}</td>
+      <td>{item.result ? <><a href={`#/results/${item.id}/1`}>修订 1 · {riskLabels[item.result.risk_level]}</a><span className="cell-detail">风险 {item.result.overall_risk === null ? '不可估' : item.result.overall_risk.toFixed(1)} · 置信度 {item.result.confidence.toFixed(0)} / 100 · 等级 {item.result.evidence_grade}</span><div className="form-actions"><button onClick={() => setCompareLeft(item.id)} aria-label={`将 Run ${item.id} 选为对比左侧`}>选为左侧</button><button onClick={() => setCompareRight(item.id)} aria-label={`将 Run ${item.id} 选为对比右侧`}>选为右侧</button></div></> : '尚无可读取的分析修订'}</td>
       <td><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></td>
     </tr>)}</tbody></table></div>}
+    {(compareLeft || compareRight) && <section className="result-card" aria-labelledby="history-comparison-title"><h3 id="history-comparison-title">两任务对比选择</h3><p>左侧：{compareLeft || '未选择'} · 右侧：{compareRight || '未选择'}</p><p className="field-help">只保留两个已选 ID，可跨当前筛选页选择；打开后将重新读取它们在当前组织的真实固定修订，不使用列表摘要冒充对比数据。</p>{compareLeft && compareRight && compareLeft !== compareRight ? <a className="button-link" href={comparisonHref(compareLeft, compareRight)}>读取所选两个固定修订 →</a> : <p className="empty-note">请选择两个不同的、有已发布结果的 Run。</p>}<button onClick={() => { setCompareLeft(''); setCompareRight('') }}>清除对比选择</button></section>}
     <div className="pagination"><button disabled={loading || cursors.length === 1} onClick={() => { reset(); setCursors((v) => v.slice(0, -1)) }}>上一页</button><span>第 {cursors.length} 页</span><button disabled={loading || Boolean(error) || !result?.next_cursor || cursors.length >= 1000 || (result?.next_cursor ? cursors.includes(result.next_cursor) : false)} onClick={() => { if (result?.next_cursor) { const next = result.next_cursor; reset(); setCursors((v) => [...v, next]) } }}>下一页</button></div>
     <p className="field-help">开发分析尚未校准，使用公开开发模板，只支持 C / D 级证据；不能由分数判断模型真假。缺失结果不是 0 分。</p>
   </section>

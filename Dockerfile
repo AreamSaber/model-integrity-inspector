@@ -23,7 +23,9 @@ COPY docs/ ./docs/
 COPY *.md ./
 COPY Dockerfile ./
 COPY scripts/package.ps1 ./scripts/package.ps1
-COPY web/*.go ./web/
+# Keep source evidence in the test/build stage; the scratch image only receives
+# the compiled binary (with production assets), certificates and notices.
+COPY web/ ./web/
 COPY --from=web /src/web/dist ./web/dist/
 RUN go test ./...
 RUN go test -tags webassets ./web ./internal/app

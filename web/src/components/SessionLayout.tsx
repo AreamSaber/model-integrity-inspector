@@ -11,6 +11,8 @@ import { HistoricalRun, RunHistory } from './history/RunHistory'
 import { ResultsPage } from './results/ResultsPage'
 import { decimalID } from '../runs-history-api'
 import { BaselinesPage } from './baselines/BaselinesPage'
+import { ComparisonPage } from './comparison/ComparisonPage'
+import { comparisonRoute } from '../comparison-api'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -19,6 +21,7 @@ const navigation = [
   ['model-profiles', '模型档案管理', '管理'],
   ['runs', '检测任务', '检测'],
   ['reports', '结果与报告', '检测'],
+  ['compare', '任务对比', '检测'],
   ['baselines', '基线管理', '治理'],
   ['rules', '规则与模板', '治理'],
   ['audit', '审计日志', '治理'],
@@ -44,8 +47,10 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
   const segments = route.split('/')
   const historicalID = segments.length === 2 && segments[0] === 'runs' && decimalID(segments[1]) ? segments[1] : null
   const resultID = segments.length === 3 && segments[0] === 'results' && decimalID(segments[1]) && segments[2] === '1' ? segments[1] : null
-  const activeRoute = historicalID ? 'runs' : resultID ? 'reports' : route
-  const title = resultID ? '固定修订分析结果' : historicalID ? '检测进度与状态' : navigation.find(([key]) => key === route)?.[1] ?? '页面不存在'
+  const comparison = comparisonRoute(route)
+  const validComparison = comparison && comparison.kind !== 'invalid'
+  const activeRoute = historicalID ? 'runs' : resultID ? 'reports' : validComparison ? 'compare' : route
+  const title = validComparison ? '两任务固定修订对比' : resultID ? '固定修订分析结果' : historicalID ? '检测进度与状态' : navigation.find(([key]) => key === route)?.[1] ?? '页面不存在'
   const management = { csrfToken: session.csrf_token, userID: session.user.id, systemAdmin: session.user.system_admin === true, onSignedOut, onPasswordRequired }
   useEffect(() => {
     const change = () => setRoute(currentRoute())
@@ -106,6 +111,7 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
         <div className="page-heading"><p className="eyebrow">{organization?.name ?? '尚未选择组织'}</p><h1 ref={heading} tabIndex={-1}>{title}</h1></div>
         <ErrorNotice error={error} id="workspace-error" />
         {route === 'overview' ? <Overview organization={organization} username={session.user.username} /> :
+          validComparison ? (organization ? <ComparisonPage key={`${organization.id}-${session.user.id}-${route}`} {...management} organizationID={organization.id} selection={comparison.kind === 'pair' ? comparison.selection : undefined} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取两任务对比。</p></section>) :
           route === 'runs' || route === 'reports' || historicalID || resultID ? (organization ? (resultID ? <ResultsPage key={`${organization.id}-result-${resultID}`} {...management} organizationID={organization.id} runID={resultID} /> : historicalID ? <HistoricalRun key={`${organization.id}-run-${historicalID}`} {...management} organizationID={organization.id} runID={historicalID} /> : <RunHistory key={`${organization.id}-${route}`} {...management} organizationID={organization.id} resultsOnly={route === 'reports'} />) : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取检测历史和结果。</p></section>) :
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
           route === 'providers' || route === 'model-profiles' ? (organization ? <CatalogPage key={`${organization.id}-${route}`} kind={route} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理目录档案。</p></section>) :

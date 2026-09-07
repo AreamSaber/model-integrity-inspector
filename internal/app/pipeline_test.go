@@ -310,6 +310,11 @@ func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testi
 			if record.ID != originalID || !bytes.Equal(frozen, http.request(t, "GET", runPath+"/result?analysis_revision=1", nil, 200, nil)) {
 				t.Fatal("idempotent receipt changed the immutable result")
 			}
+			repeatedBefore := len(upstream.Records())
+			exerciseRepeatedDetection(t, &http, target.ID, originalID, frozen, poll)
+			if len(upstream.Records())-repeatedBefore != 9 {
+				t.Fatal("repeated detection did not execute exactly the new bounded TLS plan")
+			}
 			if err := app.store.VerifyAllAudit(t.Context(), true); err != nil {
 				t.Fatal(fmt.Errorf("actual pipeline audit invalid: %w", err))
 			}

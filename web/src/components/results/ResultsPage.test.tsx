@@ -24,6 +24,7 @@ describe('immutable result pages backed by real API contracts', () => {
   it('discloses limitations and shows only summary for run.read without fetching protected statistics', async () => {
     const calls = network(undefined, ['run.read']); render(<ResultsPage {...context} runID={runID} />); await open()
     expect(screen.queryByRole('button', { name: 'Token 分析' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '报告' })).toBeNull()
     expect(screen.getByText(/不能升级为 A \/ B/)).toBeTruthy()
     expect(screen.getAllByText(/未测 \/ 不可估/).length).toBeGreaterThan(0)
     expect(calls.mock.calls.filter(([url]) => String(url).includes('statistics') || String(url).includes('/samples'))).toHaveLength(0)
@@ -126,6 +127,55 @@ describe('immutable result pages backed by real API contracts', () => {
     expect(screen.queryByLabelText('复核说明')).toBeNull()
     expect(screen.queryByRole('button', { name: '人工复核' })).toBeNull()
     expect(document.body.textContent).not.toContain('PRIVATE_FORM_CANARY')
+    expect(calls.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true)
+  })
+  it('opens the real report panel only after all three grants, without creating files on navigation', async () => {
+    const calls = network((url) => url.pathname.endsWith('/reports') ? ok({ items: [], next_cursor: null }) : undefined, ['run.read', 'evidence.read', 'report.export'])
+    render(<ResultsPage {...context} runID={runID} />); await open()
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/reports'))).toBe(false)
+    await tab('报告')
+    await screen.findByRole('form', { name: '生成脱敏报告' })
+    expect(screen.getByRole('button', { name: '报告' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByText(/当前报告未纳入人工复核快照/)).toBeTruthy()
+    expect(calls.mock.calls.some(([url]) => String(url).includes(`/runs/${runID}/reports?analysis_revision=1&limit=25`))).toBe(true)
+    expect(calls.mock.calls.some(([url]) => String(url).includes('include=statistics') || String(url).includes('/samples') || String(url).includes('/download'))).toBe(false)
+    expect(calls.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true)
+    await tab('结果总览'); await open()
+    expect(screen.queryByRole('form', { name: '生成脱敏报告' })).toBeNull()
+  })
+  it('rechecks export authority when entering the report tab and clears parent results on later report denial', async () => {
+    let granted = true, denyReport = false
+    const calls = network((url, options) => {
+      if (url.pathname.endsWith('/auth/permissions')) return ok({ organization_id: new Headers(options.headers).get('X-Organization-ID'), user_id: userID, permissions: granted ? ['run.read', 'evidence.read', 'report.export'] : ['run.read', 'evidence.read'] })
+      if (url.pathname.endsWith('/reports')) return denyReport ? fail('MI_PERMISSION_DENIED', 403) : ok({ items: [], next_cursor: null })
+      return undefined
+    })
+    render(<ResultsPage {...context} runID={runID} />); await open(); granted = false; await tab('报告')
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/reports'))).toBe(false)
+    expect(screen.getByText(/已清除结果与证据缓存/)).toBeTruthy()
+    granted = true; await tab('结果总览'); await open(); await tab('报告')
+    await screen.findByRole('form', { name: '生成脱敏报告' })
+    denyReport = true; await tab('刷新报告列表与权限')
+    expect(screen.getByText(/已清除结果与证据缓存/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '报告' })).toBeNull()
+    expect(screen.queryByRole('form', { name: '生成脱敏报告' })).toBeNull()
+    expect(document.body.textContent).not.toContain('SECRET_BODY_CANARY')
+  })
+  it('cancels precise report status reading when leaving the result report tab', async () => {
+    let reading: AbortSignal | null | undefined
+    const reportID = '9007199254741100'
+    const value = { id: reportID, run_id: runID, analysis_revision: 1, revision: 1, format: 'json', schema_version: 'mii.report.v1', status: 'queued', created_at: '2026-09-07T10:00:00Z', review_state: 'not_included' }
+    const calls = network((url, options) => {
+      if (url.pathname.endsWith('/reports')) return ok({ items: [value], next_cursor: null })
+      if (url.pathname.endsWith(`/reports/${reportID}`)) { reading = options.signal; return new Promise<Response>(() => {}) }
+      return undefined
+    }, ['run.read', 'evidence.read', 'report.export'])
+    render(<ResultsPage {...context} runID={runID} />); await open(); await tab('报告')
+    await screen.findByRole('form', { name: '生成脱敏报告' }); await tab(`读取报告 ${reportID}`)
+    await waitFor(() => expect(reading).toBeTruthy())
+    await tab('结果总览'); await open()
+    expect(reading?.aborted).toBe(true)
+    expect(screen.queryByText(/最多 5 分钟，不混入其他报告/)).toBeNull()
     expect(calls.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true)
   })
 })

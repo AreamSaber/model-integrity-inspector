@@ -124,7 +124,7 @@ describe('real API interaction boundary', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '结果与报告' })
     await screen.findByText(/没有符合条件的检测任务/)
-    expect(screen.getByText(/报告生成、导出和正式审核尚未接入/)).toBeTruthy()
+    expect(screen.getByText(/已支持显式生成和下载脱敏 S1 JSON\/HTML 报告。正式审核尚未完成/)).toBeTruthy()
     expect(calls).toHaveBeenCalledTimes(3)
     const read = calls.mock.calls.find(([url]) => String(url).startsWith('/api/v1/runs?'))![1]!
     expect(read.method).toBe('GET')

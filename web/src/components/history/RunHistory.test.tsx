@@ -53,7 +53,20 @@ describe('real Run history page', () => {
     await act(async () => { fireEvent.submit(screen.getByRole('form', { name: '筛选检测历史' })) })
     expect(screen.getByRole('alert').textContent).toContain('筛选字段格式无效')
     expect(calls).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/报告生成、导出和正式审核尚未接入/)).toBeTruthy()
+    expect(screen.getByText(/已支持显式生成和下载脱敏 S1 JSON\/HTML 报告/)).toBeTruthy()
+  })
+  it('selects only two explicit published IDs without scanning history or starting requests for comparison', async () => {
+    const secondID = '9007199254741100'
+    const calls = vi.fn<typeof fetch>(async () => ok({ items: [history(), { ...history(), id: secondID }], next_cursor: null })); vi.stubGlobal('fetch', calls)
+    render(<RunHistory {...context} />); await screen.findByRole('link', { name: `Run ${runID}` })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: `将 Run ${runID} 选为对比左侧` })); fireEvent.click(screen.getByRole('button', { name: `将 Run ${runID} 选为对比右侧` })) })
+    expect(screen.queryByRole('link', { name: '读取所选两个固定修订 →' })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: `将 Run ${secondID} 选为对比右侧` })) })
+    expect(screen.getByRole('link', { name: '读取所选两个固定修订 →' }).getAttribute('href')).toBe(`#/compare/${runID}/1/${secondID}/1`)
+    expect(calls).toHaveBeenCalledTimes(1)
+    calls.mockImplementation(async () => fail('MI_PERMISSION_DENIED', 403))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新历史' })) })
+    expect(screen.queryByRole('heading', { name: '两任务对比选择' })).toBeNull()
   })
   it('routes only supported fixed revisions and remounts when the organization changes', async () => {
     window.history.replaceState(null, '', `/#/results/${runID}/2`)

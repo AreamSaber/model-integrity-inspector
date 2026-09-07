@@ -8,8 +8,9 @@ import type { ReadContext } from '../history/RunHistory'
 import { useFailure } from '../management/shared'
 import { BehaviorResult, Findings, Limitations, measured, OverviewResult, Samples, TokenResult } from './ResultViews'
 import { ReviewPanel } from './ReviewPanel'
+import { ReportsPanel } from './ReportsPanel'
 
-type Tab = 'overview' | 'token' | 'behavior' | 'evidence' | 'review'
+type Tab = 'overview' | 'token' | 'behavior' | 'evidence' | 'review' | 'reports'
 type Data = { result: AnalysisResult; samples?: ReadPage<Sample>; findings?: ReadPage<Finding> }
 function pin(result: AnalysisResult) {
   const { token_analysis: _token, behavior_analysis: _behavior, ...summary } = result
@@ -36,7 +37,7 @@ function ResultsScope({ runID, ...context }: ReadContext & { runID: string }) {
       if (controller.signal.aborted) return
       setPermissions(granted.permissions)
       const statistics = tab === 'token' || tab === 'behavior' || tab === 'evidence'
-      if (!granted.permissions.includes('run.read') || (statistics && !granted.permissions.includes('evidence.read'))) throw new ApiError('MI_PERMISSION_DENIED', 403)
+      if (!granted.permissions.includes('run.read') || (statistics && !granted.permissions.includes('evidence.read')) || (tab === 'reports' && (!granted.permissions.includes('evidence.read') || !granted.permissions.includes('report.export')))) throw new ApiError('MI_PERMISSION_DENIED', 403)
       const [result, samples, findings] = await Promise.all([
         resultsApi.get(context.organizationID, runID, statistics, controller.signal),
         statistics ? resultsApi.samples(context.organizationID, runID, cursor, controller.signal) : undefined,
@@ -62,7 +63,13 @@ function ResultsScope({ runID, ...context }: ReadContext & { runID: string }) {
     <div className="section-heading"><h2 id="result-title">Run {runID} · 分析修订 1</h2><a href="#/runs">← 检测历史</a></div>
     <p className="notice warning">开发结果 · 未校准 · 公开开发模板。无法据此判定模型真假，也不能证明上游内部意图。机器分析可读取不等于已获人工审核批准。</p>
     <p className="field-help">固定来源：此 Run 的不可覆盖修订 1。刷新仅重新读取同一修订，不触发上游调用、重新评分或报告生成。</p>
-    <nav className="result-tabs" aria-label="分析结果视图"><button aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => select('overview')}>结果总览</button>{permissions?.includes('evidence.read') && permissions.includes('run.read') && <><button aria-current={tab === 'token' ? 'page' : undefined} onClick={() => select('token')}>Token 分析</button><button aria-current={tab === 'behavior' ? 'page' : undefined} onClick={() => select('behavior')}>行为分析</button><button aria-current={tab === 'evidence' ? 'page' : undefined} onClick={() => select('evidence')}>S1 证据</button></>}{permissions?.includes('run.read') && <button aria-current={tab === 'review' ? 'page' : undefined} onClick={() => select('review')}>人工复核</button>}<button disabled={loading} onClick={() => { reset(); setReload((n) => n + 1) }}>重新读取结果与权限</button></nav>
+    <nav className="result-tabs" aria-label="分析结果视图">
+      <button aria-current={tab === 'overview' ? 'page' : undefined} onClick={() => select('overview')}>结果总览</button>
+      {permissions?.includes('evidence.read') && permissions.includes('run.read') && <><button aria-current={tab === 'token' ? 'page' : undefined} onClick={() => select('token')}>Token 分析</button><button aria-current={tab === 'behavior' ? 'page' : undefined} onClick={() => select('behavior')}>行为分析</button><button aria-current={tab === 'evidence' ? 'page' : undefined} onClick={() => select('evidence')}>S1 证据</button></>}
+      {permissions?.includes('run.read') && <button aria-current={tab === 'review' ? 'page' : undefined} onClick={() => select('review')}>人工复核</button>}
+      {permissions?.includes('run.read') && permissions.includes('evidence.read') && permissions.includes('report.export') && <button aria-current={tab === 'reports' ? 'page' : undefined} onClick={() => select('reports')}>报告</button>}
+      <button disabled={loading} onClick={() => { reset(); setReload((n) => n + 1) }}>重新读取结果与权限</button>
+    </nav>
     {loading && <Loading>正在读取固定修订与当前权限…</Loading>}<ErrorNotice error={error} />
     {error instanceof ApiError && error.status === 404 && <p className="empty-note">该组织下尚无可读取的修订 1：任务可能仍在分析、结果未发布或资源不存在。不会将其显示为 0 分。</p>}
     {error instanceof ApiError && error.status === 403 && <p className="notice warning">当前权限不足或已撤销，已清除结果与证据缓存。可返回总览重新核验只读权限。</p>}
@@ -72,8 +79,9 @@ function ResultsScope({ runID, ...context }: ReadContext & { runID: string }) {
       {data.samples && <><Samples items={data.samples.items} onSelect={setSampleID} /><PageButtons label="样本" cursors={cursors} next={data.samples.next_cursor} onChange={(next) => { reset(); setCursors(next) }} /></>}
       {sampleID && <SampleInspect key={`${context.organizationID}-${runID}-${sampleID}`} {...context} runID={runID} sampleID={sampleID} onClose={() => setSampleID(null)} onDenied={denied} />}
       {tab === 'review' && <ReviewPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
+      {tab === 'reports' && <ReportsPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
     </>}
-    <p className="field-help">原始请求、响应、随机变量和凭证不在本页读取范围。导出、报告、修订比较和重新分析另行开发。</p>
+    <p className="field-help">原始请求、响应、随机变量和凭证不在本页读取范围。有完整导出权限时，可在报告页显式生成脱敏 JSON/HTML 文件；原文导出、修订比较和重新分析尚未接入本页。</p>
   </section>
 }
 function PageButtons({ label, cursors, next, onChange }: { label: string; cursors: string[]; next: string | null; onChange: (value: string[]) => void }) {

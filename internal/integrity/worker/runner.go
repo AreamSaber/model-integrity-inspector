@@ -309,6 +309,16 @@ func (runner *Runner) execute(ctx context.Context, queue *repository.JobQueue, l
 					return queue.Fail(commitCtx, lease, "WORKER_HANDLER_FAILED")
 				}
 				err := queue.CompleteWith(commitCtx, lease, result.completion)
+				if repository.JobType(lease.Job.Type) == repository.JobReportGenerate && errors.Is(err, repository.ErrManagementPermission) {
+					// The file may exist, but publication was rolled back. Only this
+					// typed report authorization rejection becomes a failed Job; audit,
+					// database and fencing failures still stop this consumer.
+					err = queue.FailReportGeneration(commitCtx, lease)
+					if err != nil {
+						runner.logQueueFailure(ctx, "fail_report")
+					}
+					return err
+				}
 				if err != nil {
 					runner.logQueueFailure(ctx, "complete")
 				}

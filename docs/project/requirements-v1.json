@@ -1302,16 +1302,20 @@
         "internal/integrity/worker/report_generate.go",
         "internal/integrity/repository/report_records.go",
         "internal/integrity/reportstorage/store.go",
-        "internal/integrity/api/reports.go"
+        "internal/integrity/api/reports.go",
+        "web/src/components/results/ReportsPanel.tsx",
+        "web/src/report-download.ts"
       ],
       "tests": [
         "internal/integrity/report/report_test.go",
         "internal/integrity/worker/report_generate_test.go",
         "internal/integrity/repository/report_test.go",
         "internal/integrity/api/reports_test.go",
-        "internal/app/artifacts_pipeline_test.go"
+        "internal/app/artifacts_pipeline_test.go",
+        "web/src/components/results/ReportsPanel.test.tsx",
+        "web/src/report-download.test.ts"
       ],
-      "notes": "JSON/HTML真实异步生成与授权下载已双库/实际HTTP验证；报告前端、人工复核快照与完整导出内容仍待完成。",
+      "notes": "真实异步JSON/HTML后端与页面已接通，双库和浏览器生成/长度/hash验证下载通过；人工复核快照与完整授权导出内容仍待完成。",
       "goal_included": true
     },
     {
@@ -1410,10 +1414,17 @@
         "M7-01"
       ],
       "test_case": "REQ-HIS-002",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "web/src/comparison-api.ts",
+        "web/src/components/comparison/ComparisonPage.tsx"
+      ],
+      "tests": [
+        "web/src/comparison-api.test.ts",
+        "web/src/components/comparison/ComparisonPage.test.tsx",
+        "internal/app/repeated_pipeline_test.go"
+      ],
+      "notes": "固定两Run描述性比较与版本/检测包/Manifest/分母差异提示已实现并真实浏览器验证；不将分数差归因行为，尚未完成多版本真实重分析与算法变化分解。",
       "goal_included": true
     },
     {
