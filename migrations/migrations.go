@@ -29,17 +29,22 @@ func ForDialect(dialect string) ([]Migration, error) {
 	if dialect != "sqlite" && dialect != "postgresql" {
 		return nil, fmt.Errorf("unsupported migration dialect")
 	}
-	const name = "000001_foundation.up.sql"
-	common, err := sources.ReadFile("common/" + name)
-	if err != nil {
-		return nil, err
+	var result []Migration
+	for i, name := range []string{"foundation", "queue_leases"} {
+		filename := fmt.Sprintf("%06d_%s.up.sql", i+1, name)
+		common, err := sources.ReadFile("common/" + filename)
+		if err != nil {
+			return nil, err
+		}
+		specific, err := sources.ReadFile(dialect + "/" + filename)
+		if err != nil {
+			return nil, err
+		}
+		// Preserve version 1's exact checksum construction. Git/platform newline
+		// normalization must not create a false checksum drift.
+		script := strings.ReplaceAll(string(common)+"\n"+string(specific), "\r\n", "\n")
+		hash := sha256.Sum256([]byte(script))
+		result = append(result, Migration{Version: i + 1, Name: name, Checksum: hex.EncodeToString(hash[:]), SQL: script})
 	}
-	specific, err := sources.ReadFile(dialect + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	// Git/platform newline normalization must not create a false checksum drift.
-	script := strings.ReplaceAll(string(common)+"\n"+string(specific), "\r\n", "\n")
-	hash := sha256.Sum256([]byte(script))
-	return []Migration{{Version: 1, Name: "foundation", Checksum: hex.EncodeToString(hash[:]), SQL: script}}, nil
+	return result, nil
 }

@@ -123,8 +123,12 @@ func TestMigrateRepeatableAndWorkerReadOnly(t *testing.T) {
 		}
 		requireMigrate(t, store)
 		requireMigrate(t, store)
+		expected, err := migrations.ForDialect(store.driver)
+		if err != nil {
+			t.Fatal(err)
+		}
 		status, err := store.SchemaStatus(t.Context())
-		if err != nil || len(status) != 1 || status[0].Status != "applied" {
+		if err != nil || len(status) != len(expected) || status[0].Status != "applied" {
 			t.Fatalf("schema status: %+v %v", status, err)
 		}
 		for _, table := range []string{"organizations", "users", "user_sessions", "providers", "model_profiles", "integrity_targets", "integrity_runs", "integrity_jobs", "integrity_sample_attempts", "integrity_reports", "integrity_audit_logs"} {
@@ -142,7 +146,7 @@ func TestMigrationRollbackAndChecksumProtection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bad := migrations.Migration{Version: 2, Name: "rollback_probe", Checksum: strings.Repeat("b", 64), SQL: "CREATE TABLE rollback_probe (id BIGINT PRIMARY KEY);\nINSERT INTO missing_table (id) VALUES (1);"}
+		bad := migrations.Migration{Version: len(set) + 1, Name: "rollback_probe", Checksum: strings.Repeat("b", 64), SQL: "CREATE TABLE rollback_probe (id BIGINT PRIMARY KEY);\nINSERT INTO missing_table (id) VALUES (1);"}
 		if err := store.migrate(t.Context(), append(set, bad)); !errors.Is(err, ErrMigrationFailed) {
 			t.Fatalf("bad migration accepted: %v", err)
 		}
@@ -400,7 +404,11 @@ func TestClosedPoolIsUnavailable(t *testing.T) {
 func TestMigrationRejectsUnknownAndMissingVersions(t *testing.T) {
 	eachDatabase(t, func(t *testing.T, store *Store, _ Config) {
 		requireMigrate(t, store)
-		row := SchemaVersion{Version: 2, Name: "future", Checksum: "future", Status: "applied", AppliedAt: time.Now().UTC()}
+		expected, err := migrations.ForDialect(store.driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		row := SchemaVersion{Version: len(expected) + 1, Name: "future", Checksum: "future", Status: "applied", AppliedAt: time.Now().UTC()}
 		if err := store.db.Table("schema_migrations").Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
