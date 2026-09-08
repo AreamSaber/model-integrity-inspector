@@ -52,13 +52,14 @@ type ControlConfig struct {
 }
 
 type control struct {
-	cfg           ControlConfig
-	origin        string
-	secure        bool
-	setupHash     [32]byte
-	hasSetupToken bool
-	limiter       *loginLimiter
-	evidenceSlots chan struct{}
+	cfg            ControlConfig
+	origin         string
+	secure         bool
+	setupHash      [32]byte
+	hasSetupToken  bool
+	limiter        *loginLimiter
+	evidenceSlots  chan struct{}
+	retentionSlots chan struct{}
 }
 type requestIDKey struct{}
 
@@ -80,6 +81,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	c := &control{cfg: cfg, origin: u.Scheme + "://" + u.Host, secure: secure, hasSetupToken: cfg.SetupToken != "", setupHash: sha256.Sum256([]byte(cfg.SetupToken)), limiter: &loginLimiter{windows: map[string]loginWindow{}, now: time.Now}}
 	c.cfg.SetupToken = "" // Retain only the hash, never a bootstrap credential.
 	c.evidenceSlots = make(chan struct{}, 4)
+	c.retentionSlots = make(chan struct{}, 4)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -155,7 +157,7 @@ func (c *control) middleware(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 		}
 		isSystemStatus := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/v1/system/health"
-		if (r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview") || isSystemStatus || (r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout-all") {
+		if (r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview") || isSystemStatus || isResponseRetentionRequest(r) || (r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout-all") {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			r = r.WithContext(ctx)
@@ -175,6 +177,21 @@ func (c *control) middleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 		ctx = audit.WithActor(ctx, audit.Actor{ReasonCode: "http.request", IPSummary: digest(requestIP(r)), UserAgentSummary: digest(r.UserAgent())})
 		r = r.WithContext(ctx)
+		if isResponseRetentionRequest(r) {
+			deadline, _ := r.Context().Deadline()
+			if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				c.failure(w, r, 503, "MI_RETENTION_SOURCE_INVALID")
+				return
+			}
+			select {
+			case c.retentionSlots <- struct{}{}:
+				defer func() { <-c.retentionSlots }()
+			default:
+				w.Header().Set("Retry-After", "2")
+				c.failure(w, r, 429, "MI_RETENTION_LIMIT")
+				return
+			}
+		}
 		if isEvidenceDisplayRequest(r) {
 			deadline, _ := r.Context().Deadline()
 			if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {

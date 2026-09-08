@@ -36,6 +36,41 @@ async function submit() { await act(async () => { fireEvent.submit(screen.getByR
 beforeEach(() => { vi.stubGlobal('crypto', webcrypto); props.onSignedOut.mockClear(); props.onPasswordRequired.mockClear(); props.onDenied.mockClear() })
 
 describe('explicit S1 report panel', () => {
+  it('keeps retention as a separate manual S1 observation without mutating report hashes or asking for body', async () => {
+    const data = { version: 'mii.response-retention-summary.v1', run_id: runID, analysis_revision: 1, observed_at: '2026-09-08T12:00:00Z', policy_days: 30, policy_version: 2, attempt_count: 6, raw_deleted_count: 2, display_deleted_count: 1, display_expired_count: 2, display_retained_count: 3, last_deleted_at: '2026-09-08T11:00:00Z' }
+    const calls = network((url, options) => {
+      if (url.pathname.endsWith('/response-retention')) return ok(data)
+      if (url.pathname.endsWith('/reports') && options.method === 'GET') return ok({ items: [ready()], next_cursor: null })
+      return undefined
+    })
+    render(<ReportsPanel {...props} />); await open()
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/response-retention'))).toBe(false)
+    await click(`读取报告 ${reportID}`); await screen.findByRole('heading', { name: `报告 ${reportID} · 可下载` })
+    await click('读取当前正文保留状态')
+    expect(await screen.findByText(/政策版本 2/)).toBeTruthy()
+    expect(screen.getByText(`文件字节哈希：${ready().file_hash}`)).toBeTruthy()
+    expect(screen.getByText(/动态观察，不改变旧报告文件\/哈希/)).toBeTruthy()
+    expect(posts(calls)).toHaveLength(0)
+    expect(calls.mock.calls.some(([url]) => /\/attempts\/|\/download/.test(String(url)))).toBe(false)
+  })
+  it.each([401, 403])('clears both report and retention state on summary HTTP %s without duplicate sign-out callbacks', async (status) => {
+    network((url, options) => {
+      if (url.pathname.endsWith('/response-retention')) return failure(status === 401 ? 'MI_SESSION_REQUIRED' : 'MI_PERMISSION_DENIED', status)
+      if (url.pathname.endsWith('/reports') && options.method === 'GET') return ok({ items: [ready()], next_cursor: null })
+      return undefined
+    })
+    render(<ReportsPanel {...props} />); await open(); await click('读取当前正文保留状态')
+    expect(props.onDenied).toHaveBeenCalledTimes(1); expect(props.onSignedOut).toHaveBeenCalledTimes(status === 401 ? 1 : 0)
+    expect(screen.queryByRole('list', { name: '固定修订报告列表' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: '当前响应正文保留状态' })).toBeNull()
+  })
+  it('does not change the existing report.export gate just to reveal a retention summary', async () => {
+    const calls = network(undefined, ['run.read', 'evidence.read'])
+    render(<ReportsPanel {...props} />); await screen.findByText(/当前没有可用的完整权限/)
+    expect(props.onDenied).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('heading', { name: '当前响应正文保留状态' })).toBeNull()
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/response-retention'))).toBe(false)
+  })
   it('reads only a metadata page and permissions on entry, with no create/download/automatic row poll', async () => {
     const calls = network((url, options) => url.pathname.endsWith('/reports') && options.method === 'GET' ? ok({ items: [record()], next_cursor: null }) : undefined)
     render(<ReportsPanel {...props} />); await open()

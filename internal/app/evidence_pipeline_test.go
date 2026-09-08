@@ -19,7 +19,14 @@ import (
 func exercisePipelineDisplay(t *testing.T, cfg Config, store *repository.Store, db *sql.DB, p *pipelineHTTP, runID string, days int) {
 	t.Helper()
 	var sampleID, attemptID string
-	if err := db.QueryRowContext(t.Context(), `SELECT s.id,s.final_attempt_id FROM integrity_logical_samples s WHERE s.organization_id=$1 AND s.run_id=$2 ORDER BY s.id LIMIT 1`, p.orgID, runID).Scan(&sampleID, &attemptID); err != nil {
+	selection := `SELECT s.id,s.final_attempt_id FROM integrity_logical_samples s WHERE s.organization_id=$1 AND s.run_id=$2`
+	if days > 0 {
+		// Positive disclosure tests select a real captured copy. A safe sealing
+		// failure is S1 metadata, not an available display body; the retention
+		// helper below independently proves those rows survive body cleanup.
+		selection += ` AND EXISTS (SELECT 1 FROM integrity_display_evidence d WHERE d.organization_id=s.organization_id AND d.run_id=s.run_id AND d.attempt_id=s.final_attempt_id AND d.state='captured')`
+	}
+	if err := db.QueryRowContext(t.Context(), selection+` ORDER BY s.id LIMIT 1`, p.orgID, runID).Scan(&sampleID, &attemptID); err != nil {
 		t.Fatal("select actual published display attempt")
 	}
 	path := "/api/v1/runs/" + runID + "/samples/" + sampleID + "/attempts/" + attemptID + "/evidence?analysis_revision=1"
@@ -127,6 +134,7 @@ func exercisePipelineDisplay(t *testing.T, cfg Config, store *repository.Store, 
 	}
 	exercisePipelineDisplayService(t, cfg, store, db, p, repository.DisplaySelection{RunID: runNumber, SampleID: sampleNumber, AttemptID: attemptNumber, AnalysisRevision: 1})
 	holdPipelineBrowser(t, cfg, p, days)
+	retentionSnapshot := capturePipelineRetention(t, db, p, runID, days)
 	if days > 0 {
 		// Disable through the actual management API. Old ciphertext may still be
 		// physically present; it must not be returned or revived on extension.
@@ -137,6 +145,10 @@ func exercisePipelineDisplay(t *testing.T, cfg Config, store *repository.Store, 
 		p.request(t, "PATCH", "/api/v1/organizations/"+p.orgID, map[string]any{"version": 3, "full_response_retention_days": 30}, 200, nil)
 		if data := read("GET", "", "", "", 200); json.Unmarshal(data, &envelope) != nil || !strings.HasPrefix(envelope.Data.Status, "unavailable_") || string(envelope.Data.Content) != "null" {
 			t.Fatal("policy extension revived historical response")
+		}
+		finishPipelineRetention(t, store, db, p, runID, retentionSnapshot)
+		if data := read("GET", "", "", "", 200); json.Unmarshal(data, &envelope) != nil || envelope.Data.Status != repository.DisplayReadDeleted || string(envelope.Data.Content) != "null" {
+			t.Fatal("actual physical cleanup was not explained by a verified deletion receipt")
 		}
 	}
 }

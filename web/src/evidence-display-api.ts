@@ -2,7 +2,7 @@ import { ApiError, object, request } from './api'
 import { closed, decimalID, integer, readScope } from './runs-history-api'
 
 // S2 lives only in this explicit endpoint DTO, never an S1 result/report DTO.
-export const evidenceDisplayStatuses = ['available', 'unavailable_policy_zero', 'unavailable_not_retained', 'unavailable_not_captured', 'unavailable_uncertain', 'unavailable_expired', 'unavailable_legacy_unverified', 'unavailable_redaction_policy', 'unavailable_safety_limit', 'unavailable_source_invalid', 'unavailable_cancelled', 'unavailable_capture', 'unavailable_seal'] as const
+export const evidenceDisplayStatuses = ['available', 'unavailable_policy_zero', 'unavailable_not_retained', 'unavailable_not_captured', 'unavailable_uncertain', 'unavailable_expired', 'unavailable_deleted', 'unavailable_legacy_unverified', 'unavailable_redaction_policy', 'unavailable_safety_limit', 'unavailable_source_invalid', 'unavailable_cancelled', 'unavailable_capture', 'unavailable_seal'] as const
 export type EvidenceDisplayStatus = typeof evidenceDisplayStatuses[number]
 export interface DisplayEvent { sequence: number; type: string; bytes: number; arrival_ms: number; interval_ms: number }
 export interface DisplayResponse {

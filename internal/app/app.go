@@ -181,6 +181,7 @@ func prepareWithNetworkAndLogger(ctx context.Context, cfg Config, network outbou
 			return nil, err
 		}
 		handlers[repository.JobReportGenerate] = reportHandler
+		handlers[repository.JobRetentionDelete] = worker.NewResponseRetentionHandler()
 		reconcileRuns, err := worker.NewRunReconciler(runConfig)
 		if err != nil {
 			return nil, err
@@ -192,7 +193,10 @@ func prepareWithNetworkAndLogger(ctx context.Context, cfg Config, network outbou
 			if err := queue.ReconcileReports(ctx); err != nil {
 				return err
 			}
-			return queue.ExpireRunEstimates(ctx)
+			if err := queue.ExpireRunEstimates(ctx); err != nil {
+				return err
+			}
+			return queue.ScheduleResponseRetention(ctx)
 		}})
 		if err != nil {
 			return nil, err

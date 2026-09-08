@@ -11,9 +11,10 @@ import (
 func TestEvidenceDisplayReadMigrationPreservesHistoryAndRollsBackDDL(t *testing.T) {
 	eachDatabase(t, func(t *testing.T, store *Store, config Config) {
 		list, err := migrations.ForDialect(config.Driver)
-		if err != nil || len(list) != 19 {
+		if err != nil || len(list) < 19 {
 			t.Fatal("migration19 absent", err)
 		}
+		list = list[:19]
 		if err := store.migrate(t.Context(), list[:18]); err != nil {
 			t.Fatal(err)
 		}

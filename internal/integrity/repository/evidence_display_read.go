@@ -28,6 +28,7 @@ const (
 	DisplayReadNotCaptured      = "unavailable_not_captured"
 	DisplayReadUncertain        = "unavailable_uncertain"
 	DisplayReadExpired          = "unavailable_expired"
+	DisplayReadDeleted          = "unavailable_deleted"
 	DisplayReadLegacyUnverified = "unavailable_legacy_unverified"
 )
 
@@ -197,7 +198,7 @@ func (t *Tenant) PrepareEvidenceDisplay(selection DisplaySelection) (*DisplayRea
 		if err != nil {
 			return err
 		}
-		snapshot, business = loadDisplayReadSnapshot(db, t.orgID, selection, policy, false, true)
+		snapshot, business = loadDisplayReadSnapshot(t.store, db, t.orgID, selection, policy, false, true)
 		return business
 	})
 	if err != nil {

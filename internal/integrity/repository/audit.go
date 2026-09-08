@@ -48,6 +48,13 @@ func (s *Store) auditReady(ctx context.Context) error {
 }
 
 func (s *Store) appendAudit(ctx context.Context, tx *gorm.DB, orgID int64, command AuditCommand, actorOverride *int64) error {
+	return s.appendAuditWithClock(ctx, tx, orgID, command, actorOverride, false)
+}
+
+// The database-clock option is private to response-retention deletion. Its
+// signed event and receipt must use the same clock authority; existing callers
+// retain their historical event timestamps and canonicalization unchanged.
+func (s *Store) appendAuditWithClock(ctx context.Context, tx *gorm.DB, orgID int64, command AuditCommand, actorOverride *int64, databaseClock bool) error {
 	if err := s.auditReady(ctx); err != nil {
 		return err
 	}
@@ -64,6 +71,12 @@ func (s *Store) appendAudit(ctx context.Context, tx *gorm.DB, orgID int64, comma
 	// Serializing on the tenant's head also prevents concurrent verification from
 	// seeing a half-appended chain. The initial insert handles first-event races.
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	if databaseClock {
+		now, err = queueTime(tx, s.driver)
+		if err != nil {
+			return err
+		}
+	}
 	head := auditChainHead{OrganizationID: orgID, KeyVersion: s.auditSigner.ActiveVersion(), UpdatedAt: now}
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
 		return persistenceError(err)
@@ -77,6 +90,13 @@ func (s *Store) appendAudit(ctx context.Context, tx *gorm.DB, orgID int64, comma
 	}
 	if _, err := s.verifyAuditTail(tx, head); err != nil {
 		return err
+	}
+	if databaseClock {
+		// Reobserve after any audit-head wait, on the transaction's connection.
+		now, err = queueTime(tx, s.driver)
+		if err != nil {
+			return err
+		}
 	}
 	id, err := NewID()
 	if err != nil {

@@ -1,0 +1,12 @@
+CREATE INDEX integrity_response_retention_due ON integrity_response_retention_schedule(next_due_at, last_checked_at, organization_id);
+CREATE INDEX integrity_response_retention_history ON integrity_response_retention_batches(organization_id, run_id, completed_at, id);
+CREATE INDEX integrity_evidence_deletions_batch ON integrity_evidence_deletions(organization_id, batch_id, attempt_id, source_kind);
+CREATE INDEX integrity_evidence_deletions_run ON integrity_evidence_deletions(organization_id, run_id, attempt_id, source_kind);
+CREATE INDEX integrity_response_evidence_capture_expiry ON integrity_response_evidence(organization_id, created_at, run_id, attempt_id);
+CREATE INDEX integrity_display_evidence_capture_expiry ON integrity_display_evidence(organization_id, captured_at_micros, run_id, attempt_id) WHERE state = 'captured';
+CREATE TRIGGER integrity_evidence_deletion_immutable BEFORE UPDATE ON integrity_evidence_deletions BEGIN SELECT RAISE(ABORT, 'immutable evidence deletion receipt'); END;
+CREATE TRIGGER integrity_evidence_deletion_no_delete BEFORE DELETE ON integrity_evidence_deletions BEGIN SELECT RAISE(ABORT, 'immutable evidence deletion receipt'); END;
+CREATE TRIGGER integrity_retention_batch_immutable BEFORE UPDATE ON integrity_response_retention_batches WHEN OLD.state = 'completed' BEGIN SELECT RAISE(ABORT, 'immutable retention batch receipt'); END;
+CREATE TRIGGER integrity_retention_batch_no_delete BEFORE DELETE ON integrity_response_retention_batches BEGIN SELECT RAISE(ABORT, 'immutable retention batch receipt'); END;
+CREATE TRIGGER integrity_raw_no_resurrection BEFORE INSERT ON integrity_response_evidence WHEN EXISTS (SELECT 1 FROM integrity_evidence_deletions d WHERE d.organization_id = NEW.organization_id AND d.attempt_id = NEW.attempt_id AND d.source_kind = 'analysis-response') BEGIN SELECT RAISE(ABORT, 'deleted response evidence'); END;
+CREATE TRIGGER integrity_display_no_resurrection BEFORE INSERT ON integrity_display_evidence WHEN EXISTS (SELECT 1 FROM integrity_evidence_deletions d WHERE d.organization_id = NEW.organization_id AND d.attempt_id = NEW.attempt_id AND d.source_kind = 'response-display') BEGIN SELECT RAISE(ABORT, 'deleted response evidence'); END;

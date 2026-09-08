@@ -15,6 +15,7 @@ const unavailable: Record<Exclude<EvidenceDisplayStatus, 'available'>, string> =
   unavailable_not_captured: '此 Attempt 没有捕获到可用正文。',
   unavailable_uncertain: '执行结果不确定，没有可信正文可供展示。',
   unavailable_expired: '正文已超过保留期，不能继续读取。',
+  unavailable_deleted: '正文已删除，服务器已核验删除凭证；不能从摘要还原正文。',
   unavailable_legacy_unverified: '历史记录没有可信脱敏证明，禁止回退读取原文。',
   unavailable_redaction_policy: '捕获时脱敏策略未通过，未保留可展示正文。',
   unavailable_safety_limit: '正文触及安全大小或资源上限，未生成展示副本。',

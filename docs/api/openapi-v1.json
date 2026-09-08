@@ -7722,6 +7722,484 @@
         "x-development-status": "implemented-database-backed"
       }
     },
+    "/runs/{id}/response-retention": {
+      "get": {
+        "operationId": "getRunResponseRetention",
+        "summary": "Observe current response evidence retention for a published run",
+        "description": "GET only, for a published run at analysis revision 1. Requires run.read AND evidence.read in the current organization; report.export and evidence.body are not required. IDs are canonical positive signed-int64 decimal strings. The only query parameter is analysis_revision, required exactly once as literal 1; request bodies, transfer encoding, unknown/duplicate query parameters and HEAD are rejected. Returns the standard {request_id,data} envelope with no-store. The entire HTTP context, including authentication and observation, is bounded by 2 seconds and existing earlier deadlines; four per-handler admission slots bound concurrent requests and output uses the same HTTP deadline when supported. This is a dynamic S1 observation of response-storage metadata and verified deletion receipts, not an immutable report field, a change to existing report content/hashes, proof of authenticated decryptable plaintext, a plaintext disclosure authorization, a request-only reproduction endpoint, or completion of all M6 retention/cleanup work. Expired and retained counts describe captured display rows without opening them; not-captured/unretained/legacy attempts may be outside all three display categories. The read does not schedule or perform deletion.",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Canonical positive signed-int64 decimal string; no sign, leading zeros or aliases."
+          },
+          {
+            "name": "analysis_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "1"
+            },
+            "description": "Exactly one literal 1; all other query keys and duplicate values are rejected."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live S1 response-storage observation for this published run; not a disclosure grant or an immutable report field.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "request_id": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{32}$",
+                      "minLength": 32,
+                      "maxLength": 32
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ResponseRetentionView"
+                    }
+                  },
+                  "required": [
+                    "request_id",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid canonical ID, request body, transfer encoding, missing/extra/duplicate query, or revision other than literal 1.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_INVALID_REQUEST"
+            ]
+          },
+          "401": {
+            "description": "A current authenticated session is required.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SESSION_REQUIRED"
+            ]
+          },
+          "403": {
+            "description": "Current run.read and evidence.read are both required; password-change and organization/session policy checks still apply.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_PERMISSION_DENIED",
+              "MI_PASSWORD_CHANGE_REQUIRED"
+            ]
+          },
+          "404": {
+            "description": "No published run in the authorized organization at revision 1.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_NOT_FOUND"
+            ]
+          },
+          "405": {
+            "description": "HEAD is explicitly rejected; only GET is implemented.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_INVALID_REQUEST"
+            ]
+          },
+          "409": {
+            "description": "Initial system setup or another shared control-plane conflict prevents this read.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SETUP_REQUIRED",
+              "MI_VERSION_CONFLICT"
+            ]
+          },
+          "429": {
+            "description": "The four per-handler retention observation slots are occupied. No queue or automatic retry is implied.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "const": "2"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_RETENTION_LIMIT"
+            ]
+          },
+          "500": {
+            "description": "Closed internal failure response from shared control middleware.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_SERVICE_UNAVAILABLE"
+            ]
+          },
+          "503": {
+            "description": "MI_RETENTION_SOURCE_INVALID denotes an explicitly rejected retention source or HTTP write-deadline setup. Other failures retain the shared result/service mappings; do not infer a specific corruption cause from a generic code.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MI_RETENTION_SOURCE_INVALID",
+              "MI_SERVICE_UNAVAILABLE",
+              "MI_ANALYSIS_RESULT_INVALID"
+            ]
+          }
+        },
+        "x-permission": [
+          "run.read",
+          "evidence.read"
+        ],
+        "x-permission-mode": "all",
+        "x-not-required-permissions": [
+          "report.export",
+          "evidence.body"
+        ],
+        "x-development-status": "implemented-database-backed",
+        "x-source": "live-response-storage-observation",
+        "x-query-unknown": "reject",
+        "x-query-duplicates": "reject",
+        "x-disallowed-methods": [
+          "HEAD"
+        ],
+        "x-request-deadline-ms": 2000,
+        "x-max-inflight": 4,
+        "x-immutable-report-mutation": false,
+        "x-authenticated-plaintext-availability": false,
+        "x-request-only-reproduction": false,
+        "x-complete-retention-program": false
+      }
+    },
     "/runs/{id}/samples/{sampleId}/attempts/{attemptId}/evidence": {
       "get": {
         "operationId": "getRunAttemptEvidenceDisplay",
@@ -14847,6 +15325,102 @@
           "CANCELLED"
         ]
       },
+      "ResponseRetentionView": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Exactly twelve live response-retention metadata fields. Every count is at most attempt_count. The three display categories are mutually exclusive subsets: their sum is at most attempt_count, not necessarily equal to it. These are runtime-validated relations, not expressible by the standalone scalar JSON Schema bounds.",
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "mii.response-retention-summary.v1"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "analysis_revision": {
+            "type": "integer",
+            "const": 1
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC database observation time of the consistent authorized read snapshot, not report generation time."
+          },
+          "policy_days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 180,
+            "description": "Current response retention policy in days. Zero means no retained response bodies; the summary itself remains metadata."
+          },
+          "policy_version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Current positive organization retention policy version."
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1536,
+            "description": "All recorded attempts for this run, including non-final attempts."
+          },
+          "raw_deleted_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1536,
+            "description": "Attempts with verified analysis-response deletion receipts; at most attempt_count. May overlap display categories."
+          },
+          "display_deleted_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1536,
+            "description": "Attempts with verified response-display deletion receipts; at most attempt_count. Mutually exclusive with display_expired_count and display_retained_count."
+          },
+          "display_expired_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1536,
+            "description": "Captured display rows still stored but expired under sealed expiry, current policy/cutoff or day window at observed_at; at most attempt_count. Not yet a verified physical deletion."
+          },
+          "display_retained_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1536,
+            "description": "Captured display rows still stored and not expired at observed_at; at most attempt_count. Storage presence is not authenticated plaintext availability or permission to disclose it."
+          },
+          "last_deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Always present. Null iff raw_deleted_count + display_deleted_count is zero; otherwise latest verified response deletion time, nonzero and not after observed_at."
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "analysis_revision",
+          "observed_at",
+          "policy_days",
+          "policy_version",
+          "attempt_count",
+          "raw_deleted_count",
+          "display_deleted_count",
+          "display_expired_count",
+          "display_retained_count",
+          "last_deleted_at"
+        ],
+        "x-runtime-invariants": [
+          "each count <= attempt_count",
+          "display_deleted_count + display_expired_count + display_retained_count <= attempt_count",
+          "last_deleted_at is null iff raw_deleted_count + display_deleted_count == 0",
+          "non-null last_deleted_at <= observed_at"
+        ]
+      },
       "EvidenceDisplayData": {
         "description": "The only implemented response-body disclosure projection. Unavailable is a successful, explicitly reasoned null projection, not a request-only reproduction response.",
         "oneOf": [
@@ -14913,6 +15487,7 @@
       "EvidenceDisplayUnavailable": {
         "type": "object",
         "additionalProperties": false,
+        "description": "All unavailable statuses require content:null. unavailable_deleted requires a repository-verified response-display deletion receipt bound to the exact attempt/source and a valid signed deletion audit event; row absence alone is not evidence of deletion. An unexplained missing BodyRecorded display row remains a source error (HTTP 503 MI_EVIDENCE_UNAVAILABLE), not a successful deleted projection. Current zero-day policy takes precedence over the deleted display reason. No raw response fallback is permitted.",
         "properties": {
           "version": {
             "type": "string",
@@ -14944,6 +15519,7 @@
               "unavailable_uncertain",
               "unavailable_expired",
               "unavailable_legacy_unverified",
+              "unavailable_deleted",
               "unavailable_redaction_policy",
               "unavailable_safety_limit",
               "unavailable_source_invalid",
@@ -15275,6 +15851,8 @@
                   "MI_ANALYSIS_RESULT_INVALID",
                   "MI_EVIDENCE_LIMIT",
                   "MI_EVIDENCE_UNAVAILABLE",
+                  "MI_RETENTION_LIMIT",
+                  "MI_RETENTION_SOURCE_INVALID",
                   "MI_OVERVIEW_BUSY",
                   "MI_OVERVIEW_LIMIT",
                   "MI_OVERVIEW_TIMEOUT",

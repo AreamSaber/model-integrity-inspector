@@ -30,7 +30,7 @@ func ForDialect(dialect string) ([]Migration, error) {
 		return nil, fmt.Errorf("unsupported migration dialect")
 	}
 	var result []Migration
-	for i, name := range []string{"foundation", "queue_leases", "target_metadata", "identity_management", "target_prechecks", "catalog_versions", "execution_state", "response_evidence", "run_estimates", "execution_breaker", "estimate_expiry_index", "baseline_management", "review_receipts", "report_generation", "overview_current_targets", "evidence_display", "response_retention", "derived_attempt_source", "evidence_disclosures"} {
+	for i, name := range []string{"foundation", "queue_leases", "target_metadata", "identity_management", "target_prechecks", "catalog_versions", "execution_state", "response_evidence", "run_estimates", "execution_breaker", "estimate_expiry_index", "baseline_management", "review_receipts", "report_generation", "overview_current_targets", "evidence_display", "response_retention", "derived_attempt_source", "evidence_disclosures", "response_retention_cleanup"} {
 		filename := fmt.Sprintf("%06d_%s.up.sql", i+1, name)
 		common, err := sources.ReadFile("common/" + filename)
 		if err != nil {

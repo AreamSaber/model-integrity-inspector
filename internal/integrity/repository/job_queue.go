@@ -147,7 +147,7 @@ func (q *JobQueue) Claim(ctx context.Context) (*JobLease, error) {
 			query := `SELECT j.* FROM integrity_jobs j
  JOIN integrity_queue_fairness f ON f.organization_id = j.organization_id
  JOIN organizations o ON o.id = j.organization_id
- WHERE o.status = 'active' AND j.cancel_requested_at IS NULL AND j.attempt_count < j.max_attempts
+ WHERE (o.status = 'active' OR (` + retentionDisabledJobSQL + `)) AND j.cancel_requested_at IS NULL AND j.attempt_count < j.max_attempts
  AND ((j.status = 'pending' AND j.available_at <= ?) OR (j.status = 'running' AND j.lease_until <= ?))
  ORDER BY f.last_claimed_at ASC, j.priority DESC, j.available_at ASC, j.id ASC LIMIT 1`
 			if q.store.driver == "postgres" {
@@ -204,7 +204,7 @@ func (q *JobQueue) reconcile(tx *gorm.DB, now time.Time) error {
 	var jobs []Job
 	query := `SELECT j.* FROM integrity_jobs j JOIN organizations o ON o.id = j.organization_id
  WHERE (j.status = 'pending' OR (j.status = 'running' AND (j.lease_until <= ? OR j.lease_until IS NULL)))
- AND (j.cancel_requested_at IS NOT NULL OR j.attempt_count >= j.max_attempts OR o.status != 'active' OR (j.status = 'running' AND j.lease_until IS NULL))
+ AND (j.cancel_requested_at IS NOT NULL OR j.attempt_count >= j.max_attempts OR (o.status != 'active' AND NOT (` + retentionDisabledJobSQL + `)) OR (j.status = 'running' AND j.lease_until IS NULL))
  ORDER BY j.id LIMIT 100`
 	if q.store.driver == "postgres" {
 		query += " FOR UPDATE OF j SKIP LOCKED"

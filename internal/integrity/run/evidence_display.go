@@ -119,7 +119,7 @@ func (d *disclosureState) finishLocked() {
 
 func knownDisplayStatus(status string) bool {
 	switch status {
-	case "available", "unavailable_policy_zero", "unavailable_not_retained", "unavailable_not_captured", "unavailable_uncertain", "unavailable_expired", "unavailable_legacy_unverified",
+	case "available", "unavailable_policy_zero", "unavailable_not_retained", "unavailable_not_captured", "unavailable_uncertain", "unavailable_expired", "unavailable_legacy_unverified", repository.DisplayReadDeleted,
 		repository.DisplayUnavailablePolicy, repository.DisplayUnavailableLimit, repository.DisplayUnavailableSource, repository.DisplayUnavailableCancelled, repository.DisplayUnavailableCapture, repository.DisplayUnavailableSeal:
 		return true
 	default:

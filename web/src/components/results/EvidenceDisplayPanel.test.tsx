@@ -38,6 +38,16 @@ async function available() { await screen.findByText(canary, { selector: 'pre' }
 beforeEach(() => { props.onDenied.mockClear(); props.onSignedOut.mockClear(); props.onPasswordRequired.mockClear() })
 
 describe('explicit isolated S2 response display panel', () => {
+  it('labels server-verified deletion without inventing a body or treating an unproven 503 as deleted', async () => {
+    let deleted = true
+    network((url) => url.pathname.endsWith('/evidence') ? deleted ? ok({ ...value(), status: 'unavailable_deleted', content: null }) : Response.json({ error: { code: 'MI_EVIDENCE_UNAVAILABLE' }, request_id: 'unproven-missing' }, { status: 503 }) : undefined)
+    render(<EvidenceDisplayPanel {...props} />); await read()
+    expect(await screen.findByText(/服务器已核验删除凭证/)).toBeTruthy()
+    expect(document.querySelector('pre')).toBeNull()
+    deleted = false; await reread()
+    expect(screen.queryByText(/服务器已核验删除凭证/)).toBeNull()
+    expect(screen.getByRole('alert')).toBeTruthy(); expect(document.querySelector('pre')).toBeNull()
+  })
   it('does not fetch even permissions on mount; only an explicit click reads current permissions then S2', async () => {
     const calls = network(); render(<EvidenceDisplayPanel {...props} />)
     expect(calls).not.toHaveBeenCalled(); expect(screen.queryByText(canary)).toBeNull()

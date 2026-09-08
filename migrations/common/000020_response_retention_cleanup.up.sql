@@ -1,0 +1,55 @@
+-- Durable, organization-scoped daily progress. No S2 payload enters these rows.
+CREATE TABLE integrity_response_retention_batches (
+ id BIGINT NOT NULL PRIMARY KEY CHECK (id > 0),
+ organization_id BIGINT NOT NULL REFERENCES organizations(id),
+ run_id BIGINT NOT NULL,
+ job_id BIGINT,
+ created_by BIGINT NOT NULL CHECK (created_by > 0),
+ state TEXT NOT NULL DEFAULT 'planned' CHECK (state IN ('planned','completed')),
+ created_at TIMESTAMP NOT NULL,
+ completed_at TIMESTAMP,
+ policy_days INTEGER NOT NULL DEFAULT 0 CHECK (policy_days BETWEEN 0 AND 180),
+ policy_version INTEGER NOT NULL DEFAULT 0 CHECK (policy_version >= 0),
+ policy_cutoff_micros BIGINT NOT NULL DEFAULT 0 CHECK (policy_cutoff_micros >= 0),
+ observed_at_micros BIGINT NOT NULL DEFAULT 0 CHECK (observed_at_micros >= 0),
+ deleted_rows INTEGER NOT NULL DEFAULT 0 CHECK (deleted_rows BETWEEN 0 AND 32),
+ deleted_bytes BIGINT NOT NULL DEFAULT 0 CHECK (deleted_bytes BETWEEN 0 AND 8388608),
+ receipt_hash TEXT NOT NULL DEFAULT '' CHECK (receipt_hash = '' OR length(receipt_hash) = 64),
+ UNIQUE (organization_id, id),
+ UNIQUE (organization_id, job_id),
+ FOREIGN KEY (organization_id, run_id) REFERENCES integrity_runs(organization_id, id),
+ FOREIGN KEY (organization_id, job_id) REFERENCES integrity_jobs(organization_id, id),
+ CHECK ((state = 'planned' AND completed_at IS NULL AND policy_version = 0 AND observed_at_micros = 0 AND deleted_rows = 0 AND deleted_bytes = 0 AND receipt_hash = '') OR (state = 'completed' AND job_id IS NOT NULL AND completed_at IS NOT NULL AND policy_version > 0 AND observed_at_micros > 0 AND length(receipt_hash) = 64))
+);
+CREATE TABLE integrity_response_retention_schedule (
+ organization_id BIGINT NOT NULL PRIMARY KEY REFERENCES organizations(id),
+ next_due_at TIMESTAMP NOT NULL,
+ last_checked_at TIMESTAMP NOT NULL,
+ sweep_day BIGINT NOT NULL DEFAULT 0 CHECK (sweep_day >= 0),
+ cursor_run_id BIGINT NOT NULL DEFAULT 0 CHECK (cursor_run_id >= 0),
+ active_batch_id BIGINT,
+ FOREIGN KEY (organization_id, active_batch_id) REFERENCES integrity_response_retention_batches(organization_id, id)
+);
+CREATE TABLE integrity_evidence_deletions (
+ organization_id BIGINT NOT NULL,
+ run_id BIGINT NOT NULL,
+ logical_sample_id BIGINT NOT NULL,
+ attempt_id BIGINT NOT NULL,
+ source_kind TEXT NOT NULL CHECK (source_kind IN ('analysis-response','response-display')),
+ policy TEXT NOT NULL CHECK (policy IN ('analysis-response-v1','display-redaction-v1')),
+ batch_id BIGINT NOT NULL,
+ request_hash TEXT NOT NULL CHECK (length(request_hash) = 64),
+ content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+ source_hash TEXT NOT NULL CHECK (source_hash = '' OR length(source_hash) = 64),
+ captured_at_micros BIGINT NOT NULL CHECK (captured_at_micros > 0),
+ expires_at_micros BIGINT NOT NULL CHECK (expires_at_micros > captured_at_micros),
+ deleted_at_micros BIGINT NOT NULL CHECK (deleted_at_micros > 0),
+ reason TEXT NOT NULL CHECK (reason IN ('policy_zero','sealed_expiry','policy_cutoff','day_window')),
+ ciphertext_bytes BIGINT NOT NULL CHECK (ciphertext_bytes BETWEEN 17 AND 4194320),
+ PRIMARY KEY (organization_id, attempt_id, source_kind),
+ CHECK ((source_kind = 'analysis-response' AND policy = 'analysis-response-v1' AND source_hash = '') OR (source_kind = 'response-display' AND policy = 'display-redaction-v1' AND length(source_hash) = 64)),
+ FOREIGN KEY (organization_id, batch_id) REFERENCES integrity_response_retention_batches(organization_id, id),
+ FOREIGN KEY (organization_id, run_id, logical_sample_id) REFERENCES integrity_logical_samples(organization_id, run_id, id),
+ FOREIGN KEY (organization_id, logical_sample_id, attempt_id) REFERENCES integrity_sample_attempts(organization_id, logical_sample_id, id),
+ FOREIGN KEY (organization_id, attempt_id, request_hash) REFERENCES integrity_sample_attempts(organization_id, id, request_hash)
+);

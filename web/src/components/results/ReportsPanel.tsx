@@ -7,6 +7,7 @@ import type { ReadPage } from '../../runs-history-api'
 import { ErrorNotice, Loading } from '../Feedback'
 import type { ReadContext } from '../history/RunHistory'
 import { useFailure } from '../management/shared'
+import { ResponseRetentionPanel } from './ResponseRetentionPanel'
 
 type Context = ReadContext & { runID: string; analysisRevision: number; onDenied: (failure: unknown) => void }
 type Submission = { body: Readonly<ReportInput>; key: string }
@@ -33,16 +34,18 @@ function ReportsScope({ runID, analysisRevision, onDenied, ...context }: Context
   const operation = useRef<AbortController | null>(null), pollingRequest = useRef<AbortController | null>(null)
   const heading = useRef<HTMLHeadingElement>(null), objectURLs = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const cursor = cursors[cursors.length - 1]
-  const fail = useCallback((failure: unknown) => {
-    if (onFailure(failure) || (failure instanceof ApiError && (failure.status === 401 || failure.status === 403))) {
-      operation.current?.abort(); pollingRequest.current?.abort()
-      setPermissions(null); setPage(null); setPending(null); setSelected(null); selection.current = null
-      setConfirmed(false); setNotice(''); setPolling(false); setBusy(false); setDownloading(false)
-      for (const [url, timer] of objectURLs.current) { clearTimeout(timer); URL.revokeObjectURL(url) }
-      objectURLs.current.clear(); onDenied(failure)
-    }
+  const denied = useCallback((failure: unknown) => {
+    operation.current?.abort(); pollingRequest.current?.abort()
+    setPermissions(null); setPage(null); setPending(null); setSelected(null); selection.current = null
+    setConfirmed(false); setNotice(''); setPolling(false); setBusy(false); setDownloading(false)
+    for (const [url, timer] of objectURLs.current) { clearTimeout(timer); URL.revokeObjectURL(url) }
+    objectURLs.current.clear(); onDenied(failure)
     setError(failure)
-  }, [onFailure, onDenied])
+  }, [onDenied])
+  const fail = useCallback((failure: unknown) => {
+    if (onFailure(failure) || (failure instanceof ApiError && (failure.status === 401 || failure.status === 403))) denied(failure)
+    setError(failure)
+  }, [onFailure, denied])
   const refreshPermissions = useCallback(async (signal: AbortSignal) => {
     const granted = await runsApi.permissions(context.organizationID, context.userID, signal)
     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError')
@@ -175,5 +178,6 @@ function ReportsScope({ runID, analysisRevision, onDenied, ...context }: Context
     </section>}
     {pending ? <section className="result-card"><h4>报告创建结果尚未确认</h4><p className="notice warning">服务端可能已接受此请求。本页保留原格式、固定修订与同一提交标识，只能手动恢复同一次创建，不能自动新建或重新发送新标识。</p><label className="grant-option"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认仅恢复原报告请求，不新建另一份报告。</span></label><button disabled={busy || !enabled} onClick={() => void submit()}>{busy ? '正在确认原报告请求…' : '手动恢复同一次报告创建'}</button></section> : enabled && !loading && <form aria-label="生成脱敏报告" onSubmit={(event) => void submit(event)} noValidate><fieldset disabled={busy}><legend>生成新的不可覆盖报告</legend><label htmlFor="report-format">报告文件格式</label><select id="report-format" value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}>{reportFormats.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select><label className="grant-option"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认仅生成脱敏 S1 报告，且本报告不纳入人工复核快照。</span></label><button type="submit">{busy ? '正在确认报告请求…' : '确认生成报告'}</button></fieldset></form>}
     <p className="field-help">离开、切换组织/账号/Run/分析修订会取消本页读取和下载、清空内存缓存与未确认标识，但不会撤销已被服务端接受的生成任务。创建结果不确定时请先恢复，避免重复创建。</p>
+    {enabled && <ResponseRetentionPanel {...context} runID={runID} analysisRevision={analysisRevision} onDenied={denied} />}
   </section>
 }

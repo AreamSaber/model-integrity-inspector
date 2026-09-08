@@ -102,7 +102,7 @@ func (p *DisclosurePermit) Revalidate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		snapshot, err := loadDisplayReadSnapshot(db, p.orgID, p.selection, policy, false, false)
+		snapshot, err := loadDisplayReadSnapshot(p.store, db, p.orgID, p.selection, policy, false, false)
 		if err != nil {
 			business = err
 			return err
@@ -146,7 +146,7 @@ func (t *Tenant) CommitEvidenceDisplayRead(source *DisplayReadSource, summary Di
 			if err != nil {
 				return err
 			}
-			snapshot, err := loadDisplayReadSnapshot(tx.db, t.orgID, selection, policy, true, true)
+			snapshot, err := loadDisplayReadSnapshot(t.store, tx.db, t.orgID, selection, policy, true, true)
 			defer clear(snapshot.record.Nonce)
 			defer clear(snapshot.record.Ciphertext)
 			if err != nil {

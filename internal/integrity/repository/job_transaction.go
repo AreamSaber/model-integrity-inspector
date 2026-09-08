@@ -149,7 +149,14 @@ func validateJobObject(tx *gorm.DB, organizationID int64, jobType JobType, objec
 		table = "integrity_outbox"
 	case JobRetentionDelete:
 		if objectID != organizationID {
-			return ErrJobInvalid
+			var count int64
+			if err := tx.Model(&responseRetentionBatch{}).Where("organization_id=? AND id=? AND run_id>0 AND created_by>0 AND state='planned'", organizationID, objectID).Count(&count).Error; err != nil {
+				return queueError(err)
+			}
+			if count != 1 {
+				return ErrJobInvalid
+			}
+			return nil
 		}
 		var count int64
 		if err := tx.Table("organizations").Where("id = ? AND status = ?", organizationID, "active").Count(&count).Error; err != nil {

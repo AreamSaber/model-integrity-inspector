@@ -173,7 +173,7 @@ func TestEvidenceDisplayPrivateSchemaAndStatusContract(t *testing.T) {
 			t.Fatal("output format or published revision drift")
 		}
 	}
-	statuses := []any{"unavailable_policy_zero", "unavailable_not_retained", "unavailable_not_captured", "unavailable_uncertain", "unavailable_expired", "unavailable_legacy_unverified", repository.DisplayUnavailablePolicy, repository.DisplayUnavailableLimit, repository.DisplayUnavailableSource, repository.DisplayUnavailableCancelled, repository.DisplayUnavailableCapture, repository.DisplayUnavailableSeal}
+	statuses := []any{"unavailable_policy_zero", "unavailable_not_retained", "unavailable_not_captured", "unavailable_uncertain", "unavailable_expired", "unavailable_legacy_unverified", repository.DisplayReadDeleted, repository.DisplayUnavailablePolicy, repository.DisplayUnavailableLimit, repository.DisplayUnavailableSource, repository.DisplayUnavailableCancelled, repository.DisplayUnavailableCapture, repository.DisplayUnavailableSeal}
 	if contractObject(t, available["status"])["const"] != "available" || !reflect.DeepEqual(contractObject(t, uFields["status"])["enum"], statuses) {
 		t.Fatal("unavailable reason set is not closed")
 	}
@@ -267,6 +267,7 @@ func TestEvidenceDisplayContractMatchesPrivateRuntimeBoundaries(t *testing.T) {
 	}
 	statusFunction := displayFunctionText(t, source, "knownDisplayStatus")
 	constants := map[string]string{
+		"repository.DisplayReadDeleted":       repository.DisplayReadDeleted,
 		"repository.DisplayUnavailablePolicy": repository.DisplayUnavailablePolicy, "repository.DisplayUnavailableLimit": repository.DisplayUnavailableLimit,
 		"repository.DisplayUnavailableSource": repository.DisplayUnavailableSource, "repository.DisplayUnavailableCancelled": repository.DisplayUnavailableCancelled,
 		"repository.DisplayUnavailableCapture": repository.DisplayUnavailableCapture, "repository.DisplayUnavailableSeal": repository.DisplayUnavailableSeal,

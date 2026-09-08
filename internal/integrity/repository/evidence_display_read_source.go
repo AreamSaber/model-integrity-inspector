@@ -22,6 +22,7 @@ type displayReadFacts struct {
 	FinishedAt                     time.Time
 	RequestHash, AttemptStatus     string
 	DerivedReceipt, BodyReceipt    string
+	Deletion                       *evidenceDeletion
 }
 
 type displayReadSnapshot struct {
@@ -42,7 +43,7 @@ func displayBoundedColumns(db *gorm.DB, fixed string, fields ...struct {
 	return fixed
 }
 
-func loadDisplayReadSnapshot(db *gorm.DB, orgID int64, selection DisplaySelection, policy ResponseRetentionPolicy, lock, envelope bool) (displayReadSnapshot, error) {
+func loadDisplayReadSnapshot(store *Store, db *gorm.DB, orgID int64, selection DisplaySelection, policy ResponseRetentionPolicy, lock, envelope bool) (displayReadSnapshot, error) {
 	var out displayReadSnapshot
 	var run RunRecord
 	q := db.Select(displayBoundedColumns(db, "id,organization_id,execution_closed_at",
@@ -152,6 +153,17 @@ func loadDisplayReadSnapshot(db *gorm.DB, orgID int64, selection DisplaySelectio
 	if len(rows) > 1 {
 		return out, ErrDisplaySource
 	}
+	deletion, err := loadVerifiedEvidenceDeletion(store, db, orgID, attempt.ID, retentionDisplaySource)
+	if err != nil {
+		return out, ErrDisplaySource
+	}
+	if deletion != nil {
+		if len(rows) != 0 || facts.AttemptStatus != "COMPLETED" || (facts.BodyReceipt != DerivedLegacy && facts.BodyReceipt != BodyRecorded) || deletion.RunID != selection.RunID || deletion.LogicalSampleID != selection.SampleID || deletion.RequestHash != facts.RequestHash || deletion.CapturedAtMicros < facts.StartedAt.UnixMicro() || deletion.CapturedAtMicros > facts.FinishedAt.UnixMicro() {
+			return out, ErrDisplaySource
+		}
+		facts.Deletion = deletion
+		out.facts = facts
+	}
 	if len(rows) == 1 {
 		row := rows[0]
 		out.present, out.record = true, row.DisplayEvidenceRecord
@@ -178,7 +190,7 @@ func loadDisplayReadSnapshot(db *gorm.DB, orgID int64, selection DisplaySelectio
 				return displayReadSnapshot{}, ErrDisplaySource
 			}
 		}
-	} else if attempt.ResponseBodyReceipt == BodyRecorded {
+	} else if attempt.ResponseBodyReceipt == BodyRecorded && deletion == nil {
 		return out, ErrDisplaySource
 	}
 	status, err := displayReadStatus(facts, out.record, out.present, policy)
@@ -216,6 +228,12 @@ func displayReadStatus(facts displayReadFacts, record DisplayEvidenceRecord, pre
 	}
 	if policy.Days() == 0 {
 		return DisplayReadPolicyZero, nil
+	}
+	if facts.Deletion != nil {
+		if present {
+			return "", ErrDisplaySource
+		}
+		return DisplayReadDeleted, nil
 	}
 	if !present {
 		if facts.AttemptStatus == "UNCERTAIN" {

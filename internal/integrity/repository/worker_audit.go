@@ -35,7 +35,19 @@ func workerAuditContext(ctx context.Context, db *gorm.DB, job Job) (context.Cont
 	case JobReportGenerate:
 		query = db.Table("integrity_reports").Select("created_by").Where("organization_id = ? AND id = ? AND job_id = ?", job.OrganizationID, job.ObjectID, job.ID)
 		reason = "worker.report.generate"
-	case JobRetentionDelete, JobNotificationSend:
+	case JobRetentionDelete:
+		if job.ObjectID != job.OrganizationID {
+			batch, err := retentionJobBatch(db, job)
+			if err != nil {
+				return nil, err
+			}
+			return audit.WithActor(ctx, audit.Actor{ActorID: batch.CreatedBy, ReasonCode: "response.evidence.automatic_expiry"}), nil
+		}
+		if err := validateJobObject(db, job.OrganizationID, JobType(job.Type), job.ObjectID); err != nil {
+			return nil, err
+		}
+		return audit.WithActor(ctx, audit.Actor{}), nil
+	case JobNotificationSend:
 		// Queue-only operations (including dependency enqueue) remain usable.
 		// No audited business capability exists for these handlers yet. An invalid
 		// empty Actor shadows any caller Actor, so appendAudit fails closed.
