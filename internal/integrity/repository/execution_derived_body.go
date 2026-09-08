@@ -96,7 +96,7 @@ func (tx *TenantTransaction) BindAttemptResponseCapture(sampleID, attemptID int6
 	}
 	var attempt AttemptRecord
 	if err := tx.db.Where("organization_id = ? AND id = ? AND logical_sample_id = ? AND request_hash = ? AND job_id = ? AND lease_generation = ? AND status = 'DISPATCHED'", tx.orgID, attemptID, sampleID, requestHash, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
-		return nil, ErrJobLeaseLost
+		return nil, executionLeaseLookupError(err)
 	}
 	var sample LogicalSampleRecord
 	if err := tx.db.Where("organization_id = ? AND id = ? AND run_id = ?", tx.orgID, sampleID, attempt.RunID).First(&sample).Error; err != nil {

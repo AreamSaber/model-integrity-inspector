@@ -185,7 +185,7 @@ func (tx *TenantTransaction) derivedCompletionJob(sampleID int64) (Job, error) {
 	}
 	var job Job
 	if err := tx.db.Where("organization_id = ? AND id = ? AND type = ? AND object_id = ? AND status = 'running' AND attempt_count = ?", tx.orgID, tx.leaseJobID, string(JobSampleExecute), sampleID, tx.leaseGeneration).First(&job).Error; err != nil {
-		return Job{}, ErrJobLeaseLost
+		return Job{}, executionLeaseLookupError(err)
 	}
 	return job, nil
 }

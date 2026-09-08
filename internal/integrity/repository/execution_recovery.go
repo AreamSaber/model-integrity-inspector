@@ -60,7 +60,7 @@ func (tx *TenantTransaction) recoverInterruptedSample(sampleID, attemptID int64,
 		query = query.Where("id = ?", attemptID)
 	}
 	if err := query.First(&attempt).Error; err != nil {
-		return ErrJobLeaseLost
+		return executionLeaseLookupError(err)
 	}
 	now, err := queueTime(tx.db, tx.store.driver)
 	if err != nil {

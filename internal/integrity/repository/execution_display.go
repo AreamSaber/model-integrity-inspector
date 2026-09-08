@@ -71,7 +71,7 @@ func (tx *TenantTransaction) BindAttemptDisplayCapture(sampleID, attemptID int64
 	}
 	var attempt AttemptRecord
 	if err := tx.db.Where("organization_id = ? AND id = ? AND logical_sample_id = ? AND request_hash = ? AND job_id = ? AND lease_generation = ? AND status = 'DISPATCHED'", tx.orgID, attemptID, sampleID, requestHash, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
-		return DisplayEvidenceRecord{}, ErrJobLeaseLost
+		return DisplayEvidenceRecord{}, executionLeaseLookupError(err)
 	}
 	now, err := queueTime(tx.db, tx.store.driver)
 	if err != nil {

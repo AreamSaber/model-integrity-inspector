@@ -33,7 +33,7 @@ func (tx *TenantTransaction) lockedExecutionSample(id int64) (LogicalSampleRecor
 	var plan domain.SamplePlan
 	err := tx.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ? AND job_id = ?", tx.orgID, id, tx.leaseJobID).First(&record).Error
 	if err != nil {
-		return record, plan, ErrJobLeaseLost
+		return record, plan, executionLeaseLookupError(err)
 	}
 	if json.Unmarshal([]byte(record.RequestPlan), &plan) != nil {
 		return record, plan, ErrConfiguration
@@ -374,7 +374,7 @@ func (tx *TenantTransaction) finishAttempt(sampleID, attemptID int64, outcome do
 	}
 	var attempt AttemptRecord
 	if err := tx.db.Where("organization_id = ? AND id = ? AND logical_sample_id = ? AND job_id = ? AND lease_generation = ? AND status = 'DISPATCHED'", tx.orgID, attemptID, sampleID, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
-		return ErrJobLeaseLost
+		return executionLeaseLookupError(err)
 	}
 	now, err := queueTime(tx.db, tx.store.driver)
 	if err != nil {

@@ -411,7 +411,7 @@ func (tx *TenantTransaction) executionJob(jobType JobType, objectID int64, compl
 	var job Job
 	err := tx.db.Where("organization_id = ? AND id = ? AND type = ? AND object_id = ? AND status = 'running' AND attempt_count = ?", tx.orgID, tx.leaseJobID, string(jobType), objectID, tx.leaseGeneration).First(&job).Error
 	if err != nil {
-		return Job{}, ErrJobLeaseLost
+		return Job{}, executionLeaseLookupError(err)
 	}
 	if job.CancelRequestedAt != nil {
 		return Job{}, ErrExecutionCancelled
