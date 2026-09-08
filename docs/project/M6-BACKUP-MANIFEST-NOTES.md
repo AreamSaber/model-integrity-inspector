@@ -24,15 +24,26 @@
 
 ## 测试与组合证据
 
-固定 Go 1.26.7，在 Windows 执行，无数据库测试或修改；没有 Linux/native race 结论。
+以下为初始 manifest 提交的本地证据。该版本后续已由 `b7e9a90` / CI34192651533 全部通过；新增流式校验器的证据单列下一节，不追认其远端 Linux/native race。
 
 - 格式 golden SHA256 `0fbbd751a365f53c7cb9c3e3763fa176d5d2ed1e43f88189993e9a0d3bfc80b2` 对应明确的 synthetic fixture；验证排序、输入列表不变、解码独立性、空报告和两个驱动/四种报告描述，不是假称真实双库/PDF输出。
 - 结构反例覆盖缺迁移、版本/格式不兼容、缺历史 key、组织或文件重复/跨类别碰撞、审计/Job 对应、状态/整数/总容量、绝对路径/穿越/ADS/大小写、非规范 JSON 与泄漏保护。
-- 真实 `secret.BackupSealer/Opener` 组合包含清单、数据库、配置、报告和四类工件的 synthetic payload。所有五个场景都具有真实合法 AEAD framing：只有完整匹配的场景符合清单；被认证但内容被换、文件缺失、额外文件或 kind 错误仍须拒绝。此处校验消费器是测试代码，生产协调器尚未实现，不能说系统恢复入口已经执行这些核验。
+- 初始真实 `secret.BackupSealer/Opener` 组合包含清单、数据库、配置、报告和四类工件的 synthetic payload。所有五个场景都具有真实合法 AEAD framing：只有完整匹配的场景符合清单；被认证但内容被换、文件缺失、额外文件或 kind 错误仍须拒绝。初始消费器只是测试 oracle；后续生产 VerifyStream 也已接入同一组合测试，见下一节。生产协调器尚未实现，不能说系统恢复入口已经执行这些核验。
 - 完整新包三轮 **0.165s PASS，92.7%**；最终 contracts 与新包三轮分别 **0.504s / 0.157s PASS**。lint 最初发现三项布尔写法及一处测试精确 sentinel 豁免位置问题，均已修正；最终 `golangci-lint run --allow-parallel-runners ./internal/integrity/backupmanifest/...` **0 issues**。
 - `go test ./internal/integrity/backupmanifest -run '^$' -fuzz '^FuzzManifestDecode$' -fuzztime=10s -parallel=2`：实际 **11.106s PASS**，5/5 baseline、266 executions、2 new interesting（共7）；低次数有限 fuzz 不是完整解析安全证明。单输入超过256 KiB明确跳过，16 MiB及数组上限另有确定性测试。未伪称更大的执行次数。
 
 首次新增 crypto 组合测试因 Seal callback 少写 context 参数编译失败，修正签名后才运行测试；这只是测试实现错误，不是生产缺陷红绿证据。
+
+## 生产流式文件集合校验（2026-09-08）
+
+新增 `VerifyStream(ctx, manifest, timeout, read)`。可信同步 read 必须执行完整归档认证，将每项 kind/ID/Reader 交给借用的 accept，并返回包括归档尾/外部 EOF 在内的真正结果。校验器自己复制准确清单、拒绝未知/重复/错误类别，最多64 KiB单次读取并增量SHA256；每项必须长度/hash相等且真实读到EOF，最终必须清单无缺项。顺序可以不同，输入manifest后续slice修改不能改变已建立的预期清单。未知项不触碰Reader，任意错/取消被callback吞掉仍失败；完成或panic后借用能力关闭，缓冲区清零，错误为闭集代码而不泄露IO/callback/panic正文。
+
+这是一层只读核验，不负责提取、授权、快照或文件发布。预期manifest身份/hash仍须独立可信；归档认证、VerifyStream、外层privatefile读取均成功后才可继续发布。不能把callback人为返回nil当作完成了外部认证，也不能把明文匹配说成来源可信。任意callback/内核I/O仍须协作取消；总期限上限24小时，原文件/数量上限不变。
+
+- 新实现首次专项实际 **0.136s FAIL**：使用 `errors.Is(err, io.EOF)` 将 `errors.Join(io.EOF, actualReadError)` 错判成功。改为Reader契约的精确EOF sentinel后反例通过，未放宽限额或吞真实I/O错误。
+- 完整包三轮最终 **0.312s PASS，93.2%覆盖率**；lint **0 issues**。覆盖正序/逆序、缺项/重复/额外/kind/短长/等长内容和manifest变化、Reader故障/不推进/panic/非法n/复合EOF、callback错误/panic、取消、真实期限、保留能力关闭和原manifest修改。
+- 真实 **25 MiB+17** synthetic payload 的流式核验，单次请求不超过64 KiB，校验阶段累计分配小于4 MiB；大payload在测量前构造。不是SQLite数据库、峰值RSS或生产容量验收。
+- 保留原五种合法AEAD归档的独立测试oracle，再用实际生产 VerifyStream + BackupOpener 验证同样判断。另用真实归档尾追加字节及末字节截断，独立计数证明所有entry已正确通过后，外层认证/EOF失败仍使整个VerifyStream失败。没有系统恢复/HTTP入口或新的Linux原生执行证据。
 
 ## 尚需接入的完整能力
 

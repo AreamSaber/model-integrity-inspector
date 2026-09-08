@@ -3,6 +3,7 @@ package backupmanifest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -154,6 +155,36 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 			}
 			if mismatch != (mode != "valid") {
 				t.Fatal("manifest plan did not distinguish a valid archive from inconsistent inventory")
+			}
+			// Independently exercise the production streaming verifier. The
+			// preceding pass proves every fixture has valid AEAD framing; this
+			// pass must reject the inconsistent inventory without buffering files.
+			verified := VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
+				_, err := opener.Open(ctx, scope, limits, bytes.NewReader(archive.Bytes()), func(_ context.Context, entry secret.BackupEntry, in io.Reader) error {
+					return accept(entry.Kind, entry.ID, in)
+				})
+				return err
+			})
+			if mode == "valid" && verified != nil || mode != "valid" && !errors.Is(verified, ErrMismatch) {
+				t.Fatal("production inventory verifier disagreed with independent oracle", verified)
+			}
+			if mode == "valid" {
+				for _, damaged := range [][]byte{append(bytes.Clone(archive.Bytes()), 1), bytes.Clone(archive.Bytes()[:archive.Len()-1])} {
+					accepted := 0
+					verified = VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
+						_, err := opener.Open(ctx, scope, limits, bytes.NewReader(damaged), func(_ context.Context, entry secret.BackupEntry, in io.Reader) error {
+							if err := accept(entry.Kind, entry.ID, in); err != nil {
+								return err
+							}
+							accepted++
+							return nil
+						})
+						return err
+					})
+					if accepted != len(entries) || !errors.Is(verified, ErrCallback) {
+						t.Fatal("complete valid inventory concealed failed archive end/outer EOF", accepted, verified)
+					}
+				}
 			}
 		})
 	}
