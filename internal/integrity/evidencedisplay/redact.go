@@ -145,12 +145,38 @@ var suspectAssignment = regexp.MustCompile(`(?i)(?:authorization|api[_-]?key|acc
 
 func suspect(value string) bool {
 	lower := strings.ToLower(value)
-	if strings.Contains(lower, "-----begin") && strings.Contains(lower, "private key-----") || suspectToken.MatchString(value) {
+	if strings.Contains(lower, "-----begin") && strings.Contains(lower, "private key-----") {
 		return true
+	}
+	// These exact, case-sensitive prefixes are necessary but not sufficient.
+	// Keep the original regex responsible for its suffix and word boundaries.
+	if (strings.Contains(value, "sk-") || strings.Contains(value, "ghp_") || strings.Contains(value, "AKIA")) && suspectToken.MatchString(value) {
+		return true
+	}
+	if !suspectAssignmentPossible(value, lower) {
+		return false
 	}
 	for _, match := range suspectAssignment.FindAllStringSubmatch(value, -1) {
 		v := strings.Trim(strings.TrimSpace(match[1]), "\"'")
 		if v != marker && !strings.EqualFold(v, "Bearer "+marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func suspectAssignmentPossible(value, lower string) bool {
+	// Non-ASCII input always falls back to the unchanged Unicode-folding regex,
+	// including long s and Kelvin sign. Do not replace its semantics with an
+	// approximate normalization. The common large ASCII case can use fast byte
+	// searches instead of running an unanchored regexp machine at every rune.
+	for index := range len(value) {
+		if value[index] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	for _, prefix := range []string{"authorization", "apikey", "api_key", "api-key", "accesstoken", "access_token", "access-token", "password", "secret"} {
+		if strings.Contains(lower, prefix) {
 			return true
 		}
 	}
