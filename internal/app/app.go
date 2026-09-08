@@ -74,7 +74,7 @@ func prepareWithNetworkAndLogger(ctx context.Context, cfg Config, network outbou
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	key, err := secret.LoadKeyFile(cfg.MasterKeyFile, cfg.MasterKeyVersion)
+	key, err := secret.LoadKeyFiles(cfg.MasterKeyVersion, cfg.masterKeyReferences())
 	if err != nil {
 		return nil, err
 	}

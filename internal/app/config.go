@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"model-integrity-inspector.local/mii/internal/buildinfo"
+	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	appruntime "model-integrity-inspector.local/mii/internal/platform/runtime"
 )
 
@@ -33,6 +34,7 @@ type Config struct {
 	DatabaseDSN           string `json:"-"`
 	MasterKeyFile         string
 	MasterKeyVersion      string
+	PreviousMasterKeys    []secret.KeyFileReference
 	SetupToken            string `json:"-"`
 	ReportPath            string
 }
@@ -61,10 +63,11 @@ type fileConfig struct {
 			Path string `yaml:"path"`
 		} `yaml:"reports"`
 		Security struct {
-			MasterKeySource  string `yaml:"master_key_source"`
-			MasterKeyFile    string `yaml:"master_key_file"`
-			MasterKeyVersion string `yaml:"master_key_version"`
-			SetupTokenEnv    string `yaml:"setup_token_env"`
+			MasterKeySource    string                    `yaml:"master_key_source"`
+			MasterKeyFile      string                    `yaml:"master_key_file"`
+			MasterKeyVersion   string                    `yaml:"master_key_version"`
+			PreviousMasterKeys []secret.KeyFileReference `yaml:"previous_master_keys"`
+			SetupTokenEnv      string                    `yaml:"setup_token_env"`
 		} `yaml:"security"`
 	} `yaml:"integrity"`
 }
@@ -139,6 +142,7 @@ func LoadConfig(path string, lookup func(string) string) (Config, error) {
 	out := Config{Role: role, Addr: valueOr(lookup("MII_ADDR"), c.Listen), PublicOrigin: valueOr(lookup("MII_PUBLIC_ORIGIN"), c.PublicOrigin), AllowInsecureLoopback: c.AllowInsecureLoopback,
 		DatabaseDriver: valueOr(lookup("MII_DATABASE_DRIVER"), c.Database.Provider), DatabasePath: valueOr(lookup("MII_DATABASE_PATH"), c.Database.Path), DatabaseDSN: lookup(c.Database.DSNEnv),
 		MasterKeyFile: valueOr(lookup("MII_MASTER_KEY_FILE"), c.Security.MasterKeyFile), MasterKeyVersion: valueOr(lookup("MII_MASTER_KEY_VERSION"), c.Security.MasterKeyVersion), SetupToken: lookup(c.Security.SetupTokenEnv), ReportPath: valueOr(lookup("MII_REPORT_PATH"), c.Reports.Path)}
+	out.PreviousMasterKeys = append([]secret.KeyFileReference(nil), c.Security.PreviousMasterKeys...)
 	if value := lookup("MII_ALLOW_INSECURE_LOOPBACK"); value != "" {
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -148,6 +152,16 @@ func LoadConfig(path string, lookup func(string) string) (Config, error) {
 	}
 	for _, path := range []*string{&out.DatabasePath, &out.MasterKeyFile, &out.ReportPath} {
 		if *path == "" {
+			return Config{}, ErrConfig
+		}
+		if !filepath.IsAbs(*path) {
+			*path = filepath.Join(base, *path)
+		}
+		*path = filepath.Clean(*path)
+	}
+	for i := range out.PreviousMasterKeys {
+		path := &out.PreviousMasterKeys[i].File
+		if *path == "" || strings.ContainsRune(*path, 0) {
 			return Config{}, ErrConfig
 		}
 		if !filepath.IsAbs(*path) {
@@ -168,6 +182,12 @@ func valueOr(value, fallback string) string {
 	return fallback
 }
 
+func (c Config) masterKeyReferences() []secret.KeyFileReference {
+	refs := make([]secret.KeyFileReference, 1, len(c.PreviousMasterKeys)+1)
+	refs[0] = secret.KeyFileReference{Version: c.MasterKeyVersion, File: c.MasterKeyFile}
+	return append(refs, c.PreviousMasterKeys...)
+}
+
 func (c Config) Validate() error {
 	components := c.Role.Components()
 	if !components.Server && !components.Worker {
@@ -183,6 +203,9 @@ func (c Config) Validate() error {
 		return ErrConfig
 	}
 	if c.MasterKeyFile == "" || c.MasterKeyVersion == "" || c.ReportPath == "" {
+		return ErrConfig
+	}
+	if err := secret.ValidateKeyFiles(c.MasterKeyVersion, c.masterKeyReferences()); err != nil {
 		return ErrConfig
 	}
 	if !filepath.IsAbs(c.ReportPath) || strings.ContainsRune(c.ReportPath, 0) || filepath.Clean(c.ReportPath) == filepath.VolumeName(c.ReportPath)+string(filepath.Separator) {

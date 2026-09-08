@@ -19,6 +19,12 @@ integrity:
     master_key_source: file
     master_key_file: ../data/integrity-master.key
     master_key_version: v1
+    # Keep every historical version still referenced by data/audit/backups.
+    # Explicit paths only, resolved relative to this file; no key bytes here.
+    # previous_master_keys:
+    #   - version: old-version
+    #     file: ../data/previous-integrity-master.key
+    previous_master_keys: []
     # Remote first initialization additionally requires X-Setup-Token matching
     # this environment variable (>=32 characters). Never put its value here.
     setup_token_env: MII_SETUP_TOKEN

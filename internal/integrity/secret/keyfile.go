@@ -22,14 +22,21 @@ var (
 // user, SYSTEM and trusted local Administrators as data/control-capable trustees.
 // Administrators/root are trusted host operators and cannot be excluded by ACLs.
 func LoadKeyFile(path, version string) (*KeyRing, error) {
-	if !versionPattern.MatchString(version) {
-		return nil, ErrKeyFileInvalid
-	}
+	return LoadKeyFiles(version, []KeyFileReference{{Version: version, File: path}})
+}
+
+func readRestrictedMaster(path string) (result []byte, failure error) {
 	file, err := openRestrictedKeyFile(path, false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil && failure == nil {
+			clear(result)
+			result = nil
+			failure = ErrUnavailable
+		}
+	}()
 	if err := validateKeyHandle(file); err != nil {
 		return nil, err
 	}
@@ -42,7 +49,9 @@ func LoadKeyFile(path, version string) (*KeyRing, error) {
 	if err := validateKeyHandle(file); err != nil {
 		return nil, err
 	}
-	return NewKeyRing(version, map[string][]byte{version: master[:32]})
+	result = make([]byte, 32)
+	copy(result, master[:32])
+	return result, nil
 }
 
 // CreateKeyFile atomically creates a new restricted regular file and never

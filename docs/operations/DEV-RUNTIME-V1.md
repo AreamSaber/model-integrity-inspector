@@ -22,6 +22,10 @@
 
 可覆盖：`APP_ROLE`、`MII_ADDR`、`MII_PUBLIC_ORIGIN`、`MII_ALLOW_INSECURE_LOOPBACK`、`MII_DATABASE_DRIVER`、`MII_DATABASE_PATH`、`MII_MASTER_KEY_FILE`、`MII_MASTER_KEY_VERSION`、`MII_REPORT_PATH`。数据库 DSN、初始化令牌只从 `dsn_env` / `setup_token_env` 指定的环境变量读取，不允许在普通 YAML 中存放值。默认名称分别为 `MII_DATABASE_DSN` / `MII_SETUP_TOKEN`。
 
+历史主密钥可在 `integrity.security.previous_master_keys` 中显式提供 `{version, file}` 列表；当前写入仍只用 `master_key_version` / `master_key_file`。旧配置无需改动。历史路径同样相对配置文件，必须满足原有受限ACL/权限、普通单链接文件及恰好32字节检查；列表没有环境插值、inline key或自动目录扫描。全部文件成功加载后才创建数据/报告目录，任一失败不回退为只有当前钥匙。版本区分大小写且不可重复（包括与环境覆盖后的当前版本重复）；当前加历史最多64个文件，是启动资源上限，不能为满足此上限删除数据仍需要的历史版本。
+
+这只是多版本加载能力，不是已完成自动轮换或恢复校验。不要仅因新钥匙启动成功就移除旧文件：审计、Secret、响应证据及备份归档可能仍引用旧版本，完整恢复工具必须核对实际引用并执行解密/全链验证。主密钥文件及该带私有路径的运行配置不得原样放进备份，备份配置模板必须由闭集安全字段另外生成。
+
 SQLite 只允许 `APP_ROLE=all`。PostgreSQL 允许 server/worker/all；server/all 执行带锁迁移，worker 只检查版本，不能自动迁移。原有迁移不可编辑，每次变更新增迁移。
 
 远程使用 HTTPS 反向代理、明确的 `public_origin` 和 `allow_insecure_loopback: false`。管理 HTTP 不自带 TLS 终结器；禁止把本地测试配置直接暴露公网。反向代理应保留 Origin，应用不信任 `X-Forwarded-For` 以绕过首次引导或 IP 限速。首次初始化要求用户输入与 `MII_SETUP_TOKEN` 匹配的至少 32 字符随机引导令牌，初始化后入口永久关闭。引导令牌不会保存到数据库，只保留运行期 hash；可在初始化后移除环境变量并重启。
