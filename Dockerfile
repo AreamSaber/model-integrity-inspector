@@ -30,7 +30,10 @@ COPY .dockerignore ./.dockerignore
 # the compiled binary (with production assets), certificates and notices.
 COPY web/ ./web/
 COPY --from=web /src/web/dist ./web/dist/
-RUN go test ./...
+# Both database snapshots and authenticated-file tests need about 50 MiB each
+# on the same default 64 MiB /dev/shm when this build layer is overlay. Keep all
+# packages/cases and their internal concurrency; serialize only test binaries.
+RUN go test -p 1 ./...
 RUN go test -tags webassets ./web ./internal/app
 RUN CGO_ENABLED=0 GOOS=linux go build -tags webassets -trimpath -buildvcs=false \
     -ldflags "-s -w -X model-integrity-inspector.local/mii/internal/buildinfo.version=${VERSION} -X model-integrity-inspector.local/mii/internal/buildinfo.commit=${COMMIT} -X model-integrity-inspector.local/mii/internal/buildinfo.builtAt=${BUILT_AT}" \

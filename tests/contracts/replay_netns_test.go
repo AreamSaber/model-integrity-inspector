@@ -142,7 +142,7 @@ func TestReplayNamespacePolicySourcesPresentOnlyInBuildStage(t *testing.T) {
 	}
 	for _, copyLine := range []string{"COPY scripts/test-replay-netns.ps1 ./scripts/test-replay-netns.ps1", "COPY .github/workflows/ci.yml ./.github/workflows/ci.yml", "COPY .dockerignore ./.dockerignore"} {
 		at := strings.Index(build, copyLine)
-		if at < 0 || at > strings.Index(build, "RUN go test ./...") || strings.Contains(runtime, copyLine) {
+		if at < 0 || at > strings.Index(build, dockerFullSuiteInstruction) || strings.Contains(runtime, copyLine) {
 			t.Fatal("namespace contract sources must exist only before build-stage tests")
 		}
 	}
