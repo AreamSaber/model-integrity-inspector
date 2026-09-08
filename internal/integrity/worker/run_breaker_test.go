@@ -152,7 +152,7 @@ func TestRunWorkerCircuitCancelsInflightWithoutUserCancellation(t *testing.T) {
 		if calls.Load() != 3 || finished.RequestCount != 3 || finished.FinalizedSampleCount != 4 || finished.CancelRequestedAt != nil || finished.CircuitBreakerCode != "MI_CIRCUIT_AUTH_FAILURES" || finished.ReservedTokens != 0 {
 			t.Fatal("inflight circuit accounting incorrect")
 		}
-		attempt, _ := evidenceFor(t, f, tenant, samples[0])
+		attempt := attemptWithoutResponseCapture(t, f, tenant, samples[0])
 		if attempt.ErrorCode == nil || *attempt.ErrorCode != "MI_EXECUTION_CIRCUIT_OPEN" || attempt.Validity != "NOT_APPLICABLE" {
 			t.Fatal("circuit interruption mislabelled as user cancellation or network failure")
 		}

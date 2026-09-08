@@ -22,8 +22,9 @@ func analysisReadyFixture(t *testing.T, store *Store, count int) (*Tenant, *JobQ
 			t.Fatal("sample lease", err)
 		}
 		attempt := reserveTestAttempt(t, tenant, queue, *lease, sample)
+		body := responseFixtureBody(t, tenant, queue, *lease, sample, attempt)
 		if err := queue.CompleteWith(context.Background(), *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(sample.ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, sample, attempt))
+			return tx.FinishLegacyAttemptWithCapture(sample.ID, attempt.ID, successOutcome(), 0, body)
 		}); err != nil {
 			t.Fatal(err)
 		}

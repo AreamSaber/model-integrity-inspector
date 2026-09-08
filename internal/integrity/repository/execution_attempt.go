@@ -15,8 +15,8 @@ import (
 )
 
 // serializeReservations is a tiny DB-wide mutex for exact hierarchical quotas.
-// It never covers network I/O. Fixed acquisition order (job, mutex, sample, run,
-// target) avoids cross-organization oversubscription on PostgreSQL.
+// It never covers network I/O. Fixed acquisition order (job, any required org
+// policy, mutex, sample, run, target) avoids cross-organization oversubscription.
 func (tx *TenantTransaction) serializeReservations() error {
 	result := tx.db.Exec("UPDATE integrity_execution_mutex SET touched = 0 WHERE lock_name = 'global-reservation'")
 	if result.Error != nil {
@@ -336,17 +336,17 @@ func validAttemptOutcome(outcome domain.AttemptOutcome) bool {
 // FinishAttempt, final sample selection and retry Job enqueue must share the
 // same CompleteWith transaction. A retry retains the exact frozen nonce/request.
 func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int) error {
-	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, nil, nil)
+	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, nil, nil, false)
 }
 
-func (tx *TenantTransaction) finishAttempt(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, candidates *AttemptDerivedCandidates, bodies *AttemptBodyCapture) error {
+func (tx *TenantTransaction) finishAttempt(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, candidates *AttemptDerivedCandidates, bodies *AttemptBodyCapture, captureSettlement bool) error {
 	original := outcome
 	if !validAttemptOutcome(outcome) || jitter < 0 || jitter > 1000 {
 		return ErrConfiguration
 	}
 	var job Job
 	var err error
-	if candidates == nil {
+	if !captureSettlement {
 		job, err = tx.executionJob(JobSampleExecute, sampleID, true)
 	} else {
 		job, err = tx.derivedCompletionJob(sampleID)
@@ -402,8 +402,8 @@ func (tx *TenantTransaction) finishAttempt(sampleID, attemptID int64, outcome do
 	if err := tx.settleAttempt(run, frozen, sample, plan, attempt, outcome, now, jitter, false); err != nil {
 		return err
 	}
-	if candidates != nil {
-		if err := tx.persistDerivedBodies(run, sample, attempt, policy, bodies); err != nil {
+	if captureSettlement {
+		if err := tx.persistAttemptBodies(run, sample, attempt, policy, bodies); err != nil {
 			return err
 		}
 	}

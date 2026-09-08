@@ -398,7 +398,16 @@ func TestRunWorkerCancellationAndRotationAbortInflightWithinFiveSeconds(t *testi
 				if action == "cancel" && finished.Status != "CANCELLED" {
 					t.Fatal("cancelled run not retained")
 				}
-				_, _ = evidenceFor(t, f, tenant, samples[0])
+				// The upstream sent no response before its request was cancelled.
+				// A cancelled capture may not fabricate an original body receipt.
+				attempt := attemptWithoutResponseCapture(t, f, tenant, samples[0])
+				wantCode := "MI_EXECUTION_CANCELLED"
+				if action == "rotate" {
+					wantCode = "MI_EXECUTION_TARGET_STALE"
+				}
+				if attempt.Validity != "NOT_APPLICABLE" || attempt.ErrorCode == nil || *attempt.ErrorCode != wantCode {
+					t.Fatal("interrupted legacy attempt lost its actual stop classification")
+				}
 			})
 		})
 	}

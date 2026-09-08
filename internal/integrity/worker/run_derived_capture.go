@@ -25,7 +25,7 @@ func runDerivationContext(ctx context.Context) (context.Context, context.CancelF
 // after receiving the response, then prepare/seal outside database locks.
 // A disabled capture is retained as an explicit private no-body receipt, never
 // retried later under a more permissive policy. S1 preparation is independent.
-func captureRunDerivedBody(ctx context.Context, execution Execution, sealer *secret.DisplaySealer, request domain.NormalizedRequest, result runCallResult, key []byte, headers map[string][]byte) (*repository.AttemptBodyCapture, repository.DisplayEvidenceRecord) {
+func captureRunResponseBody(ctx context.Context, execution Execution, sealer *secret.DisplaySealer, request domain.NormalizedRequest, result runCallResult, key []byte, headers map[string][]byte) (*repository.AttemptBodyCapture, repository.DisplayEvidenceRecord) {
 	captureCtx, stop := context.WithTimeout(ctx, 2*time.Second)
 	defer stop()
 	var capture *repository.AttemptBodyCapture

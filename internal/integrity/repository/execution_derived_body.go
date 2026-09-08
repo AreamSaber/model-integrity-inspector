@@ -16,6 +16,7 @@ import (
 type AttemptBodyCapture struct {
 	store             *Store
 	scope             AttemptDerivedScope
+	sourceMode        string
 	generation        int
 	captured, expires int64
 	disabled          bool
@@ -105,21 +106,29 @@ func (tx *TenantTransaction) BindAttemptResponseCapture(sampleID, attemptID int6
 	if err != nil {
 		return nil, err
 	}
-	if run.AnalysisSourceVersion != domain.AnalysisSourceDerivedV1 || attempt.DerivedReceipt != DerivedPending || attempt.StartedAt == nil {
+	validMode := run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1 && attempt.DerivedReceipt == DerivedPending || run.AnalysisSourceVersion == AnalysisSourceLegacyV1 && attempt.DerivedReceipt == DerivedLegacy
+	if !validMode || attempt.StartedAt == nil {
 		return nil, ErrAnalysisSource
 	}
 	now, err := queueTime(tx.db, tx.store.driver)
 	if err != nil || attempt.StartedAt.After(now) {
 		return nil, ErrAnalysisSource
 	}
-	c := &AttemptBodyCapture{store: tx.store, scope: derivedScopeFor(run, sample, attempt), generation: tx.leaseGeneration, captured: now.UnixMicro(), disabled: policy.Days() == 0}
+	c := &AttemptBodyCapture{store: tx.store, scope: derivedScopeFor(run, sample, attempt), sourceMode: run.AnalysisSourceVersion, generation: tx.leaseGeneration, captured: now.UnixMicro(), disabled: policy.Days() == 0}
 	if !c.disabled {
 		c.expires = c.captured + int64(policy.Days())*responseRetentionDayMicros
 	}
 	return c, nil
 }
 
-func (tx *TenantTransaction) persistDerivedBodies(run RunRecord, sample LogicalSampleRecord, attempt AttemptRecord, policy ResponseRetentionPolicy, capture *AttemptBodyCapture) error {
+// FinishLegacyAttemptWithCapture retains the already-signed legacy source mode.
+// A nil capture explicitly records not_captured; no S1 is invented. Only this
+// private capture can authorize new legacy bodies under the fresh policy.
+func (tx *TenantTransaction) FinishLegacyAttemptWithCapture(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, bodies *AttemptBodyCapture) error {
+	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, nil, bodies, true)
+}
+
+func (tx *TenantTransaction) persistAttemptBodies(run RunRecord, sample LogicalSampleRecord, attempt AttemptRecord, policy ResponseRetentionPolicy, capture *AttemptBodyCapture) error {
 	// settleAttempt may have waited on an audit head. Observe again after that
 	// wait; no new policy lock is acquired after audit locks.
 	now, err := queueTime(tx.db, tx.store.driver)
@@ -128,7 +137,7 @@ func (tx *TenantTransaction) persistDerivedBodies(run RunRecord, sample LogicalS
 	}
 	state := BodyNotCaptured
 	if capture != nil {
-		if capture.store != tx.store || capture.scope != derivedScopeFor(run, sample, attempt) || capture.generation != tx.leaseGeneration || capture.captured <= 0 || capture.captured > now.UnixMicro() || attempt.StartedAt == nil || capture.captured < attempt.StartedAt.UnixMicro() {
+		if capture.store != tx.store || capture.sourceMode != run.AnalysisSourceVersion || capture.scope != derivedScopeFor(run, sample, attempt) || capture.generation != tx.leaseGeneration || capture.captured <= 0 || capture.captured > now.UnixMicro() || attempt.StartedAt == nil || capture.captured < attempt.StartedAt.UnixMicro() {
 			return ErrAnalysisSource
 		}
 		// Reobserve the clock after all lock waits, without reacquiring org after
@@ -148,5 +157,16 @@ func (tx *TenantTransaction) persistDerivedBodies(run RunRecord, sample LogicalS
 			state = BodyRecorded
 		}
 	}
-	return tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND derived_receipt = ?", tx.orgID, attempt.ID, DerivedRecorded).Update("response_body_receipt", state).Error
+	receipt := DerivedLegacy
+	if run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1 {
+		receipt = DerivedRecorded
+	}
+	result := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'COMPLETED' AND derived_receipt = ?", tx.orgID, attempt.ID, receipt).Update("response_body_receipt", state)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrAnalysisSource
+	}
+	return nil
 }

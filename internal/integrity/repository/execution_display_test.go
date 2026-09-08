@@ -13,20 +13,21 @@ import (
 
 // Only structural ciphertext is used here; real keys, TLS and exact-AAD opening
 // are tested in worker. Repository does not import crypto or analysis packages.
-func displayFixtureRecord(t *testing.T, tenant *Tenant, q *JobQueue, lease JobLease, sample LogicalSampleRecord, attempt AttemptRecord) DisplayEvidenceRecord {
+func displayFixtureRecord(t *testing.T, tenant *Tenant, q *JobQueue, lease JobLease, sample LogicalSampleRecord, attempt AttemptRecord) (*AttemptBodyCapture, DisplayEvidenceRecord) {
 	t.Helper()
-	var record DisplayEvidenceRecord
+	var capture *AttemptBodyCapture
 	if err := q.WithLease(tenant.ctx, lease, func(tx *TenantTransaction) error {
 		var err error
-		record, err = tx.BindAttemptDisplayCapture(sample.ID, attempt.ID, attempt.RequestHash)
+		capture, err = tx.BindAttemptResponseCapture(sample.ID, attempt.ID, attempt.RequestHash)
 		return err
 	}); err != nil {
 		t.Fatal("display capture binding", err)
 	}
+	record := capture.DisplayBinding()
 	record.SourceHash, record.PayloadHash = strings.Repeat("b", 64), strings.Repeat("c", 64)
 	record.Version, record.KeyVersion, record.PlaintextBytes = 1, "fixture", 32
 	record.Nonce, record.Ciphertext = bytes.Repeat([]byte{3}, 12), bytes.Repeat([]byte{4}, 48)
-	return record
+	return capture, record
 }
 
 func assertDisplaySettlementRolledBack(t *testing.T, tenant *Tenant, runID int64, sample LogicalSampleRecord, attempt AttemptRecord, lease JobLease) {
@@ -71,7 +72,7 @@ func TestDisplayEvidenceBindingValidationAndLegacyRemainSeparate(t *testing.T) {
 			t.Fatal("claim display fixture")
 		}
 		attempt := reserveTestAttempt(t, tenant, queue, *lease, samples[0])
-		display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+		capture, display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
 		evidence := testEvidenceRecord(tenant, samples[0], attempt)
 		for _, change := range []struct {
 			name   string
@@ -101,22 +102,21 @@ func TestDisplayEvidenceBindingValidationAndLegacyRemainSeparate(t *testing.T) {
 			t.Run(change.name, func(t *testing.T) {
 				bad := display
 				change.mutate(&bad)
-				err := queue.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-					return tx.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, evidence, bad)
-				})
-				if !errors.Is(err, ErrConfiguration) {
+				_, err := capture.WithRecords(evidence, bad)
+				if !errors.Is(err, ErrAnalysisSource) {
 					t.Fatal("invalid display binding accepted", err)
 				}
 				assertDisplaySettlementRolledBack(t, tenant, run.ID, samples[0], attempt, *lease)
 			})
 		}
+		body := responseFixtureBody(t, tenant, queue, *lease, samples[0], attempt)
 		if err := queue.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[0].ID, attempt.ID, successOutcome(), 0, evidence)
+			return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 		}); err != nil {
 			t.Fatal(err)
 		}
 		var count int64
-		if err := store.db.Model(&DisplayEvidenceRecord{}).Count(&count).Error; err != nil || count != 0 {
+		if err := store.db.Model(&DisplayEvidenceRecord{}).Where("state = ? OR source_hash <> ''", DisplayCaptured).Count(&count).Error; err != nil || count != 0 {
 			t.Fatal("legacy settlement invented display provenance")
 		}
 	})
@@ -133,12 +133,13 @@ func TestDisplayEvidenceCapturedAndUnavailableAtomicallySettle(t *testing.T) {
 					t.Fatal("claim display fixture")
 				}
 				attempt := reserveTestAttempt(t, tenant, queue, *lease, samples[0])
-				display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+				capture, display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
 				if state != DisplayCaptured {
 					display = DisplayEvidenceRecord{OrganizationID: tenant.orgID, RunID: run.ID, LogicalSampleID: samples[0].ID, AttemptID: attempt.ID, RequestHash: attempt.RequestHash, Policy: DisplayEvidencePolicy, State: state}
 				}
+				body := attachFixtureBody(t, capture, testEvidenceRecord(tenant, samples[0], attempt), display)
 				if err := queue.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-					return tx.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, samples[0], attempt), display)
+					return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 				}); err != nil {
 					t.Fatal(err)
 				}
@@ -169,7 +170,8 @@ func TestDisplayEvidenceSQLFailuresAndLostLeaseRollBackEverything(t *testing.T) 
 					t.Fatal("claim display fixture")
 				}
 				attempt := reserveTestAttempt(t, tenant, queue, *lease, samples[0])
-				display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+				capture, display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+				body := attachFixtureBody(t, capture, testEvidenceRecord(tenant, samples[0], attempt), display)
 				if fault != "final_fence" {
 					table, condition := "", ""
 					switch fault {
@@ -191,7 +193,7 @@ func TestDisplayEvidenceSQLFailuresAndLostLeaseRollBackEverything(t *testing.T) 
 					}
 				}
 				err = queue.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-					if err := tx.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, samples[0], attempt), display); err != nil {
+					if err := tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body); err != nil {
 						return err
 					}
 					if fault == "final_fence" {
@@ -241,19 +243,20 @@ func TestDisplayEvidenceCaptureAndCommitRequireCurrentOwnerAndTransaction(t *tes
 			t.Fatal("claim display fixture")
 		}
 		attempt := reserveTestAttempt(t, tenant, queue, *lease, samples[0])
-		display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+		capture, display := displayFixtureRecord(t, tenant, queue, *lease, samples[0], attempt)
+		body := attachFixtureBody(t, capture, testEvidenceRecord(tenant, samples[0], attempt), display)
 		var escaped *TenantTransaction
 		if err := queue.WithLease(tenant.ctx, *lease, func(tx *TenantTransaction) error { escaped = tx; return nil }); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := escaped.BindAttemptDisplayCapture(samples[0].ID, attempt.ID, attempt.RequestHash); !errors.Is(err, ErrTransactionClosed) {
+		if _, err := escaped.BindAttemptResponseCapture(samples[0].ID, attempt.ID, attempt.RequestHash); !errors.Is(err, ErrTransactionClosed) {
 			t.Fatal("escaped capture transaction usable")
 		}
-		if err := escaped.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, samples[0], attempt), display); !errors.Is(err, ErrTransactionClosed) {
+		if err := escaped.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body); !errors.Is(err, ErrTransactionClosed) {
 			t.Fatal("escaped settlement transaction usable")
 		}
 		if err := queue.WithLease(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, samples[0], attempt), display)
+			return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 		}); !errors.Is(err, ErrJobLeaseLost) {
 			t.Fatal("display settlement bypassed CompleteWith")
 		}
@@ -262,7 +265,7 @@ func TestDisplayEvidenceCaptureAndCommitRequireCurrentOwnerAndTransaction(t *tes
 			hash            string
 		}{{samples[0].ID + 1, attempt.ID, attempt.RequestHash}, {samples[0].ID, attempt.ID + 1, attempt.RequestHash}, {samples[0].ID, attempt.ID, strings.Repeat("f", 64)}} {
 			err := queue.WithLease(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-				_, err := tx.BindAttemptDisplayCapture(wrong.sample, wrong.attempt, wrong.hash)
+				_, err := tx.BindAttemptResponseCapture(wrong.sample, wrong.attempt, wrong.hash)
 				return err
 			})
 			if !errors.Is(err, ErrJobLeaseLost) {
@@ -273,13 +276,13 @@ func TestDisplayEvidenceCaptureAndCommitRequireCurrentOwnerAndTransaction(t *tes
 			t.Fatal(err)
 		}
 		if err := queue.WithLease(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			_, err := tx.BindAttemptDisplayCapture(samples[0].ID, attempt.ID, attempt.RequestHash)
+			_, err := tx.BindAttemptResponseCapture(samples[0].ID, attempt.ID, attempt.RequestHash)
 			return err
 		}); !errors.Is(err, ErrJobLeaseLost) {
 			t.Fatal("lost owner captured")
 		}
 		if err := queue.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidenceAndDisplay(samples[0].ID, attempt.ID, successOutcome(), 0, testEvidenceRecord(tenant, samples[0], attempt), display)
+			return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 		}); !errors.Is(err, ErrJobLeaseLost) {
 			t.Fatal("lost owner committed presealed display")
 		}

@@ -191,5 +191,5 @@ func (tx *TenantTransaction) derivedCompletionJob(sampleID int64) (Job, error) {
 }
 
 func (tx *TenantTransaction) FinishAttemptWithDerived(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, candidates AttemptDerivedCandidates, bodies *AttemptBodyCapture) error {
-	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, &candidates, bodies)
+	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, &candidates, bodies, true)
 }

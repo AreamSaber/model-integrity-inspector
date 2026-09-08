@@ -212,11 +212,7 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		return credentials.Use(func(key []byte, headers map[string][]byte) error {
 			result = callRunSample(callCtx, execution, config, plan, sample, samplePlan, key, headers)
 			if result.attempt.ID != 0 {
-				if derived {
-					result.bodies, result.display = captureRunDerivedBody(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
-				} else {
-					result.display = captureRunDisplay(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
-				}
+				result.bodies, result.display = captureRunResponseBody(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
 			}
 			return nil
 		})
@@ -277,6 +273,13 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		return nil, repository.ErrUnavailable
 	}
 	evidence := repository.ResponseEvidenceRecord{OrganizationID: scope.OrganizationID, RunID: scope.RunID, LogicalSampleID: scope.LogicalSampleID, AttemptID: scope.AttemptID, RequestHash: scope.RequestHash, KeyVersion: sealed.KeyVersion, Nonce: sealed.Nonce, Ciphertext: sealed.Ciphertext, PlaintextBytes: sealed.PlaintextBytes, ContentHash: sealed.ContentHash}
+	var bodies *repository.AttemptBodyCapture
+	if result.bodies != nil {
+		bodies, err = result.bodies.WithRecords(evidence, result.display)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if derived {
 		deriveCtx, stop := runDerivationContext(ctx)
 		defer stop()
@@ -284,19 +287,12 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		if err != nil {
 			return nil, err
 		}
-		var bodies *repository.AttemptBodyCapture
-		if result.bodies != nil {
-			bodies, err = result.bodies.WithRecords(evidence, result.display)
-			if err != nil {
-				return nil, err
-			}
-		}
 		return func(tx *repository.TenantTransaction) error {
 			return tx.FinishAttemptWithDerived(sample.ID, result.attempt.ID, result.outcome, result.jitter, candidates, bodies)
 		}, nil
 	}
 	return func(tx *repository.TenantTransaction) error {
-		return tx.FinishAttemptWithEvidenceAndDisplay(sample.ID, result.attempt.ID, result.outcome, result.jitter, evidence, result.display)
+		return tx.FinishLegacyAttemptWithCapture(sample.ID, result.attempt.ID, result.outcome, result.jitter, bodies)
 	}, nil
 }
 

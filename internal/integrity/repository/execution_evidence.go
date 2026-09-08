@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,34 +40,15 @@ func (r ResponseEvidenceRecord) LogValue() slog.Value       { return slog.String
 
 var responseEvidenceVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-// FinishAttemptWithEvidence must be called only by a real sample handler through
-// CompleteWith. Result, encrypted evidence, final sample, dependent Job and audit
-// either all commit or none do. Historical request fields are never rewritten.
-func (tx *TenantTransaction) FinishAttemptWithEvidence(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, evidence ResponseEvidenceRecord) error {
-	if tx.closed.Load() {
+// FinishAttemptWithEvidence is retained only to fail closed for old callers.
+// A public envelope cannot prove its original DB capture time or policy. Do not
+// mint that proof during completion: doing so could revive an excluded body.
+// Call FinishLegacyAttemptWithCapture with a prior private capture instead.
+func (tx *TenantTransaction) FinishAttemptWithEvidence(_, _ int64, _ domain.AttemptOutcome, _ int, _ ResponseEvidenceRecord) error {
+	if tx == nil || tx.closed.Load() {
 		return ErrTransactionClosed
 	}
-	if evidence.OrganizationID != tx.orgID || evidence.LogicalSampleID != sampleID || evidence.AttemptID != attemptID || evidence.RunID <= 0 || !executionHash.MatchString(evidence.RequestHash) || !executionHash.MatchString(evidence.ContentHash) || !responseEvidenceVersion.MatchString(evidence.KeyVersion) || len(evidence.Nonce) != 12 || evidence.PlaintextBytes < 1 || evidence.PlaintextBytes > 1<<20 || len(evidence.Ciphertext) != evidence.PlaintextBytes+16 {
-		return ErrConfiguration
-	}
-	var attempt AttemptRecord
-	if err := tx.db.Where("organization_id = ? AND id = ? AND logical_sample_id = ? AND run_id = ? AND request_hash = ?", tx.orgID, attemptID, sampleID, evidence.RunID, evidence.RequestHash).First(&attempt).Error; err != nil {
-		return ErrJobLeaseLost
-	}
-	if err := tx.FinishAttempt(sampleID, attemptID, outcome, jitter); err != nil {
-		return err
-	}
-	now, err := queueTime(tx.db, tx.store.driver)
-	if err != nil {
-		return err
-	}
-	// Development policy is fixed at 30 days until the retention service binds
-	// the organization policy. Callers cannot silently extend this deadline.
-	evidence.CreatedAt = now
-	evidence.ExpiresAt = now.Add(30 * 24 * time.Hour)
-	evidence.Nonce = bytes.Clone(evidence.Nonce)
-	evidence.Ciphertext = bytes.Clone(evidence.Ciphertext)
-	return tx.db.Create(&evidence).Error
+	return ErrAnalysisSource
 }
 
 // GetResponseEvidenceForAnalysis does not depend on a live target or Secret.

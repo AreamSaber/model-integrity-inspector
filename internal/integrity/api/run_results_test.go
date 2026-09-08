@@ -168,14 +168,32 @@ func (f resultHTTPFixture) publish(t *testing.T) {
 				response.ContentType = "text/event-stream"
 				response.EndCause = "done"
 			}
+			// Capture the actual DB scope/time/policy before final completion.
+			// This fixture has no display-redaction capture, so retain a valid
+			// explicit unavailable record alongside the original analysis body.
+			var capture *repository.AttemptBodyCapture
+			if err := f.queue.WithLease(f.ctx, *lease, func(tx *repository.TenantTransaction) error {
+				var e error
+				capture, e = tx.BindAttemptResponseCapture(sample.ID, attempt.ID, snapshot.RequestHash)
+				return e
+			}); err != nil {
+				t.Fatal(err)
+			}
 			e, err := f.keys.EncryptResponseEvidence(secret.EvidenceScope{OrganizationID: f.org, RunID: f.runID, LogicalSampleID: sample.ID, AttemptID: attempt.ID, RequestHash: snapshot.RequestHash}, response)
 			if err != nil {
 				t.Fatal(err)
 			}
 			outcome := domain.AttemptOutcome{Validity: "VALID_WITH_WARNING", HTTPStatus: 200, PromptTokens: &prompt, CompletionTokens: local.Tokens, LocalCompletionTokens: *local.Tokens, TokenizerID: local.TokenizerID, TokenizerQuality: string(local.Quality), DurationMillis: 1}
 			record := repository.ResponseEvidenceRecord{OrganizationID: f.org, RunID: f.runID, LogicalSampleID: sample.ID, AttemptID: attempt.ID, RequestHash: snapshot.RequestHash, KeyVersion: e.KeyVersion, Nonce: e.Nonce, Ciphertext: e.Ciphertext, PlaintextBytes: e.PlaintextBytes, ContentHash: e.ContentHash}
+			display := capture.DisplayBinding()
+			display.State = repository.DisplayUnavailableCapture
+			display.CapturedAtMicros, display.ExpiresAtMicros = 0, 0
+			bodies, err := capture.WithRecords(record, display)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := f.queue.CompleteWith(f.ctx, *lease, func(tx *repository.TenantTransaction) error {
-				return tx.FinishAttemptWithEvidence(sample.ID, attempt.ID, outcome, 0, record)
+				return tx.FinishLegacyAttemptWithCapture(sample.ID, attempt.ID, outcome, 0, bodies)
 			}); err != nil {
 				t.Fatal(err)
 			}

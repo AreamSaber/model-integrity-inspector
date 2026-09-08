@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,10 +55,10 @@ func (v DisplayEvidenceRecord) Format(s fmt.State, _ rune) { _, _ = io.WriteStri
 func (DisplayEvidenceRecord) MarshalJSON() ([]byte, error) { return nil, ErrEvidenceSerialization }
 func (v DisplayEvidenceRecord) LogValue() slog.Value       { return slog.StringValue(v.String()) }
 
-// BindAttemptDisplayCapture runs in a short WithLease transaction after the
-// actual response was received. It supplies authoritative database time and a
-// fenced, persistent Attempt identity. Prepare/Seal/network work never runs in
-// this transaction. The fixed development policy cannot be caller-extended.
+// BindAttemptDisplayCapture is compatibility metadata only, not a private body
+// capture or permission to persist either envelope. Its old public AAD shape
+// remains fixed at 30 days; both public-envelope finish methods now reject it.
+// New Workers must use BindAttemptResponseCapture and its DisplayBinding.
 func (tx *TenantTransaction) BindAttemptDisplayCapture(sampleID, attemptID int64, requestHash string) (DisplayEvidenceRecord, error) {
 	if tx.closed.Load() {
 		return DisplayEvidenceRecord{}, ErrTransactionClosed
@@ -99,45 +98,12 @@ func validDisplayRecord(v DisplayEvidenceRecord) bool {
 	return v.SourceHash == "" && v.Version == 0 && v.KeyVersion == "" && len(v.Nonce) == 0 && len(v.Ciphertext) == 0 && v.PlaintextBytes == 0 && v.PayloadHash == "" && v.CapturedAtMicros == 0 && v.ExpiresAtMicros == 0
 }
 
-// FinishAttemptWithEvidenceAndDisplay extends the existing fenced settlement.
-// All Attempt/Job/audit/raw/display changes commit together. The old method is
-// intentionally not retrofitted: legacy evidence never acquires a fake proof.
-func (tx *TenantTransaction) FinishAttemptWithEvidenceAndDisplay(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, evidence ResponseEvidenceRecord, display DisplayEvidenceRecord) error {
-	if tx.closed.Load() {
+// FinishAttemptWithEvidenceAndDisplay rejects envelopes without a private
+// capture. Public display AAD fields are not a retention capability. Call the
+// mode-specific typed finish with a prior BindAttemptResponseCapture instead.
+func (tx *TenantTransaction) FinishAttemptWithEvidenceAndDisplay(_, _ int64, _ domain.AttemptOutcome, _ int, _ ResponseEvidenceRecord, _ DisplayEvidenceRecord) error {
+	if tx == nil || tx.closed.Load() {
 		return ErrTransactionClosed
 	}
-	// This compatibility entry remains fixed at its original 30-day policy.
-	// Only a private derived capture can bind the organization's 1..180 days.
-	if display.State == DisplayCaptured && display.ExpiresAtMicros-display.CapturedAtMicros != displayRetentionMicros {
-		return ErrConfiguration
-	}
-	if !validDisplayRecord(display) || display.OrganizationID != tx.orgID || display.OrganizationID != evidence.OrganizationID || display.RunID != evidence.RunID || display.LogicalSampleID != sampleID || display.LogicalSampleID != evidence.LogicalSampleID || display.AttemptID != attemptID || display.AttemptID != evidence.AttemptID || display.RequestHash != evidence.RequestHash {
-		return ErrConfiguration
-	}
-	if err := tx.FinishAttemptWithEvidence(sampleID, attemptID, outcome, jitter, evidence); err != nil {
-		return err
-	}
-	now, err := queueTime(tx.db, tx.store.driver)
-	if err != nil {
-		return err
-	}
-	if display.State == DisplayCaptured {
-		var attempt AttemptRecord
-		if err := tx.db.Where("organization_id = ? AND id = ? AND run_id = ? AND logical_sample_id = ? AND request_hash = ? AND job_id = ? AND lease_generation = ? AND status = 'COMPLETED'", tx.orgID, attemptID, display.RunID, sampleID, display.RequestHash, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
-			return ErrJobLeaseLost
-		}
-		if attempt.StartedAt == nil || display.CapturedAtMicros < attempt.StartedAt.UnixMicro() || display.CapturedAtMicros > now.UnixMicro() || display.ExpiresAtMicros <= now.UnixMicro() {
-			return ErrConfiguration
-		}
-	}
-	display.CreatedAt = now
-	display.Nonce = bytes.Clone(display.Nonce)
-	display.Ciphertext = bytes.Clone(display.Ciphertext)
-	if len(display.Nonce) == 0 {
-		display.Nonce = nil
-	}
-	if len(display.Ciphertext) == 0 {
-		display.Ciphertext = nil
-	}
-	return tx.db.Create(&display).Error
+	return ErrAnalysisSource
 }

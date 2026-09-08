@@ -35,10 +35,10 @@ func TestExecutionBreakerAuditRollbackIncludesSequenceEvidenceAndSkips(t *testin
 		}
 		attempt := reserveTestAttempt(t, tenant, q, *lease, samples[1])
 		outcome := breakerOutcome("MI_AUTH_FAILED", 403)
-		evidence := testEvidenceRecord(tenant, samples[1], attempt)
+		body := responseFixtureBody(t, tenant, q, *lease, samples[1], attempt)
 		store.auditSigner = breakerAuditSigner{}
 		finish := func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[1].ID, attempt.ID, outcome, 0, evidence)
+			return tx.FinishLegacyAttemptWithCapture(samples[1].ID, attempt.ID, outcome, 0, body)
 		}
 		if err := q.CompleteWith(tenant.ctx, *lease, finish); !errors.Is(err, audit.ErrUnavailable) {
 			t.Fatal("circuit audit failure not atomic", err)

@@ -178,10 +178,15 @@ func TestDerivedWorkerActualTLSZeroAndThirtyDaysPublishRealAnalysis(t *testing.T
 // has not committed: callers can inject policy/outcome changes at that boundary.
 func pendingDerivedTLSAttempt(t *testing.T, f runFixture, days int) derivedPendingFixture {
 	t.Helper()
+	return pendingModeTLSAttempt(t, f, days, domain.AnalysisSourceDerivedV1)
+}
+
+func pendingModeTLSAttempt(t *testing.T, f runFixture, days int, mode string) derivedPendingFixture {
+	t.Helper()
 	if _, err := f.db.ExecContext(f.ctx, "UPDATE organizations SET full_response_retention_days=$1 WHERE id=$2", days, f.orgID); err != nil {
 		t.Fatal("set synthetic initial retention policy")
 	}
-	tenant, run, builder, expected := signedAnalysisRunMode(t, f, domain.AnalysisSourceDerivedV1)
+	tenant, run, builder, expected := signedAnalysisRunMode(t, f, mode)
 	mac, err := f.ring.NewDerivedSourceMAC()
 	if err != nil {
 		t.Fatal(err)
@@ -304,6 +309,11 @@ func TestDerivedWorkerActualTLSRetentionAndAtomicSettlement(t *testing.T) {
 }
 
 func TestDerivedWorkerPolicyChangesAfterActualCaptureNeverReviveBodies(t *testing.T) {
+	testWorkerPolicyChangesAfterActualCapture(t, domain.AnalysisSourceDerivedV1)
+}
+
+func testWorkerPolicyChangesAfterActualCapture(t *testing.T, sourceMode string) {
+	t.Helper()
 	for _, mode := range []string{"disable_after_capture", "enable_after_disabled_capture", "cutoff_then_extend"} {
 		t.Run(mode, func(t *testing.T) {
 			eachRunDatabase(t, func(t *testing.T, f runFixture) {
@@ -311,7 +321,7 @@ func TestDerivedWorkerPolicyChangesAfterActualCaptureNeverReviveBodies(t *testin
 				if mode == "enable_after_disabled_capture" {
 					days = 0
 				}
-				p := pendingDerivedTLSAttempt(t, f, days)
+				p := pendingModeTLSAttempt(t, f, days, sourceMode)
 				nextDays := 0
 				if mode != "disable_after_capture" {
 					nextDays = 30
@@ -338,7 +348,12 @@ func TestDerivedWorkerPolicyChangesAfterActualCaptureNeverReviveBodies(t *testin
 				if err := p.queue.CompleteWith(f.ctx, p.lease, p.completion); err != nil {
 					t.Fatal("new policy must skip all body INSERTs, not insert then delete", err)
 				}
-				derivedCounts(t, f, p.run.ID, 1, 0)
+				s1 := 1
+				if sourceMode == "" {
+					s1 = 0
+					verifyLegacyRunSourceUnchanged(t, p)
+				}
+				derivedCounts(t, f, p.run.ID, s1, 0)
 			})
 		})
 	}

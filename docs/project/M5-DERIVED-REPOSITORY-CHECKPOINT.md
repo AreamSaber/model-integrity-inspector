@@ -1,6 +1,6 @@
 # 派生 S1 仓储接线 checkpoint
 
-日期：2026-09-08。状态：仓储派生结算、migration18、两阶段维护恢复已实现且完成专有真实双库三轮回归；最后增补的维护分支也已双库通过，扩大回归进行中。尚未完成整应用验收；是否激活生产由 root 决定。本文件属于 evidence_capture，不替代 root 台账或最终批准。
+日期：2026-09-08。状态：仓储派生结算、migration18、两阶段维护恢复已实现且完成专有及扩大真实双库三轮回归；首单元已由 root 提交9405e03，完整接线另提交52557c3。当前仓储单元冻结，下一 legacy 正文策略尚未实施。本文件属于 evidence_capture，不替代 root 台账或最终批准。
 
 ## 已落盘
 
@@ -31,12 +31,13 @@
 - migration17→18 含真实旧 started/queued Run、原 raw ciphertext、30天 captured display 和 unavailable display：升级逐字段保留，失败DDL整体回滚，无临时表/新列/S1/触发器残留；新整数7天通过、额外1微秒失败；PostgreSQL 原CHECK缺失/重复均拒绝且回滚。
 - `go test ./internal/integrity/repository -run '^TestDerivedExecutionMaintenance' -count=1`：最后增补双库通过，5.406s；覆盖 failed/cancelled、Use多次变异、两个并发提交恰有一个 applied/一个 already_completed、错误key收据重交拒绝、审计故障回滚、消费者关闭/外来 source、SQL超界预加载拒绝，以及两种来源模式的未启动/未发请求与 legacy UNCERTAIN 恢复。真实无actor Runner context由持久Job恢复审计主体，完整审计链通过。
 - `golangci-lint run ./internal/integrity/repository/...`：0 issues（固定本地工具链）。
+- `go test ./internal/integrity/repository -run '^(TestDerivedExecution|TestResponseRetention|TestResponseEvidence|TestDisplayEvidence|TestExecution|TestMigrate)' -count=3`：扩大 SQLite/PostgreSQL 三轮全部通过，557.914s，exit0。该批含旧执行生命周期/1000样本有界停止等测试；期间多agent PG迁移共享advisory锁排队，后续排队消失并正常终结。该进程在root后续保守预算计费一行修复前已编译启动，不能作为该修复验证；后者以root独立真实deadline专项回归为准。
 
 ## 未完成／恢复入口
 
-扩大三轮回归正在运行：`go test ./internal/integrity/repository -run '^(TestDerivedExecution|TestResponseRetention|TestResponseEvidence|TestDisplayEvidence|TestExecution|TestMigrate)' -count=3`。结束后补最终结果并冻结当前单元。
+当前单元已冻结；无遗留测试进程。不并发重复开启大批PG迁移回归。root先串行复测Worker取消失败用例，再通知下一独立单元正式启动。
 
-下一独立必需单元是 legacy 新正文写入的统一保留边界：现有 private capture 尚只接受 derived Attempt，旧 `FinishAttemptWithEvidence` / display wrapper 仍沿历史固定30天保存，不能宣称组织0天已覆盖所有旧已确认 Run。后续应在不升级旧 signed Manifest/SQL mode、不生成 fake S1 的前提下共享私有 DB capture、原 expiry 和事务内 fresh policy，并保证 legacy 0天从未 INSERT raw/display。旧历史 raw 缺失时 legacy 分析应明确不足，不可宣称无损。
+下一独立必需单元是 legacy 新正文写入的统一保留边界：现有 private capture 尚只接受 derived Attempt，旧 `FinishAttemptWithEvidence` / display wrapper 仍沿历史固定30天保存，不能宣称组织0天已覆盖所有旧已确认 Run。后续应在不升级旧 signed Manifest/SQL mode、不生成 fake S1 的前提下共享私有 DB capture、原 expiry 和事务内 fresh policy，并保证 legacy 0天从未 INSERT raw/display。旧历史 raw 缺失时 legacy 分析应明确不足，不可宣称无损。root已确认下一API：BindAttemptResponseCapture接受精确 legacy+DerivedLegacy；新增FinishLegacyAttemptWithCapture；旧带正文入口无private capture则明确fail-closed错误，不能补mint或静默丢正文后声称成功；内仓旧fixture迁到新入口。以上仅确定方案，未落盘实施。
 
 专有回归 fixture 的 opaque S1 仅证明 repository scope/事务/关系，不是密码学或真实 TLS 证据；真实 Generator/Tokenizer、Purpose MAC、HTTP Credentials.Use、BuildDerived 等价及全应用激活由相应组件/集成测试独立证明。
 

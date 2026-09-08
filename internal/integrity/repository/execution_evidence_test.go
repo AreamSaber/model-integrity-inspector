@@ -31,6 +31,29 @@ func testEvidenceRecord(tenant *Tenant, sample LogicalSampleRecord, attempt Atte
 	return ResponseEvidenceRecord{OrganizationID: tenant.orgID, RunID: sample.RunID, LogicalSampleID: sample.ID, AttemptID: attempt.ID, RequestHash: attempt.RequestHash, KeyVersion: "fixture", Nonce: bytes.Repeat([]byte{1}, 12), Ciphertext: bytes.Repeat([]byte{2}, 48), PlaintextBytes: 32, ContentHash: strings.Repeat("d", 64)}
 }
 
+func responseFixtureBody(t *testing.T, tenant *Tenant, queue *JobQueue, lease JobLease, sample LogicalSampleRecord, attempt AttemptRecord) *AttemptBodyCapture {
+	t.Helper()
+	var capture *AttemptBodyCapture
+	if err := queue.WithLease(tenant.ctx, lease, func(tx *TenantTransaction) error {
+		var err error
+		capture, err = tx.BindAttemptResponseCapture(sample.ID, attempt.ID, attempt.RequestHash)
+		return err
+	}); err != nil {
+		t.Fatal("bind response fixture", err)
+	}
+	display := DisplayEvidenceRecord{OrganizationID: tenant.orgID, RunID: sample.RunID, LogicalSampleID: sample.ID, AttemptID: attempt.ID, RequestHash: attempt.RequestHash, Policy: DisplayEvidencePolicy, State: DisplayUnavailableCapture}
+	return attachFixtureBody(t, capture, testEvidenceRecord(tenant, sample, attempt), display)
+}
+
+func attachFixtureBody(t *testing.T, capture *AttemptBodyCapture, evidence ResponseEvidenceRecord, display DisplayEvidenceRecord) *AttemptBodyCapture {
+	t.Helper()
+	body, err := capture.WithRecords(evidence, display)
+	if err != nil {
+		t.Fatal("attach response fixture", err)
+	}
+	return body
+}
+
 func TestResponseEvidenceAtomicLeaseScopeAuditAndExpiry(t *testing.T) {
 	eachDatabase(t, func(t *testing.T, store *Store, _ Config) {
 		tenant, _, plan, policy := executionFixture(t, store, 1)
@@ -38,25 +61,22 @@ func TestResponseEvidenceAtomicLeaseScopeAuditAndExpiry(t *testing.T) {
 		lease, _ := q.Claim(tenant.ctx)
 		attempt := reserveTestAttempt(t, tenant, q, *lease, samples[0])
 		record := testEvidenceRecord(tenant, samples[0], attempt)
+		body := responseFixtureBody(t, tenant, q, *lease, samples[0], attempt)
 		wrong := record
 		wrong.RequestHash = strings.Repeat("e", 64)
-		if err := q.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[0].ID, attempt.ID, successOutcome(), 0, wrong)
-		}); !errors.Is(err, ErrJobLeaseLost) {
+		if _, err := body.WithRecords(wrong, *body.display); !errors.Is(err, ErrAnalysisSource) {
 			t.Fatal("wrong request binding accepted", err)
 		}
 		wrong = record
 		wrong.OrganizationID++
-		if err := q.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[0].ID, attempt.ID, successOutcome(), 0, wrong)
-		}); !errors.Is(err, ErrConfiguration) {
+		if _, err := body.WithRecords(wrong, *body.display); !errors.Is(err, ErrAnalysisSource) {
 			t.Fatal("wrong tenant binding accepted", err)
 		}
 		signer := &switchAuditSigner{}
 		signer.fail.Store(true)
 		store.auditSigner = signer
 		if err := q.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[0].ID, attempt.ID, successOutcome(), 0, record)
+			return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 		}); !errors.Is(err, audit.ErrUnavailable) {
 			t.Fatal("audit failure not propagated", err)
 		}
@@ -70,7 +90,7 @@ func TestResponseEvidenceAtomicLeaseScopeAuditAndExpiry(t *testing.T) {
 		}
 		store.auditSigner = testAuditSigner{}
 		if err := q.CompleteWith(tenant.ctx, *lease, func(tx *TenantTransaction) error {
-			return tx.FinishAttemptWithEvidence(samples[0].ID, attempt.ID, successOutcome(), 0, record)
+			return tx.FinishLegacyAttemptWithCapture(samples[0].ID, attempt.ID, successOutcome(), 0, body)
 		}); err != nil {
 			t.Fatal(err)
 		}
