@@ -117,13 +117,55 @@ try {
         }
         if (($result.Calls[9].Arguments -join ',') -cne 'test,-race,-count=1,-timeout=10m,./internal/identity,./internal/integrity/api' -or $result.Calls[9].Driver -cne 'postgres' -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'PostgreSQL override or cleanup changed.' }
     }
-    foreach ($group in @('Other','Repository')) {
-        foreach ($step in 1..$(if ($group -ceq 'Other') { 10 } else { 2 })) {
+    Test-MIIRaceCase 'Core retains every exact non-repository/non-Worker package' {
+        $result = Invoke-MIIMockedRace -Group Core
+        if ($result.Failure -or $result.Calls.Count -ne 2 -or -not $result.Calls[0].Capture -or $result.Calls[1].Capture) { throw 'Core must list packages then execute its one complete test process.' }
+        $run = $result.Calls[1].Arguments
+        if (($run[0..3] -join ',') -cne 'test,-race,-count=1,-timeout=10m' -or $run.Count -ne 8 -or $result.Calls[1].Driver) { throw 'Core flags or default database scope changed.' }
+        $expected = @((Get-MIINonRepositoryRacePackages -Packages $packages) | Where-Object { $_ -cne $workerPackage })
+        if (($run[4..($run.Count - 1)] -join ',') -cne ($expected -join ',')) { throw 'Core lost or duplicated packages, including similarly prefixed packages.' }
+    }
+    foreach ($shard in 0..5) {
+        Test-MIIRaceCase "independent Worker shard $shard keeps exact complete parent selection" {
+            $result = Invoke-MIIMockedRace -Group Worker -Shard $shard
+            if ($result.Failure -or $result.Calls.Count -ne 2) { throw 'Worker shard must enumerate and execute once.' }
+            if (($result.Calls[0].Arguments -join ',') -cne "test,-race,-count=1,-timeout=10m,-list,^(Test|Example|Fuzz),$workerPackage" -or -not $result.Calls[0].Capture) { throw 'Standalone Worker enumeration changed runnable kinds or flags.' }
+            $plan = New-MIIRacePlan -Names $names
+            $run = $result.Calls[1]
+            if ($run.Capture -or $run.Driver -or $run.Arguments.Count -ne 7 -or ($run.Arguments[0..4] -join ',') -cne 'test,-race,-count=1,-timeout=10m,-run' -or $run.Arguments[5] -cne (Get-MIIRacePattern -Names $plan.Shards[$shard].Names) -or $run.Arguments[6] -cne $workerPackage) { throw 'Standalone Worker dropped a parent or changed its flags/database scope.' }
+        }
+    }
+    Test-MIIRaceCase 'independent PostgreSQL identity/API scope and cleanup are unchanged' {
+        $result = Invoke-MIIMockedRace -Group IdentityPostgres
+        if ($result.Failure -or $result.Calls.Count -ne 1 -or $result.Calls[0].Capture -or ($result.Calls[0].Arguments -join ',') -cne 'test,-race,-count=1,-timeout=10m,./internal/identity,./internal/integrity/api' -or $result.Calls[0].Driver -cne 'postgres' -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'Explicit PostgreSQL identity/API coverage, flags or environment cleanup changed.' }
+    }
+    Test-MIIRaceCase 'parallel CI delivery equals every local Other test invocation exactly once' {
+        $local = Invoke-MIIMockedRace -Group Other
+        $separate = @((Invoke-MIIMockedRace -Group Core))
+        foreach ($shard in 0..5) { $separate += Invoke-MIIMockedRace -Group Worker -Shard $shard }
+        $separate += Invoke-MIIMockedRace -Group IdentityPostgres
+        if ($local.Failure -or @($separate | Where-Object { $_.Failure }).Count -ne 0) { throw 'A required group failed before coverage comparison.' }
+        $projection = { param($call) [PSCustomObject]@{ Arguments = $call.Arguments; Driver = $call.Driver } }
+        $expected = @($local.Calls | Where-Object { -not $_.Capture } | ForEach-Object { & $projection $_ })
+        $actual = @($separate | ForEach-Object { $_.Calls } | Where-Object { -not $_.Capture } | ForEach-Object { & $projection $_ })
+        if ($expected.Count -ne 8 -or ($actual | ConvertTo-Json -Depth 5 -Compress) -cne ($expected | ConvertTo-Json -Depth 5 -Compress)) { throw 'Split CI omitted, duplicated or changed one of the complete Other test invocations.' }
+    }
+    foreach ($group in @('Other','Repository','Core','Worker','IdentityPostgres')) {
+        $steps = if ($group -ceq 'Other') { 10 } elseif ($group -ceq 'IdentityPostgres') { 1 } else { 2 }
+        foreach ($step in 1..$steps) {
             Test-MIIRaceCase "failure is fatal at $group step $step" {
                 $result = Invoke-MIIMockedRace -Group $group -FailAt $step
                 if (-not $result.Failure -or $result.Calls.Count -ne $step -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'Failed execution was ignored, continued or leaked driver override.' }
             }
         }
+    }
+    foreach ($group in @('Core','Other','IdentityPostgres')) {
+        Test-MIIRaceCase "$group rejects an accidental shard index" -MustFail {
+            Invoke-MIICIRace -Group $group -Shard 1 -Execute { throw 'Must not invoke' }
+        }
+    }
+    Test-MIIRaceCase 'unknown group is rejected before native invocation' -MustFail -ErrorPattern 'ValidateSet|validation|validate|argument' {
+        Invoke-MIICIRace -Group Unknown -Execute { throw 'Must not invoke' }
     }
     foreach ($mutation in @('missing-worker','prefix-only','unknown-list','empty-parent','duplicate-parent')) {
         Test-MIIRaceCase "Worker enumeration rejects $mutation before testing any body" -MustFail -ErrorPattern 'exact Worker package|Unknown or malformed race enumeration|Race enumeration requires tests|Duplicate enumerated race test' {
@@ -145,13 +187,19 @@ try {
             Invoke-MIICIRace -Group Other -Execute $execute
         }
     }
-    Test-MIIRaceCase 'missing PostgreSQL cannot turn dual database regression into skipped tests' -MustFail -ErrorPattern 'isolated PostgreSQL test DSN' {
-        try { $env:MII_TEST_POSTGRES_DSN = $null; Invoke-MIICIRace -Group Repository -Execute { throw 'Must not invoke' } }
-        finally { $env:MII_TEST_POSTGRES_DSN = 'offline-test-presence' }
-    }
-    Test-MIIRaceCase 'implicit skip flags forbidden' -MustFail -ErrorPattern 'implicit GOFLAGS' {
-        try { $env:GOFLAGS = '-skip=Test'; Invoke-MIICIRace -Group Repository -Execute { throw 'Must not invoke' } }
-        finally { $env:GOFLAGS = $null }
+    foreach ($group in @('Other','Repository','Core','Worker','IdentityPostgres')) {
+        Test-MIIRaceCase "$group missing PostgreSQL cannot silently skip database tests" -MustFail -ErrorPattern 'isolated PostgreSQL test DSN' {
+            try { $env:MII_TEST_POSTGRES_DSN = $null; Invoke-MIICIRace -Group $group -Execute { throw 'Must not invoke' } }
+            finally { $env:MII_TEST_POSTGRES_DSN = 'offline-test-presence' }
+        }
+        Test-MIIRaceCase "$group implicit skip flags forbidden" -MustFail -ErrorPattern 'implicit GOFLAGS' {
+            try { $env:GOFLAGS = '-skip=Test'; Invoke-MIICIRace -Group $group -Execute { throw 'Must not invoke' } }
+            finally { $env:GOFLAGS = $null }
+        }
+        Test-MIIRaceCase "$group rejects inherited identity driver override" -MustFail -ErrorPattern 'default identity driver' {
+            try { $env:MII_IDENTITY_TEST_DRIVER = 'postgres'; Invoke-MIICIRace -Group $group -Execute { throw 'Must not invoke' } }
+            finally { $env:MII_IDENTITY_TEST_DRIVER = $null }
+        }
     }
 } finally { $env:MII_TEST_POSTGRES_DSN = $savedDSN; $env:GOFLAGS = $savedFlags; $env:MII_IDENTITY_TEST_DRIVER = $savedDriver }
 

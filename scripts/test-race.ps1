@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][ValidateSet('Other','Repository')][string]$Group, [ValidateRange(0,5)][int]$Shard = 0)
+param([Parameter(Mandatory)][ValidateSet('Other','Repository','Core','Worker','IdentityPostgres')][string]$Group, [ValidateRange(0,5)][int]$Shard = 0)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
 . (Join-Path $PSScriptRoot 'race-shards.ps1')

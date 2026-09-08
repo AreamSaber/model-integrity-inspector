@@ -17,17 +17,26 @@ function Test-MIIPolicyCase {
 $sources = Get-MIICIVersionSources -WorkspaceRoot $workspaceRoot
 Test-MIIPolicyCase 'actual repository tool sources' { Assert-MIICIVersions -Sources $sources }
 foreach ($case in @(
-    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, repository-race, dependency-scan, package, image]'; New = 'needs: [quality, dependency-scan, package, image]' },
+    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, worker-race, identity-postgres-race, dependency-scan, package, image]' },
+    @{ Name = 'missing required Worker matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image]' },
+    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, repository-race, worker-race, dependency-scan, package, image]' },
     @{ Name = 'one missing race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
     @{ Name = 'duplicate race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
     @{ Name = 'race matrix cancels siblings on failure'; Old = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: false"; New = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: true" },
     @{ Name = 'race matrix can exclude shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" },
-    @{ Name = 'quality omits remaining race packages'; Old = 'run: ./scripts/test-race.ps1 -Group Other'; New = 'run: echo omitted' },
+    @{ Name = 'quality omits remaining race packages'; Old = 'run: ./scripts/test-race.ps1 -Group Core'; New = 'run: echo omitted' },
+    @{ Name = 'quality uses unknown race group'; Old = 'run: ./scripts/test-race.ps1 -Group Core'; New = 'run: ./scripts/test-race.ps1 -Group Unknown' },
     @{ Name = 'repository matrix always executes one shard'; Old = 'run: ./scripts/test-race.ps1 -Group Repository -Shard ${{ matrix.shard }}'; New = 'run: ./scripts/test-race.ps1 -Group Repository -Shard 0' },
     @{ Name = 'required gate may be skipped after failure'; Old = 'if: always()'; New = 'if: success()' },
-    @{ Name = 'required gate ignores matrix result'; Old = '"$QUALITY" "$REPOSITORY_RACE" "$DEPENDENCY_SCAN"'; New = '"$QUALITY" "$DEPENDENCY_SCAN"' },
+    @{ Name = 'required gate ignores matrix result'; Old = '"$QUALITY" "$REPOSITORY_RACE" "$WORKER_RACE"'; New = '"$QUALITY" "$WORKER_RACE"' },
+    @{ Name = 'required gate ignores Worker result'; Old = '"$REPOSITORY_RACE" "$WORKER_RACE" "$IDENTITY_POSTGRES_RACE"'; New = '"$REPOSITORY_RACE" "$IDENTITY_POSTGRES_RACE"' },
+    @{ Name = 'required gate ignores PostgreSQL identity result'; Old = '"$WORKER_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN"'; New = '"$WORKER_RACE" "$DEPENDENCY_SCAN"' },
     @{ Name = 'required gate ignores failed result'; Old = 'test "$result" = "success" || exit 1'; New = 'test "$result" = "success" || exit 0' },
     @{ Name = 'required gate bound to literal success'; Old = 'REPOSITORY_RACE: ${{ needs.repository-race.result }}'; New = 'REPOSITORY_RACE: success' },
+    @{ Name = 'Worker result replaced by literal success'; Old = 'WORKER_RACE: ${{ needs.worker-race.result }}'; New = 'WORKER_RACE: success' },
+    @{ Name = 'PostgreSQL identity result replaced by literal success'; Old = 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}'; New = 'IDENTITY_POSTGRES_RACE: success' },
+    @{ Name = 'Worker always executes shard zero'; Old = 'run: ./scripts/test-race.ps1 -Group Worker -Shard ${{ matrix.shard }}'; New = 'run: ./scripts/test-race.ps1 -Group Worker -Shard 0' },
+    @{ Name = 'PostgreSQL identity replaced by default Core'; Old = 'run: ./scripts/test-race.ps1 -Group IdentityPostgres'; New = 'run: ./scripts/test-race.ps1 -Group Core' },
     @{ Name = 'failed matrix is marked nonfatal'; Old = 'name: repository-race-${{ matrix.shard }}'; New = "name: repository-race-`${{ matrix.shard }}`n    continue-on-error: true" }
 )) {
     $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
@@ -37,6 +46,37 @@ foreach ($case in @(
     $changedWorkflow = $workflow.Remove($offset, $old.Length).Insert($offset, ($case.New -replace '\r\n', "`n"))
     Test-MIIPolicyCase $case.Name -MustFail -ErrorPattern 'race|Race|Required|required|six|six|success|CI' {
         Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+    }
+}
+
+# Scope mutations to the actual Worker or identity job, so the already-present
+# repository matrix cannot accidentally satisfy a new task's requirement.
+foreach ($jobName in @('worker-race', 'identity-postgres-race')) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name $jobName
+    $mutations = @(
+        @{ Name = 'job silently skipped'; Old = '    runs-on: ubuntu-24.04'; New = "    runs-on: ubuntu-24.04`n    if: false" },
+        @{ Name = 'job limit raised'; Old = '    timeout-minutes: 25'; New = '    timeout-minutes: 30' },
+        @{ Name = 'native race host changed'; Old = '    runs-on: ubuntu-24.04'; New = '    runs-on: windows-2025' },
+        @{ Name = 'race step conditionally skipped'; Old = '        run: ./scripts/test-race.ps1'; New = "        if: false`n        run: ./scripts/test-race.ps1" },
+        @{ Name = 'isolated service omitted'; Old = '    services:'; New = '    services-disabled:' }
+    )
+    if ($jobName -ceq 'worker-race') {
+        $mutations += @(
+            @{ Name = 'one Worker shard missing'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
+            @{ Name = 'one Worker shard duplicated'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
+            @{ Name = 'Worker sibling cancelled'; Old = 'fail-fast: false'; New = 'fail-fast: true' },
+            @{ Name = 'Worker matrix excludes parent'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" }
+        )
+    }
+    foreach ($mutation in $mutations) {
+        $offset = $body.IndexOf($mutation.Old, [StringComparison]::Ordinal)
+        if ($offset -lt 0) { throw "Mutation target missing in ${jobName}: $($mutation.Name)" }
+        $changedBody = $body.Remove($offset, $mutation.Old.Length).Insert($offset, $mutation.New)
+        $changedWorkflow = $workflow.Replace($body, $changedBody)
+        Test-MIIPolicyCase "$jobName $($mutation.Name)" -MustFail -ErrorPattern 'race|Race|Required|required|six|success|CI' {
+            Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+        }
     }
 }
 Test-MIIPolicyCase 'verifier literals cannot replace tool sources' -MustFail {

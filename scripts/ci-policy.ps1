@@ -163,7 +163,7 @@ function Assert-MIICIVersions {
     foreach ($pin in @(
         @{ Action = 'aquasecurity/trivy-action'; Input = 'version'; Version = 'v0.74.0'; Count = 2 },
         @{ Action = 'anchore/sbom-action'; Input = 'syft-version'; Version = 'v1.51.1'; Count = 2 },
-        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 4 },
+        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 6 },
         @{ Action = 'actions/setup-node'; Input = 'node-version'; Version = '${{ env.NODE_VERSION }}'; Count = 3 }
     )) {
         $matches = @($actions | Where-Object { $_.Action -ceq $pin.Action })
@@ -209,24 +209,34 @@ function Assert-MIIRaceWorkflow {
     param([Parameter(Mandatory)][string]$Workflow)
     $quality = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'quality'
     $repository = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'repository-race'
+    $worker = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'worker-race'
+    $identity = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'identity-postgres-race'
     $required = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'required'
     if ($Workflow -match '(?m)^\s*continue-on-error:') { throw 'Required CI work must not ignore failures.' }
-    if ($quality -cnotmatch '(?m)^        run: \./scripts/test-race\.ps1 -Group Other\s*$') { throw 'Quality must run the complete non-repository race regression.' }
-    if ($repository -cnotmatch '(?m)^    name: repository-race-\$\{\{ matrix\.shard \}\}\s*$' -or
-        $repository -cnotmatch '(?m)^    strategy:\r?\n      fail-fast: false\r?\n      matrix:\r?\n        shard: \[0, 1, 2, 3, 4, 5\]\r?\n    runs-on: ubuntu-24\.04\s*$' -or
-        $repository -match '(?m)^\s*(include|exclude):' -or
-        $repository -cnotmatch '(?m)^        run: \./scripts/test-race\.ps1 -Group Repository -Shard \$\{\{ matrix\.shard \}\}\s*$') { throw 'All six repository race shards must be explicit and independently executed.' }
-    foreach ($job in @($quality, $repository)) {
+    if ([regex]::Matches($quality, '(?m)^        run: \./scripts/test-race\.ps1 -Group Core\s*$').Count -ne 1) { throw 'Quality must run the complete Core race regression exactly once.' }
+    if ([regex]::Matches($identity, '(?m)^        run: \./scripts/test-race\.ps1 -Group IdentityPostgres\s*$').Count -ne 1) { throw 'CI must independently run explicit PostgreSQL identity/API race exactly once.' }
+    foreach ($matrix in @(@{ Body = $repository; Name = 'repository-race'; Group = 'Repository' }, @{ Body = $worker; Name = 'worker-race'; Group = 'Worker' })) {
+        if ($matrix.Body -cnotmatch ('(?m)^    name: ' + [regex]::Escape($matrix.Name) + '-\$\{\{ matrix\.shard \}\}\s*$') -or
+            $matrix.Body -cnotmatch '(?m)^    strategy:\r?\n      fail-fast: false\r?\n      matrix:\r?\n        shard: \[0, 1, 2, 3, 4, 5\]\r?\n    runs-on: ubuntu-24\.04\s*$' -or
+            $matrix.Body -match '(?m)^\s*(include|exclude):' -or
+            [regex]::Matches($matrix.Body, ('(?m)^        run: \./scripts/test-race\.ps1 -Group ' + $matrix.Group + ' -Shard \$\{\{ matrix\.shard \}\}\s*$')).Count -ne 1) { throw 'All six repository/Worker race shards must be explicit and independently executed.' }
+    }
+    foreach ($job in @($quality, $repository, $worker, $identity)) {
+        if ([regex]::Matches($job, '(?m)^    timeout-minutes: 25\s*$').Count -ne 1 -or
+            [regex]::Matches($job, '(?m)^    runs-on: ubuntu-24\.04\s*$').Count -ne 1 -or $job -match '(?m)^\s*if:') { throw 'Required race jobs must retain native Ubuntu, the 25-minute job limit and cannot conditionally skip work.' }
         if ($job -cnotmatch '(?m)^          MII_TEST_POSTGRES_DSN: postgres://[^\r\n]+$') { throw 'Every race job requires its real isolated PostgreSQL service.' }
+        if ($job -cnotmatch '(?m)^    services:\r?\n      postgres:\r?\n        image: postgres:18\.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af\s*$' -or
+            $job -cnotmatch '(?m)^          - 127\.0\.0\.1:15432:5432\s*$') { throw 'Every race job must own the pinned isolated PostgreSQL service.' }
     }
     if ($required -cnotmatch '(?m)^    name: m0-04-required\s*$' -or
         $required -cnotmatch '(?m)^    if: always\(\)\s*$' -or
-        $required -cnotmatch '(?m)^    needs: \[quality, repository-race, dependency-scan, package, image\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
+        $required -cnotmatch '(?m)^    needs: \[quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
     foreach ($binding in @(
         'QUALITY: ${{ needs.quality.result }}', 'REPOSITORY_RACE: ${{ needs.repository-race.result }}',
+        'WORKER_RACE: ${{ needs.worker-race.result }}', 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}',
         'DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}', 'PACKAGE: ${{ needs.package.result }}', 'IMAGE: ${{ needs.image.result }}'
     )) {
         if ([regex]::Matches($required, ('(?m)^          ' + [regex]::Escape($binding) + '\s*$')).Count -ne 1) { throw 'Every required job result must be bound exactly once.' }
     }
-    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$REPOSITORY_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
+    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$REPOSITORY_RACE" "\$WORKER_RACE" "\$IDENTITY_POSTGRES_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
 }
