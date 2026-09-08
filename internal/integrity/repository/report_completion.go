@@ -18,6 +18,9 @@ func (q *JobQueue) FailReportGeneration(ctx context.Context, lease JobLease) err
 		return ErrJobInvalid
 	}
 	return reportError(q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(db, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err

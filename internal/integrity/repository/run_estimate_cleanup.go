@@ -16,6 +16,10 @@ func (q *JobQueue) ExpireRunEstimates(ctx context.Context) error {
 		return ErrJobLeaseLost
 	}
 	return queueError(q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceScheduled)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err

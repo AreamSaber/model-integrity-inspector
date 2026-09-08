@@ -171,6 +171,10 @@ func (s *Store) SyncBootstrapBundles(ctx context.Context) error {
 		}
 		for _, orgID := range orgs {
 			err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				allowed, err := s.maintenanceAdmission(tx, maintenanceScheduled)
+				if err != nil || !allowed {
+					return err
+				}
 				var org Organization
 				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", orgID).First(&org).Error; err != nil {
 					return err

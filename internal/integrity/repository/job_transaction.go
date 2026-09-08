@@ -53,6 +53,7 @@ type TenantTransaction struct {
 	leaseJobID      int64
 	leaseGeneration int
 	completing      bool
+	enqueueAdmitted bool
 }
 
 func (t *Tenant) InTransaction(fn func(*TenantTransaction) error) error {
@@ -60,7 +61,10 @@ func (t *Tenant) InTransaction(fn func(*TenantTransaction) error) error {
 		return ErrConfiguration
 	}
 	err := t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
-		capability := &TenantTransaction{store: t.store, db: tx, ctx: t.ctx, orgID: t.orgID}
+		if _, err := t.store.maintenanceAdmission(tx, maintenanceBusiness); err != nil {
+			return err
+		}
+		capability := &TenantTransaction{store: t.store, db: tx, ctx: t.ctx, orgID: t.orgID, enqueueAdmitted: true}
 		defer capability.closed.Store(true)
 		return fn(capability)
 	})
@@ -80,6 +84,9 @@ func (t *Tenant) Enqueue(spec JobSpec) (Job, error) {
 func (tx *TenantTransaction) Enqueue(spec JobSpec) (Job, error) {
 	if tx.closed.Load() {
 		return Job{}, ErrTransactionClosed
+	}
+	if !tx.enqueueAdmitted {
+		return Job{}, ErrMaintenanceSource
 	}
 	if spec.ObjectID <= 0 || strings.TrimSpace(spec.IdempotencyKey) == "" || len(spec.IdempotencyKey) > 128 || spec.Priority < -100 || spec.Priority > 100 || spec.MaxAttempts < 0 || spec.MaxAttempts > 10 {
 		return Job{}, ErrJobInvalid

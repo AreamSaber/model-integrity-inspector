@@ -45,6 +45,9 @@ func (s *Store) OpenJobQueue(ctx context.Context) (*JobQueue, error) {
 		return nil, err
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		if s.driver != "sqlite" {
 			return nil
 		}
@@ -76,6 +79,9 @@ func (q *JobQueue) HeartbeatConsumer(ctx context.Context) error {
 		return ErrConsumerLost
 	}
 	return queueError(q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -132,6 +138,10 @@ func (q *JobQueue) Claim(ctx context.Context) (*JobLease, error) {
 	}
 	var lease *JobLease
 	err := q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(tx, maintenanceScheduled)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -235,6 +245,9 @@ func (q *JobQueue) reconcile(tx *gorm.DB, now time.Time) error {
 func (q *JobQueue) Renew(ctx context.Context, lease JobLease) (JobLease, error) {
 	var renewed JobLease
 	err := q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -270,6 +283,9 @@ func (q *JobQueue) Complete(ctx context.Context, lease JobLease) error {
 // operations, never network calls. Expiry is checked again after the callback.
 func (q *JobQueue) CompleteWith(ctx context.Context, lease JobLease, fn func(*TenantTransaction) error) error {
 	err := q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -289,7 +305,7 @@ func (q *JobQueue) CompleteWith(ctx context.Context, lease JobLease, fn func(*Te
 		if err != nil {
 			return err
 		}
-		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, completing: true}
+		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, completing: true, enqueueAdmitted: true}
 		defer capability.closed.Store(true)
 		if fn != nil {
 			if err := fn(capability); err != nil {
@@ -336,6 +352,9 @@ func (q *JobQueue) finishFailed(ctx context.Context, lease JobLease, errorCode s
 		return ErrConfiguration
 	}
 	err := q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err

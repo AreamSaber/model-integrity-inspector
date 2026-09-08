@@ -39,6 +39,9 @@ func (t *Tenant) CreateProvider(provider *Provider) error {
 		return err
 	}
 	return persistenceError(t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := t.store.maintenanceAdmission(tx, maintenanceBusiness); err != nil {
+			return err
+		}
 		return t.store.createCatalogProvider(t.ctx, tx, t.orgID, provider)
 	}))
 }
@@ -65,6 +68,9 @@ func (t *Tenant) CreateModelProfile(profile *ModelProfile) error {
 		return err
 	}
 	err := persistenceError(t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := t.store.maintenanceAdmission(tx, maintenanceBusiness); err != nil {
+			return err
+		}
 		return t.store.createCatalogModel(t.ctx, tx, t.orgID, profile)
 	}))
 	if errors.Is(err, ErrNotFound) {

@@ -162,6 +162,10 @@ func (q *JobQueue) LoadExecutionReconciliations(ctx context.Context, limit int) 
 	}
 	var sources []*ExecutionReconciliationSource
 	err := q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceRecovery)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err
@@ -231,6 +235,10 @@ func (q *JobQueue) ReconcileExecutionWithDerived(ctx context.Context, source *Ex
 	}
 	result := ReconciliationStale
 	err := q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceRecovery)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err
@@ -249,7 +257,7 @@ func (q *JobQueue) ReconcileExecutionWithDerived(ctx context.Context, source *Ex
 		if err != nil {
 			return err
 		}
-		capability := &TenantTransaction{store: q.store, db: db, ctx: actorCtx, orgID: job.OrganizationID, leaseJobID: job.ID, leaseGeneration: job.AttemptCount, completing: true}
+		capability := &TenantTransaction{store: q.store, db: db, ctx: actorCtx, orgID: job.OrganizationID, leaseJobID: job.ID, leaseGeneration: job.AttemptCount, completing: true, enqueueAdmitted: true}
 		defer capability.closed.Store(true)
 		if _, err := capability.LockResponseRetentionPolicy(); err != nil {
 			return err

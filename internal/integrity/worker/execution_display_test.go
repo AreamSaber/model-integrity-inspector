@@ -345,8 +345,16 @@ func TestRunWorkerDisplayActualTLSPreparedThenLostLeaseOrSQLFailureNeverPersists
 						table, condition = "integrity_audit_logs", "action = 'run.attempt.finish'"
 					}
 					statement := "ALTER TABLE " + table + " ADD CONSTRAINT worker_display_failure CHECK (NOT (" + condition + ")) NOT VALID"
+					if fault == "display_insert" {
+						// Both captured and legitimate unavailable rows are display
+						// inserts. The fault must exercise either actual INSERT.
+						statement = "ALTER TABLE integrity_display_evidence ADD CONSTRAINT worker_display_failure CHECK (FALSE) NOT VALID"
+					}
 					if strings.HasSuffix(t.Name(), "/sqlite") {
 						statement = "CREATE TRIGGER worker_display_failure BEFORE INSERT ON " + table + " WHEN NEW." + condition + " BEGIN SELECT RAISE(ABORT, 'synthetic worker display failure'); END"
+						if fault == "display_insert" {
+							statement = "CREATE TRIGGER worker_display_failure BEFORE INSERT ON integrity_display_evidence BEGIN SELECT RAISE(ABORT, 'synthetic worker display failure'); END"
+						}
 					}
 					if _, err := f.db.ExecContext(f.ctx, statement); err != nil {
 						t.Fatal("install real Worker transaction fault")
@@ -368,14 +376,76 @@ func TestRunWorkerDisplayActualTLSPreparedThenLostLeaseOrSQLFailureNeverPersists
 				}
 				err = queue.CompleteWith(commitCtx, *lease, actualCompletion)
 				if err == nil {
+					// Failure-only metadata: SQL maps arbitrary TEXT to small codes;
+					// Go checks those codes again before selecting fixed labels. Never
+					// load/log body, ciphertext, source hashes or driver error text.
+					diagnosticCtx, stopDiagnostic := context.WithTimeout(f.ctx, time.Second)
+					defer stopDiagnostic()
+					var displayCode, attemptCode, receiptCode int
+					var rawExists bool
+					diagnosticErr := f.db.QueryRowContext(diagnosticCtx, `SELECT
+COALESCE((SELECT CASE state WHEN 'captured' THEN 1 WHEN 'unavailable_redaction_policy' THEN 2 WHEN 'unavailable_safety_limit' THEN 3 WHEN 'unavailable_source_invalid' THEN 4 WHEN 'unavailable_cancelled' THEN 5 WHEN 'unavailable_capture' THEN 6 WHEN 'unavailable_seal' THEN 7 ELSE 8 END FROM integrity_display_evidence WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3 LIMIT 1),0),
+COALESCE((SELECT CASE status WHEN 'PLANNED' THEN 1 WHEN 'DISPATCHED' THEN 2 WHEN 'COMPLETED' THEN 3 WHEN 'UNCERTAIN' THEN 4 ELSE 5 END FROM integrity_sample_attempts WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3 AND attempt_no=1 LIMIT 1),0),
+COALESCE((SELECT CASE response_body_receipt WHEN 'legacy_not_recorded' THEN 1 WHEN 'not_captured' THEN 2 WHEN 'not_retained' THEN 3 WHEN 'recorded' THEN 4 ELSE 5 END FROM integrity_sample_attempts WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3 AND attempt_no=1 LIMIT 1),0),
+EXISTS(SELECT 1 FROM integrity_response_evidence WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3)`, f.orgID, run.ID, samples[0].ID).Scan(&displayCode, &attemptCode, &receiptCode, &rawExists)
+					if diagnosticErr != nil {
+						t.Log("display failure diagnostic query=unavailable")
+					} else {
+						label := func(code int, labels []string) string {
+							if code < 0 || code >= len(labels) {
+								return "invalid_code"
+							}
+							return labels[code]
+						}
+						displayState := label(displayCode, []string{"missing", "captured", "unavailable_redaction_policy", "unavailable_safety_limit", "unavailable_source_invalid", "unavailable_cancelled", "unavailable_capture", "unavailable_seal", "invalid_state"})
+						attemptState := label(attemptCode, []string{"missing", "PLANNED", "DISPATCHED", "COMPLETED", "UNCERTAIN", "invalid_state"})
+						receiptState := label(receiptCode, []string{"missing", "legacy_not_recorded", "not_captured", "not_retained", "recorded", "invalid_state"})
+						t.Logf("display failure diagnostic display=%s attempt=%s body_receipt=%s raw_exists=%t", displayState, attemptState, receiptState, rawExists)
+					}
 					t.Fatal("real TLS result committed through injected failure")
 				}
 				if fault == "lease_owner" && !errors.Is(err, repository.ErrJobLeaseLost) {
 					t.Fatal("changed owner not fenced")
 				}
+				if fault == "display_insert" && !errors.Is(err, repository.ErrConflict) {
+					t.Fatal("display INSERT fault did not produce the closed constraint error")
+				}
 				assertNoEvidence()
 				if calls.Load() != 1 {
 					t.Fatal("failed final commit redispatched upstream")
+				}
+				if fault == "display_insert" {
+					if err := queue.CheckLease(f.ctx, *lease); err != nil {
+						t.Fatal("display INSERT rollback lost the original lease")
+					}
+					statement := "ALTER TABLE integrity_display_evidence DROP CONSTRAINT worker_display_failure"
+					if strings.HasSuffix(t.Name(), "/sqlite") {
+						statement = "DROP TRIGGER worker_display_failure"
+					}
+					if _, err := f.db.ExecContext(f.ctx, statement); err != nil {
+						t.Fatal("remove the test-owned display INSERT fault")
+					}
+					// No new handler, lease or request: removing only the fault must
+					// let this exact already-prepared completion commit atomically.
+					if err := queue.CompleteWith(f.ctx, *lease, completion); err != nil {
+						t.Fatal("same completion failed after removing display INSERT fault", err)
+					}
+					attempts, err := tenant.ListAttempts(samples[0].ID)
+					if err != nil || len(attempts) != 1 || attempts[0].Status != "COMPLETED" || attempts[0].FinishedAt == nil || attempts[0].ResponseBodyReceipt != repository.BodyRecorded {
+						t.Fatal("same completion did not settle the original Attempt")
+					}
+					for _, query := range []string{
+						"SELECT count(*) FROM integrity_display_evidence WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3 AND attempt_id=$4",
+						"SELECT count(*) FROM integrity_response_evidence WHERE organization_id=$1 AND run_id=$2 AND logical_sample_id=$3 AND attempt_id=$4",
+					} {
+						var count int
+						if err := f.db.QueryRowContext(f.ctx, query, f.orgID, run.ID, samples[0].ID, attempts[0].ID).Scan(&count); err != nil || count != 1 {
+							t.Fatal("same completion did not persist exactly one scoped evidence row")
+						}
+					}
+					if calls.Load() != 1 {
+						t.Fatal("retrying only settlement redispatched upstream")
+					}
 				}
 			})
 		})

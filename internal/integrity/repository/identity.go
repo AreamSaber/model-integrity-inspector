@@ -75,6 +75,9 @@ func (s *Store) Initialize(ctx context.Context, input Initialization) (Initializ
 	result.Organization = Organization{ID: orgID, Name: input.OrganizationName, Status: "active", Timezone: input.Timezone, QuotaJSON: "{}", CreatedAt: now, UpdatedAt: now}
 	result.User = User{ID: userID, Username: strings.TrimSpace(input.Username), UsernameNormalized: NormalizeUsername(input.Username), PasswordHash: input.PasswordHash, Status: "active", IsSystemAdmin: true, PasswordChangedAt: now, CreatedAt: now, UpdatedAt: now}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.maintenanceAdmission(tx, maintenanceBusiness); err != nil {
+			return err
+		}
 		if s.driver == "postgres" {
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", migrationLockID+1).Error; err != nil {
 				return err
@@ -318,6 +321,9 @@ func (s *Store) ChangePassword(ctx context.Context, userID int64, expectedHash, 
 		return ErrConfiguration
 	}
 	return persistenceError(s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.maintenanceAdmission(tx, maintenanceBusiness); err != nil {
+			return err
+		}
 		result := tx.Model(&User{}).Where("id = ? AND password_hash = ?", userID, expectedHash).
 			Updates(map[string]any{"password_hash": newHash, "password_changed_at": now.UTC(), "updated_at": now.UTC(), "failed_login_count": 0, "locked_until": nil, "must_change_password": false, "version": gorm.Expr("version + 1")})
 		if result.Error != nil {

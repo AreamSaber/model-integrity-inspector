@@ -144,7 +144,7 @@ func (t *Tenant) GetRunEstimate(id int64) (RunEstimateRecord, error) {
 		return RunEstimateRecord{}, err
 	}
 	var record RunEstimateRecord
-	err = t.controlTransaction("run.create", func(db *gorm.DB) error {
+	err = t.controlTransactionPurpose("run.create", maintenanceReadAudit, func(db *gorm.DB) error {
 		return db.Where("organization_id = ? AND id = ? AND created_by = ?", t.orgID, id, actor).First(&record).Error
 	})
 	return record, runEstimateError(err)
@@ -158,7 +158,7 @@ func (t *Tenant) FindConfirmedEstimate(id int64, hash string) (RunRecord, error)
 		return RunRecord{}, err
 	}
 	var run RunRecord
-	err = t.controlTransaction("run.create", func(db *gorm.DB) error {
+	err = t.controlTransactionPurpose("run.create", maintenanceReadAudit, func(db *gorm.DB) error {
 		return db.Where("organization_id = ? AND request_key = ? AND created_by = ? AND manifest_hash = ?", t.orgID, "estimate:"+strconv.FormatInt(id, 10), actor, hash).First(&run).Error
 	})
 	return run, runEstimateError(err)

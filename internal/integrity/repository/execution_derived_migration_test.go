@@ -4,36 +4,115 @@ import (
 	"bytes"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"model-integrity-inspector.local/mii/migrations"
 )
+
+// Fixed schema17 initialization seed, not an alternate production admission
+// path. The migration fixtures have no bootstrap bundle configuration. Keep the
+// original identities, grants, setup settings and signed initialization fact.
+func derivedUpgradeLegacyInitialization(t *testing.T, store *Store) InitializationResult {
+	t.Helper()
+	if store.bootstrap != nil {
+		t.Fatal("historical fixture requires no bootstrap bundle configuration")
+	}
+	const org, user, member int64 = 7001, 7002, 7003
+	stamp := time.Date(2026, 9, 1, 0, 0, 0, 123000, time.UTC)
+	ctx := testActorContext(t, 0)
+	if err := store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, seed := range []struct {
+			table string
+			row   map[string]any
+		}{
+			{"organizations", map[string]any{"id": org, "name": "Example", "status": "active", "timezone": "UTC", "quota_json": "{}", "created_at": stamp, "updated_at": stamp}},
+			{"users", map[string]any{"id": user, "username": "Admin", "username_normalized": "admin", "password_hash": "test-only-argon2-placeholder", "status": "active", "is_system_admin": true, "password_changed_at": stamp, "created_at": stamp, "updated_at": stamp}},
+			{"organization_members", map[string]any{"id": member, "organization_id": org, "user_id": user, "status": "active", "created_at": stamp, "updated_at": stamp}},
+			{"roles", map[string]any{"id": int64(7010), "organization_id": org, "name": "administrator", "description": "", "is_builtin": true, "created_at": stamp}},
+			{"roles", map[string]any{"id": int64(7011), "organization_id": org, "name": "viewer", "description": "", "is_builtin": true, "created_at": stamp}},
+		} {
+			if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
+				return err
+			}
+		}
+		for _, permission := range []string{"target.read", "target.write", "run.create"} {
+			if err := tx.Exec("INSERT INTO permissions (code, description) VALUES (?, '')", permission).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("INSERT INTO role_permissions (organization_id, role_id, permission_code) VALUES (?, ?, ?)", org, 7010, permission).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Exec("INSERT INTO role_permissions (organization_id, role_id, permission_code) VALUES (?, ?, ?)", org, 7011, "target.read").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("INSERT INTO member_roles (organization_id, member_id, role_id) VALUES (?, ?, ?)", org, member, 7010).Error; err != nil {
+			return err
+		}
+		for key, value := range map[string]string{"initialized": "true", "initial_organization_id": strconv.FormatInt(org, 10)} {
+			if err := tx.Exec("INSERT INTO system_settings (setting_key, value_json, version, updated_at) VALUES (?, ?, 1, ?)", key, value, stamp).Error; err != nil {
+				return err
+			}
+		}
+		actor := user
+		return store.appendAudit(ctx, tx, org, auditObject("system.initialize", "organization", org), &actor)
+	}); err != nil {
+		t.Fatal("seed historical initialization", err)
+	}
+	var result InitializationResult
+	if err := store.db.Where("id=?", org).Take(&result.Organization).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Where("id=?", user).Take(&result.User).Error; err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
 
 // Build real rows on schema 17, without asking current-model helpers to create
 // newer columns. Ciphertext is structural fixture data, never re-encrypted.
 func derivedUpgradeLegacyRows(t *testing.T, store *Store) int64 {
 	t.Helper()
-	initial, err := store.Initialize(testActorContext(t, 0), initialState())
-	if err != nil {
-		t.Fatal("initialize old schema", err)
-	}
+	initial := derivedUpgradeLegacyInitialization(t, store)
 	auth := managementSession(t, store, initial.User)
 	ctx := bindTargetTestSession(t, store, testActorContext(t, initial.User.ID), auth.SessionID, initial.Organization.ID)
-	tenant, err := store.WithOrganization(ctx, initial.Organization.ID)
+	stamp := time.Date(2026, 9, 1, 0, 0, 0, 123000, time.UTC)
+	org := initial.Organization.ID
+	// This is deliberately a schema17 historical fixture. Current business
+	// CRUD requires migration21's admission gate and must reject its absence.
+	// Seed only the old column set in a test-owned short transaction, preserving
+	// the original structural ciphertext and both signed creation audit facts.
+	credential := encryptedFixture(t, org)
+	targetID, err := NewID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := mustCreateTarget(t, tenant)
-	stamp := time.Date(2026, 9, 1, 0, 0, 0, 123000, time.UTC)
-	org := initial.Organization.ID
+	if err := store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		secretRow := map[string]any{"id": credential.ID, "organization_id": org, "encrypted_data_key": credential.EncryptedDataKey, "ciphertext": credential.Ciphertext, "nonce": credential.Nonce, "key_version": credential.KeyVersion, "payload_key_version": credential.PayloadKeyVersion, "secret_version": credential.SecretVersion, "fingerprint": credential.Fingerprint, "last_four": credential.LastFour, "created_at": stamp}
+		if err := tx.Table("integrity_secrets").Create(secretRow).Error; err != nil {
+			return err
+		}
+		targetRow := map[string]any{"id": targetID, "organization_id": org, "name": "target", "endpoint": "https://upstream.example/v1", "endpoint_fingerprint": strings.Repeat("b", 64), "protocol": "openai_chat", "model": "served-model", "auth_type": "bearer", "status": "active", "tags_json": "[]", "options_json": `{"tls_verify":true}`, "secret_id": credential.ID, "version": 1, "created_by": initial.User.ID, "updated_by": initial.User.ID, "created_at": stamp, "updated_at": stamp}
+		if err := tx.Table("integrity_targets").Create(targetRow).Error; err != nil {
+			return err
+		}
+		if err := store.appendAudit(ctx, tx, org, auditObject("secret.create", "secret", credential.ID), nil); err != nil {
+			return err
+		}
+		return store.appendAudit(ctx, tx, org, auditObject("target.create", "target", targetID), nil)
+	}); err != nil {
+		t.Fatal("seed old-schema target and signed audit", err)
+	}
 	for _, id := range []int64{1, 6} {
 		status := "ANALYZING"
 		if id == 6 {
 			status = "QUEUED"
 		}
-		row := map[string]any{"id": id, "organization_id": org, "target_id": target.Target.ID, "package": "custom", "status": status, "config_snapshot": "{\"legacy_fixture\":true}", "manifest_hash": strings.Repeat("a", 64), "rule_bundle_version": "1", "template_bundle_version": "1", "scoring_version": "1", "tokenizer_bundle_version": "1", "request_budget": 50, "token_budget": 1000, "created_by": initial.User.ID, "created_at": stamp}
+		row := map[string]any{"id": id, "organization_id": org, "target_id": targetID, "package": "custom", "status": status, "config_snapshot": "{\"legacy_fixture\":true}", "manifest_hash": strings.Repeat("a", 64), "rule_bundle_version": "1", "template_bundle_version": "1", "scoring_version": "1", "tokenizer_bundle_version": "1", "request_budget": 50, "token_budget": 1000, "created_by": initial.User.ID, "created_at": stamp}
 		if id == 1 {
 			row["started_at"], row["execution_closed_at"] = stamp, stamp
 		}

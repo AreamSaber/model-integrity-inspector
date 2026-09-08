@@ -188,6 +188,10 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 		return ErrOrganizationScope
 	}
 	return executionError(q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceRecovery)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err
@@ -200,7 +204,7 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 		if err := query.Find(&jobs).Error; err != nil {
 			return err
 		}
-		capability := &TenantTransaction{store: q.store, db: db, ctx: ctx, orgID: organizationID, completing: true}
+		capability := &TenantTransaction{store: q.store, db: db, ctx: ctx, orgID: organizationID, completing: true, enqueueAdmitted: true}
 		defer capability.closed.Store(true)
 		if _, err := capability.LockResponseRetentionPolicy(); err != nil {
 			return err

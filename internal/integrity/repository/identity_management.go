@@ -75,6 +75,10 @@ func managementError(err error) error {
 // last-admin counts and role edits across API instances; no network/hash work
 // occurs while held. SQLite uses the Store's BEGIN IMMEDIATE transaction policy.
 func (s *Store) managementTransaction(ctx context.Context, auth ManagementAuthority, orgID int64, permission string, write bool, fn func(*gorm.DB, User) error) error {
+	return s.managementTransactionPurpose(ctx, auth, orgID, permission, write, maintenanceBusiness, fn)
+}
+
+func (s *Store) managementTransactionPurpose(ctx context.Context, auth ManagementAuthority, orgID int64, permission string, write bool, purpose maintenancePurpose, fn func(*gorm.DB, User) error) error {
 	if auth.UserID <= 0 || auth.SessionID <= 0 {
 		return ErrManagementSession
 	}
@@ -88,6 +92,11 @@ func (s *Store) managementTransaction(ctx context.Context, auth ManagementAuthor
 		}
 	}
 	return managementError(s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if write {
+			if _, err := s.maintenanceAdmission(tx, purpose); err != nil {
+				return err
+			}
+		}
 		if write && s.driver == "postgres" {
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", migrationLockID+100).Error; err != nil {
 				return err

@@ -9,8 +9,12 @@ import (
 )
 
 func (t *Tenant) reportTransaction(operation func(*TenantTransaction) error) error {
+	return t.reportTransactionPurpose(maintenanceBusiness, operation)
+}
+
+func (t *Tenant) reportTransactionPurpose(purpose maintenancePurpose, operation func(*TenantTransaction) error) error {
 	var businessErr error
-	err := t.controlTenantTransaction("report.export", func(tx *TenantTransaction) error {
+	err := t.controlTenantTransactionPurpose("report.export", purpose, func(tx *TenantTransaction) error {
 		businessErr = operation(tx)
 		return businessErr
 	})
@@ -89,7 +93,7 @@ func (t *Tenant) AuditReportDownload(id int64, fileHash string, size int64) erro
 	if id <= 0 || !executionHash.MatchString(fileHash) || size < 1 || size > reportFileLimit {
 		return ErrReportInvalid
 	}
-	return t.reportTransaction(func(tx *TenantTransaction) error {
+	return t.reportTransactionPurpose(maintenanceReadAudit, func(tx *TenantTransaction) error {
 		actor, err := audit.ActorFromContext(tx.ctx)
 		if err != nil {
 			return err

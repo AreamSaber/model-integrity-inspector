@@ -63,6 +63,9 @@ func (q *JobQueue) WithLease(ctx context.Context, lease JobLease, fn func(*Tenan
 		return ErrConfiguration
 	}
 	return precheckError(q.store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := q.store.maintenanceAdmission(tx, maintenanceSettlement); err != nil {
+			return err
+		}
 		now, err := queueTime(tx, q.store.driver)
 		if err != nil {
 			return err
@@ -88,7 +91,7 @@ func (q *JobQueue) WithLease(ctx context.Context, lease JobLease, fn func(*Tenan
 		if err != nil {
 			return err
 		}
-		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation}
+		capability := &TenantTransaction{store: q.store, db: tx, ctx: actorCtx, orgID: lease.Job.OrganizationID, leaseJobID: lease.Job.ID, leaseGeneration: lease.Generation, enqueueAdmitted: true}
 		defer capability.closed.Store(true)
 		if err := fn(capability); err != nil {
 			return err

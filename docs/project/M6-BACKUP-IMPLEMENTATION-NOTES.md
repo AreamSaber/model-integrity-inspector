@@ -1,6 +1,6 @@
 # M6-05 / SYS-008 备份恢复实施边界与切片
 
-更新：2026-09-08。状态：调研及实施设计完成；生产流式私有文件组件已有 Windows 测试证据，见第 9 节。备份、恢复、维护门禁尚未实现，未执行备份恢复演练，正式审核待统一进行。本记录不改变原始需求、验收条件或已有批准记录。
+更新：2026-09-08。当前状态：生产私有文件、认证归档、历史主密钥加载和流式 manifest 已实现、提交并验证；`fb223e8` / CI34196169387 已全部通过。专用 SQLite staging 已提交 `54a9c31`，完整Windows privatefile三轮3.359s通过，Linux原生测试待新CI。持久化维护门禁已完成双库专项、限定仓储全包、修正故障注入后的完整Worker单轮及真实app初始化隔离重启三轮；提交/CI身份以台账为准。真实SQLite online backup helper正在实施，PostgreSQL快照、完整备份/恢复及演练尚未完成，正式审核待统一进行。当前证据以开发台账及各 M6 专项记录为准，第 2、8、9 节保留各历史调查/组件快照，不能用当时“未实现”覆盖新进展，也不能用组件通过代替整体验收。本记录不改变原始需求、验收条件或已有批准记录。
 
 ## 1. 原始范围与不可缩减条件
 
@@ -61,9 +61,11 @@ CLI 目前只有 run、keygen、version（`cmd/mii/main.go:44`），没有 backu
 - `C:/Users/Camellic/go/pkg/mod/modernc.org/sqlite@v1.58.0/conn.go:1208`：连接方法 `NewBackup(dstUri)`。
 - 同模块 `backup.go:29`、`:42`：`Step(n)`、`Finish()`；通过 `sql.Conn.Raw` 内部接口断言访问。Step 的 true 表示仍需继续，false 且无错才完成。
 
-在私有 staging 目录中预建受限目的文件，执行有限页步进并检查 context/容量/总时限；只分类识别 BUSY/LOCKED 做有界退避，始终 Finish，不能 `Step(-1)` 后声称可及时取消。驱动按路径重新打开目标，必须处理私有目录固定句柄、路径替换与文件身份复核；不能复用会拒绝任何共享打开的文件句柄而制造 Windows sharing violation。
+在私有 staging 目录中预建受限目的文件，执行有限页步进并检查 context/容量/总时限；只分类识别 BUSY/LOCKED 做有界退避，不能 `Step(-1)` 后声称可及时取消。备份对象仅在 `sql.Conn.Raw` 回调内使用，所有路径恰好一次 finalize。固定驱动的 `Finish()` 会丢弃目的连接 Close 错误，因此推荐统一使用 `Commit()`：明确观察 Step `(false,nil)` DONE 后取得目的连接，检查后续操作并显式检查 Close；部分 Step 后取消即使 Commit 返回连接/nil，也必须继续作为失败，不能发布。若最后一步出错，Commit 内部关闭错误不可获得，应失败并安全尝试清理，不能承诺没有残留句柄或私有 orphan。Commit 后不得再次 Finish。
 
-完成后关闭目的连接，确认持久化并以只读模式打开副本。对该副本生成 schema、报告列表、密钥版本、Job 清单与审计链锚点；读取 live DB 的稍后状态不是同一快照。执行 SQLite integrity_check、foreign_key_check、迁移链及业务一致性检查。在线备份使用专用连接时不得从仓储默认 WAL/write pragmas 静默扩大只读副本权限。
+驱动按路径重新打开目标，必须处理完整可信祖先链、私有目录、路径替换与文件身份复核；不能复用会拒绝任何共享打开的原 WriteNew 句柄。Windows 专用 guard 需要 READ/WRITE 共享且不请求 DELETE，所有 SQLite 连接关闭后才在仍受保护的目录链内转换为独占可删除句柄并核对原生身份。SQLite 创建的 journal 必须从出生即继承私有权限。Linux 默认 VFS 会解析 `/proc/self/fd`，不能声称它通过固定 dirfd 写入；安全依据是逐级 no-follow 的可信祖先权限约束，而非仅事后 inode 比较。主 DB、工作目录总 footprint 和归档明文分别限额。
+
+完成后关闭目的连接，确认持久化并以明确 `mode=ro&_pragma=query_only(1)` 打开副本；`sql.TxOptions.ReadOnly` 不是禁止写入的替代品。对该副本生成 schema、报告列表、密钥版本、Job 清单与审计链锚点；读取 live DB 的稍后状态不是同一快照。执行 SQLite integrity_check、foreign_key_check、迁移链及业务一致性检查，关闭全部 rows/statements/connections；确认不依赖残留 WAL/journal/SHM 后才消费主文件。在线备份使用专用连接时不得从仓储默认 WAL/write pragmas 静默扩大只读副本权限。
 
 SQLite 官方明确支持分步 online backup 和源端并发，详情见 [SQLite Backup API](https://www.sqlite.org/backup.html)。本项目另需完成维护策略和跨存储绑定，单独调用该 API 不满足全部要求。
 

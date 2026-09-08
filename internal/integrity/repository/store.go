@@ -177,6 +177,9 @@ func persistenceError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if known := maintenanceKnownError(err); known != nil {
+		return known
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrNotFound
 	}

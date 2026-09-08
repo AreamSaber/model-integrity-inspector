@@ -368,7 +368,7 @@ func (t *Tenant) CancelRun(id, expectedVersion int64) (RunRecord, error) {
 		permission = "run.cancel-any"
 	}
 	var result RunRecord
-	err = t.controlTenantTransaction(permission, func(tx *TenantTransaction) error {
+	err = t.controlTenantTransactionPurpose(permission, maintenanceCancel, func(tx *TenantTransaction) error {
 		if err := tx.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ?", t.orgID, id).First(&result).Error; err != nil {
 			return err
 		}

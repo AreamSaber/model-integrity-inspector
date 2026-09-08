@@ -78,18 +78,26 @@ func (s *Store) RequireControlAuthority(ctx context.Context, organizationID int6
 }
 
 func (t *Tenant) controlTransaction(permission string, operation func(*gorm.DB) error) error {
+	return t.controlTransactionPurpose(permission, maintenanceBusiness, operation)
+}
+
+func (t *Tenant) controlTransactionPurpose(permission string, purpose maintenancePurpose, operation func(*gorm.DB) error) error {
 	if err := t.store.RequireControlAuthority(t.ctx, t.orgID); err != nil {
 		return err
 	}
 	value := t.ctx.Value(controlAuthorityKey{}).(controlAuthority)
 	// The concrete repository method supplies a fixed permission. No permission
 	// string from request/context is accepted as an authorization decision.
-	return t.store.managementTransaction(t.ctx, value.identity, t.orgID, permission, true, func(tx *gorm.DB, _ User) error { return operation(tx) })
+	return t.store.managementTransactionPurpose(t.ctx, value.identity, t.orgID, permission, true, purpose, func(tx *gorm.DB, _ User) error { return operation(tx) })
 }
 
 func (t *Tenant) controlTenantTransaction(permission string, operation func(*TenantTransaction) error) error {
-	return t.controlTransaction(permission, func(db *gorm.DB) error {
-		transaction := &TenantTransaction{store: t.store, db: db, ctx: t.ctx, orgID: t.orgID}
+	return t.controlTenantTransactionPurpose(permission, maintenanceBusiness, operation)
+}
+
+func (t *Tenant) controlTenantTransactionPurpose(permission string, purpose maintenancePurpose, operation func(*TenantTransaction) error) error {
+	return t.controlTransactionPurpose(permission, purpose, func(db *gorm.DB) error {
+		transaction := &TenantTransaction{store: t.store, db: db, ctx: t.ctx, orgID: t.orgID, enqueueAdmitted: purpose == maintenanceBusiness}
 		defer transaction.closed.Store(true)
 		return operation(transaction)
 	})

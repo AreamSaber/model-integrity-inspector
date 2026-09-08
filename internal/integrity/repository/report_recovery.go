@@ -15,6 +15,10 @@ func (q *JobQueue) ReconcileReports(ctx context.Context) error {
 		return ErrJobInvalid
 	}
 	return reportError(q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceRecovery)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err

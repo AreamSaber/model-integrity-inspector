@@ -18,6 +18,10 @@ func (q *JobQueue) ScheduleResponseRetention(ctx context.Context) error {
 		return ErrConsumerLost
 	}
 	return queueError(q.store.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		allowed, err := q.store.maintenanceAdmission(db, maintenanceScheduled)
+		if err != nil || !allowed {
+			return err
+		}
 		now, err := queueTime(db, q.store.driver)
 		if err != nil {
 			return err
@@ -132,7 +136,7 @@ func (q *JobQueue) ScheduleResponseRetention(ctx context.Context) error {
 					if err := db.Create(&batch).Error; err != nil {
 						return err
 					}
-					capability := &TenantTransaction{store: q.store, db: db, ctx: ctx, orgID: schedule.OrganizationID}
+					capability := &TenantTransaction{store: q.store, db: db, ctx: ctx, orgID: schedule.OrganizationID, enqueueAdmitted: true}
 					defer capability.closed.Store(true)
 					job, err := capability.Enqueue(JobSpec{Type: JobRetentionDelete, ObjectID: batchID, IdempotencyKey: "response-retention:" + strconv.FormatInt(batchID, 10), Priority: -10, MaxAttempts: 3})
 					if err != nil {
