@@ -1,6 +1,7 @@
 # Deterministic, ordinal top-level partitions. Each selected parent retains all
 # nested subtests and fuzz seeds; benchmarks are not run by ordinary go test.
 function Get-MIIRepositoryRacePackage { return 'model-integrity-inspector.local/mii/internal/integrity/repository' }
+function Get-MIIWorkerRacePackage { return 'model-integrity-inspector.local/mii/internal/integrity/worker' }
 
 function Get-MIIRaceTestNames {
     param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Lines, [Parameter(Mandatory)][string]$Package)
@@ -97,9 +98,25 @@ function Invoke-MIICIRace {
     $listed = & $Execute -GoArguments @('list','./...') -Capture $true
     if ($listed.ExitCode -ne 0) { throw 'Complete Go package enumeration failed.' }
     $packages = Get-MIINonRepositoryRacePackages -Packages $listed.Lines
-    Write-Host "Race testing all $($packages.Count) non-repository packages; repository is covered by all six required matrix jobs."
-    $tested = & $Execute -GoArguments (@('test','-race','-count=1','-timeout=10m') + $packages) -Capture $false
+    $worker = Get-MIIWorkerRacePackage
+    if ($packages -cnotcontains $worker) { throw 'Complete race enumeration must contain the exact Worker package.' }
+    [string[]]$others = @($packages | Where-Object { $_ -cne $worker })
+    if ($others.Count -eq 0 -or $others.Count -ne $packages.Count - 1) { throw 'Only the exact Worker package may move to sequential complete partitions.' }
+    $listedWorker = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-list','^(Test|Example|Fuzz)',$worker) -Capture $true
+    if ($listedWorker.ExitCode -ne 0) { throw 'Worker race enumeration failed.' }
+    $plan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $listedWorker.Lines -Package $worker)
+    Write-Host "Race testing $($others.Count) non-repository/non-Worker packages; all Worker parents follow in six exact sequential partitions."
+    $tested = & $Execute -GoArguments (@('test','-race','-count=1','-timeout=10m') + $others) -Capture $false
     if ($tested.ExitCode -ne 0) { throw 'Non-repository race regression failed.' }
+    # Worker has grown beyond one process's ten-minute total race budget. Keep
+    # the original bound per process and every top-level test/subtest/fuzz seed.
+    # Sequential execution also avoids migrations competing with other suites.
+    foreach ($index in 0..5) {
+        $pattern = Get-MIIRacePattern -Names $plan.Shards[$index].Names
+        Write-Host "Worker race partition $index/6: $($plan.Shards[$index].Names.Count) of $($plan.Names.Count) top-level tests; exact coverage verified."
+        $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-run',$pattern,$worker) -Capture $false
+        if ($tested.ExitCode -ne 0) { throw "Worker race partition $index failed." }
+    }
     try {
         $env:MII_IDENTITY_TEST_DRIVER = 'postgres'
         $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','./internal/identity','./internal/integrity/api') -Capture $false

@@ -13,6 +13,7 @@ function Test-MIIRaceCase {
     $script:raceCaseCount++
 }
 $package = Get-MIIRepositoryRacePackage
+$workerPackage = Get-MIIWorkerRacePackage
 $names = @('TestZulu','TestAlpha','TestAlphaMore','TestCase','Testcase','Example','Example_demo','FuzzDecode','FuzzDecodeMore','Test_I','Test_ı','Test_中')
 $lines = $names + "ok  `t$package`t0.123s"
 Test-MIIRaceCase 'actual list shape and all runnable kinds' {
@@ -62,10 +63,10 @@ foreach ($mutation in @('duplicate-input','omitted','duplicate-shard','unknown',
 }
 Test-MIIRaceCase 'too few items cannot create a silently empty shard' -MustFail { New-MIIRacePlan -Names @('TestOne') }
 foreach ($index in @(-1,6)) { Test-MIIRaceCase 'out-of-range shard rejected before execution' -MustFail { Invoke-MIICIRace -Group Repository -Shard $index -Execute { throw 'Must not run' } } }
-$packages = @('model-integrity-inspector.local/mii/internal/app', $package, "$package/extra", 'model-integrity-inspector.local/mii/scripts/tool')
+$packages = @('model-integrity-inspector.local/mii/internal/app', $package, "$package/extra", 'model-integrity-inspector.local/mii/scripts/tool', $workerPackage, "$workerPackage/extra")
 Test-MIIRaceCase 'only exact repository package is partitioned out' {
     $rest = Get-MIINonRepositoryRacePackages -Packages $packages
-    if ($rest.Count -ne 3 -or $rest -cnotcontains "$package/extra" -or $rest -ccontains $package) { throw 'A non-repository package was lost.' }
+    if ($rest.Count -ne 5 -or $rest -cnotcontains "$package/extra" -or $rest -ccontains $package) { throw 'A non-repository package was lost.' }
 }
 foreach ($bad in @(@(), @($package), @('model-integrity-inspector.local/mii/internal/app'), @($package,$package), @($package,'unexpected output'))) {
     Test-MIIRaceCase 'bad complete package enumeration rejected' -MustFail { Get-MIINonRepositoryRacePackages -Packages $bad }
@@ -79,10 +80,12 @@ try {
         param([string]$Group, [int]$Shard = 0, [int]$FailAt = -1)
         $state = @{ Calls = [Collections.Generic.List[object]]::new() }
         $mockLines = $lines; $mockPackages = $packages
+        $mockWorker = $workerPackage
+        $mockWorkerLines = $names + "ok  `t$workerPackage`t0.123s"
         $execute = {
             param([string[]]$GoArguments, [bool]$Capture)
             $state.Calls.Add([PSCustomObject]@{ Arguments = $GoArguments; Capture = $Capture; Driver = $env:MII_IDENTITY_TEST_DRIVER })
-            $output = if ($GoArguments[0] -ceq 'list') { $mockPackages } elseif ($GoArguments -ccontains '-list') { $mockLines } else { @() }
+            $output = if ($GoArguments[0] -ceq 'list') { $mockPackages } elseif ($GoArguments -ccontains '-list') { if ($GoArguments[-1] -ceq $mockWorker) { $mockWorkerLines } else { $mockLines } } else { @() }
             [PSCustomObject]@{ ExitCode = $(if ($state.Calls.Count -eq $FailAt) { 1 } else { 0 }); Lines = $output }
         }.GetNewClosure()
         $caught = $null
@@ -102,18 +105,44 @@ try {
     }
     Test-MIIRaceCase 'all non-repository packages and additional PostgreSQL identity/API pass' {
         $result = Invoke-MIIMockedRace -Group Other
-        if ($result.Failure -or $result.Calls.Count -ne 3) { throw 'Complete regression did not run.' }
-        $run = $result.Calls[1].Arguments
-        if (($run[0..3] -join ',') -cne 'test,-race,-count=1,-timeout=10m' -or $run.Count -ne 7 -or $run -ccontains $package) { throw 'Non-repository coverage or flags changed.' }
-        foreach ($item in (Get-MIINonRepositoryRacePackages -Packages $packages)) { if ($run -cnotcontains $item) { throw 'A package was omitted.' } }
-        if (($result.Calls[2].Arguments -join ',') -cne 'test,-race,-count=1,-timeout=10m,./internal/identity,./internal/integrity/api' -or $result.Calls[2].Driver -cne 'postgres' -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'PostgreSQL override or cleanup changed.' }
+        if ($result.Failure -or $result.Calls.Count -ne 10) { throw "Complete regression did not run: $($result.Failure)" }
+        $run = $result.Calls[2].Arguments
+        if (($run[0..3] -join ',') -cne 'test,-race,-count=1,-timeout=10m' -or $run.Count -ne 8 -or $run -ccontains $package -or $run -ccontains $workerPackage) { throw 'Non-repository coverage or flags changed.' }
+        foreach ($item in (Get-MIINonRepositoryRacePackages -Packages $packages)) { if ($item -cne $workerPackage -and $run -cnotcontains $item) { throw 'A package was omitted.' } }
+        if (($result.Calls[1].Arguments -join ',') -cne "test,-race,-count=1,-timeout=10m,-list,^(Test|Example|Fuzz),$workerPackage" -or -not $result.Calls[1].Capture) { throw 'Worker enumeration changed flags or runnable kinds.' }
+        $plan = New-MIIRacePlan -Names $names
+        foreach ($index in 0..5) {
+            $part = $result.Calls[3 + $index]
+            if ($part.Capture -or $part.Driver -or $part.Arguments.Count -ne 7 -or ($part.Arguments[0..4] -join ',') -cne 'test,-race,-count=1,-timeout=10m,-run' -or $part.Arguments[5] -cne (Get-MIIRacePattern -Names $plan.Shards[$index].Names) -or $part.Arguments[6] -cne $workerPackage) { throw 'Worker partition omitted a parent, widened timeout or changed database scope.' }
+        }
+        if (($result.Calls[9].Arguments -join ',') -cne 'test,-race,-count=1,-timeout=10m,./internal/identity,./internal/integrity/api' -or $result.Calls[9].Driver -cne 'postgres' -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'PostgreSQL override or cleanup changed.' }
     }
     foreach ($group in @('Other','Repository')) {
-        foreach ($step in 1..$(if ($group -ceq 'Other') { 3 } else { 2 })) {
+        foreach ($step in 1..$(if ($group -ceq 'Other') { 10 } else { 2 })) {
             Test-MIIRaceCase "failure is fatal at $group step $step" {
                 $result = Invoke-MIIMockedRace -Group $group -FailAt $step
                 if (-not $result.Failure -or $result.Calls.Count -ne $step -or $env:MII_IDENTITY_TEST_DRIVER) { throw 'Failed execution was ignored, continued or leaked driver override.' }
             }
+        }
+    }
+    foreach ($mutation in @('missing-worker','prefix-only','unknown-list','empty-parent','duplicate-parent')) {
+        Test-MIIRaceCase "Worker enumeration rejects $mutation before testing any body" -MustFail -ErrorPattern 'exact Worker package|Unknown or malformed race enumeration|Race enumeration requires tests|Duplicate enumerated race test' {
+            $state = @{ Calls = 0 }
+            $execute = {
+                param([string[]]$GoArguments, [bool]$Capture)
+                $state.Calls++
+                if ($GoArguments[0] -ceq 'list') {
+                    $output = if ($mutation -ceq 'missing-worker') { @($packages | Where-Object { $_ -cne $workerPackage -and $_ -cne "$workerPackage/extra" }) } elseif ($mutation -ceq 'prefix-only') { @($packages | Where-Object { $_ -cne $workerPackage }) } else { $packages }
+                } elseif ($GoArguments -ccontains '-list') {
+                    $output = switch ($mutation) {
+                        'unknown-list' { @('unexpected-output', "ok`t$workerPackage`t0.1s") }
+                        'empty-parent' { @("ok`t$workerPackage`t0.1s") }
+                        'duplicate-parent' { $names + $names[0] + "ok`t$workerPackage`t0.1s" }
+                    }
+                } else { throw 'Must reject enumeration before any race body.' }
+                [PSCustomObject]@{ ExitCode = 0; Lines = $output }
+            }
+            Invoke-MIICIRace -Group Other -Execute $execute
         }
     }
     Test-MIIRaceCase 'missing PostgreSQL cannot turn dual database regression into skipped tests' -MustFail -ErrorPattern 'isolated PostgreSQL test DSN' {
@@ -133,19 +162,21 @@ if ($NativeGo) {
     try {
         # Run the exact native Go RE2 selection on this OS through PowerShell's
         # argument-array path. No test bodies are run by -list.
-        $actual = @(& $go test -race -count=1 -timeout=10m -list '^(Test|Example|Fuzz)' $package 2>&1)
-        if ($LASTEXITCODE -ne 0) { throw 'Native race enumeration failed.' }
-        $plan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $actual -Package $package)
-        foreach ($shard in $plan.Shards) {
-            $pattern = Get-MIIRacePattern -Names $shard.Names
-            $arguments = @('test','-race','-count=1','-timeout=10m','-list',$pattern,$package)
-            $actual = @(& $go @arguments 2>&1)
-            if ($LASTEXITCODE -ne 0) { throw 'Native shard selection failed.' }
-            $selected = Get-MIIRaceTestNames -Lines $actual -Package $package
-            [Array]::Sort($selected, [StringComparer]::Ordinal)
-            if (($selected -join ',') -cne ($shard.Names -join ',')) { throw 'Go RE2/native PowerShell selection changed exact coverage.' }
+        foreach ($selectedPackage in @($package, $workerPackage)) {
+            $actual = @(& $go test -race -count=1 -timeout=10m -list '^(Test|Example|Fuzz)' $selectedPackage 2>&1)
+            if ($LASTEXITCODE -ne 0) { throw 'Native race enumeration failed.' }
+            $plan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $actual -Package $selectedPackage)
+            foreach ($shard in $plan.Shards) {
+                $pattern = Get-MIIRacePattern -Names $shard.Names
+                $arguments = @('test','-race','-count=1','-timeout=10m','-list',$pattern,$selectedPackage)
+                $actual = @(& $go @arguments 2>&1)
+                if ($LASTEXITCODE -ne 0) { throw 'Native shard selection failed.' }
+                $selected = Get-MIIRaceTestNames -Lines $actual -Package $selectedPackage
+                [Array]::Sort($selected, [StringComparer]::Ordinal)
+                if (($selected -join ',') -cne ($shard.Names -join ',')) { throw 'Go RE2/native PowerShell selection changed exact coverage.' }
+            }
+            Write-Output "Native Go race enumeration ($selectedPackage): all $($plan.Names.Count) items covered exactly once across six selections."
         }
-        Write-Output "Native Go race enumeration: all $($plan.Names.Count) items covered exactly once across six selections."
     } finally { Pop-Location }
 }
 Write-Output "Race shard regression tests passed: $script:raceCaseCount cases."
