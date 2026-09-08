@@ -123,8 +123,22 @@ func TestSystemStatusHTTPAdmissionAndAuthenticationDeadline(t *testing.T) {
 	bounded := &systemDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	started := time.Now()
 	f.handler.ServeHTTP(bounded, r)
-	if bounded.deadline.IsZero() || bounded.deadline.Before(started) || bounded.deadline.After(started.Add(2*time.Second)) {
+	// WithTimeout chooses its origin inside ServeHTTP, after started. Bound
+	// that origin by the actual SetWriteDeadline observation, not by assuming
+	// the caller and middleware read the clock at the same instant.
+	if bounded.deadline.IsZero() || bounded.deadline.Before(started.Add(2*time.Second)) || bounded.deadline.After(bounded.installedAt.Add(2*time.Second)) {
 		t.Fatal("authentication/socket deadline not installed at entry")
+	}
+	parentDeadline := time.Now().Add(time.Second)
+	parent, parentCancel := context.WithDeadline(t.Context(), parentDeadline)
+	defer parentCancel()
+	r = httptest.NewRequestWithContext(parent, "GET", "/api/v1/system/health", nil)
+	r.AddCookie(cookie)
+	r.Header.Set("X-Organization-ID", org)
+	bounded = &systemDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	f.handler.ServeHTTP(bounded, r)
+	if !bounded.deadline.Equal(parentDeadline) {
+		t.Fatal("shorter parent authentication/socket deadline was extended")
 	}
 	r = httptest.NewRequestWithContext(t.Context(), "HEAD", "/api/v1/system/health", nil)
 	r.AddCookie(cookie)
@@ -149,10 +163,12 @@ func TestSystemStatusHTTPAdmissionAndAuthenticationDeadline(t *testing.T) {
 
 type systemDeadlineRecorder struct {
 	*httptest.ResponseRecorder
-	deadline time.Time
+	deadline    time.Time
+	installedAt time.Time
 }
 
 func (w *systemDeadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	w.installedAt = time.Now()
 	w.deadline = deadline
 	return nil
 }
