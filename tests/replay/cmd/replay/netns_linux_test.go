@@ -137,7 +137,7 @@ var netnsStageCodes = []string{
 	"MI_REPLAY_NETNS_IP_EGRESS_BLOCKED", "MI_REPLAY_NETNS_OFFLINE_EQUAL", "MI_REPLAY_NETNS_NEGATIVES_OK", "MI_REPLAY_NETNS_ATOMIC_OK",
 	"MI_REPLAY_NETNS_FAILED_CHILD_CONFIG", "MI_REPLAY_NETNS_FAILED_IDENTITY", "MI_REPLAY_NETNS_FAILED_CAPABILITIES",
 	"MI_REPLAY_NETNS_FAILED_INHERITED_SOCKET", "MI_REPLAY_NETNS_FAILED_NAMESPACE", "MI_REPLAY_NETNS_FAILED_INTERFACE",
-	"MI_REPLAY_NETNS_FAILED_ROUTE", "MI_REPLAY_NETNS_FAILED_NETWORK_NOT_BLOCKED", "MI_REPLAY_NETNS_FAILED_REPLAY",
+	"MI_REPLAY_NETNS_FAILED_ROUTE", "MI_REPLAY_NETNS_FAILED_SOURCE_ADDRESS", "MI_REPLAY_NETNS_FAILED_NETWORK_NOT_BLOCKED", "MI_REPLAY_NETNS_FAILED_REPLAY",
 	"MI_REPLAY_NETNS_FAILED_OUTPUT_COMPARE", "MI_REPLAY_NETNS_FAILED_NEGATIVE", "MI_REPLAY_NETNS_FAILED_CANCEL",
 	"MI_REPLAY_NETNS_FAILED_ATOMIC_TESTS", "MI_REPLAY_NETNS_FAILED_FILE_OWNER",
 }
@@ -235,14 +235,14 @@ func netnsChild(t *testing.T) {
 	if netnsIdentity(t) == config.ParentNamespace {
 		t.Fatal("MI_REPLAY_NETNS_FAILED_NAMESPACE")
 	}
-	assertNetnsTopology(t)
+	proof := assertNetnsTopology(t, config.ParentNamespace)
 	t.Log(netnsStageCodes[1])
-	assertNetnsBlocked(t, "tcp4", config.ControlAddress, true)
+	assertNetnsBlocked(t, "tcp4", config.ControlAddress, true, proof)
 	t.Log(netnsStageCodes[2])
 	// RFC 5737 / RFC 3849 documentation addresses, attempted ONLY after the
 	// separate namespace, no-UP-interface and no-usable-route checks passed.
-	assertNetnsBlocked(t, "tcp4", "192.0.2.1:9", false)
-	assertNetnsBlocked(t, "tcp6", "[2001:db8::1]:9", false)
+	assertNetnsBlocked(t, "tcp4", "192.0.2.1:9", false, proof)
+	assertNetnsBlocked(t, "tcp6", "[2001:db8::1]:9", false, proof)
 	t.Log(netnsStageCodes[3])
 	for _, name := range []string{"capture.json", "rule.json", "public.json", "manifest-key.json"} {
 		assertNetnsOwner(t, filepath.Join(config.Directory, name), config.UID, false)
@@ -261,6 +261,9 @@ func netnsChild(t *testing.T) {
 	netnsNegativeCLI(t, config, args)
 	t.Log(netnsStageCodes[5])
 	netnsAtomicTests(t, config.FileTestBinary)
+	if assertNetnsTopology(t, config.ParentNamespace) != proof {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_NAMESPACE")
+	}
 	t.Log(netnsStageCodes[6])
 }
 
@@ -316,19 +319,40 @@ func assertNetnsPrivileges(t *testing.T, c netnsChildConfig) {
 	}
 }
 
-func assertNetnsTopology(t *testing.T) {
+// Minted only after actual kernel observations, never from child JSON or an
+// environment flag. A zero receipt cannot authorize any probe result.
+type netnsTopologyProof struct {
+	namespace, parentNamespace string
+	noSourceAddresses          bool
+}
+
+func assertNetnsTopology(t *testing.T, parentNamespace string) netnsTopologyProof {
 	t.Helper()
+	namespace := netnsIdentity(t)
+	if parentNamespace == "" || namespace == parentNamespace {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_NAMESPACE")
+	}
 	interfaces, err := net.Interfaces()
 	if err != nil || len(interfaces) != 1 || interfaces[0].Name != "lo" || interfaces[0].Flags&net.FlagUp != 0 {
 		t.Fatal("MI_REPLAY_NETNS_FAILED_INTERFACE")
+	}
+	addresses, err := interfaces[0].Addrs()
+	if err != nil {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_SOURCE_ADDRESS")
+	}
+	// Independently require an empty IPv6 address table as well as no address
+	// on the only interface. Missing/oversized/unreadable proc data fails.
+	ipv6Addresses, err := netnsReadTopologyFile("/proc/net/if_inet6")
+	if err != nil || !netnsNoSourceAddresses(addresses, ipv6Addresses) {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_SOURCE_ADDRESS")
 	}
 	for _, table := range []struct {
 		path      string
 		flagField int
 		ipv4      bool
 	}{{"/proc/net/route", 3, true}, {"/proc/net/ipv6_route", 8, false}} {
-		raw, err := os.ReadFile(table.path)
-		if err != nil || len(raw) > 64<<10 {
+		raw, err := netnsReadTopologyFile(table.path)
+		if err != nil {
 			t.Fatal("MI_REPLAY_NETNS_FAILED_ROUTE")
 		}
 		for i, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
@@ -347,10 +371,46 @@ func assertNetnsTopology(t *testing.T) {
 			}
 		}
 	}
+	if netnsIdentity(t) != namespace {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_NAMESPACE")
+	}
+	return netnsTopologyProof{namespace, parentNamespace, true}
 }
 
-func assertNetnsBlocked(t *testing.T, network, address string, loopback bool) {
+func netnsReadTopologyFile(path string) ([]byte, error) {
+	var file *os.File
+	var err error
+	switch path {
+	case "/proc/net/if_inet6":
+		file, err = os.Open("/proc/net/if_inet6")
+	case "/proc/net/route":
+		file, err = os.Open("/proc/net/route")
+	case "/proc/net/ipv6_route":
+		file, err = os.Open("/proc/net/ipv6_route")
+	default:
+		return nil, unix.EINVAL
+	}
+	if err != nil {
+		return nil, err
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, (64<<10)+1))
+	closeErr := file.Close()
+	if readErr != nil || closeErr != nil || len(raw) > 64<<10 {
+		return nil, unix.EIO
+	}
+	return raw, nil
+}
+
+func netnsNoSourceAddresses(addresses []net.Addr, ipv6Table []byte) bool {
+	return len(addresses) == 0 && len(ipv6Table) <= 64<<10 && len(bytes.TrimSpace(ipv6Table)) == 0
+}
+
+func assertNetnsBlocked(t *testing.T, network, address string, loopback bool, proof netnsTopologyProof) {
 	t.Helper()
+	before := assertNetnsTopology(t, proof.parentNamespace)
+	if before != proof {
+		t.Fatal("MI_REPLAY_NETNS_FAILED_NAMESPACE")
+	}
 	family, destination, ok := netnsNumericDestination(network, address, loopback)
 	if !ok {
 		t.Log(netnsProbeDiagnostic(family, "ADDRESS", nil))
@@ -359,10 +419,24 @@ func assertNetnsBlocked(t *testing.T, network, address string, loopback bool) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 	stage, err := netnsNativeConnect(ctx, family, destination, netnsSocketOperations{unix.Socket, unix.Connect, unix.Poll, unix.GetsockoptInt, unix.Close})
-	if ctx.Err() != nil || !netnsExplicitlyBlocked(family, stage, err, loopback) {
+	after := assertNetnsTopology(t, proof.parentNamespace)
+	if ctx.Err() != nil || !netnsBlockedInEmptyNamespace(family, stage, err, loopback, before, after) {
 		t.Log(netnsProbeDiagnostic(family, stage, err))
 		t.Fatal("MI_REPLAY_NETNS_FAILED_NETWORK_NOT_BLOCKED")
 	}
+}
+
+func netnsBlockedInEmptyNamespace(family int, stage string, err error, loopback bool, before, after netnsTopologyProof) bool {
+	if before != after || before.namespace == "" || before.parentNamespace == "" || before.namespace == before.parentNamespace || !before.noSourceAddresses {
+		return false
+	}
+	// EADDRNOTAVAIL alone remains insufficient. Linux IPv6 may fail source
+	// selection before surfacing the route error. Accept that exact synchronous
+	// result ONLY with unchanged, independently verified empty topology on both
+	// sides of the actual numeric connect. No bind/freebind/socket options are
+	// used to manufacture this errno; success, timeout and all other errors fail.
+	return netnsExplicitlyBlocked(family, stage, err, loopback) ||
+		(family == unix.AF_INET6 && stage == "CONNECT" && !loopback && errors.Is(err, unix.EADDRNOTAVAIL))
 }
 
 // Numeric sockaddr construction performs no DNS, local address selection or Go
@@ -514,6 +588,7 @@ func netnsProbeDiagnostic(family int, stage string, err error) string {
 // They issue no socket syscalls and are not network-isolation evidence.
 func assertNetnsProbePolicy(t *testing.T) {
 	t.Helper()
+	assertNetnsEmptyTopologyPolicy(t)
 	for _, tc := range []struct {
 		family         int
 		stage          string
@@ -556,7 +631,7 @@ func assertNetnsProbePolicy(t *testing.T) {
 			t.Fatal("MI_REPLAY_NETNS_FAILED_PROBE_POLICY")
 		}
 	}
-	for _, mode := range []string{"immediate", "async", "connected", "async-connected", "timeout", "interrupted", "bad-poll", "get-error", "invalid-error", "close-error", "socket-error", "cancelled"} {
+	for _, mode := range []string{"immediate", "async", "connected", "async-connected", "timeout", "interrupted", "bad-poll", "get-error", "invalid-error", "close-error", "socket-error", "cancelled", "no-source", "no-source-close-error", "no-source-cancelled"} {
 		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 		closed, polls, connects, sockets := 0, 0, 0, 0
 		ops := netnsSocketOperations{
@@ -581,6 +656,9 @@ func assertNetnsProbePolicy(t *testing.T) {
 				}
 				if mode == "connected" {
 					return nil
+				}
+				if strings.HasPrefix(mode, "no-source") {
+					return unix.EADDRNOTAVAIL
 				}
 				return unix.EINPROGRESS
 			},
@@ -621,8 +699,11 @@ func assertNetnsProbePolicy(t *testing.T) {
 				if fd != 9 {
 					t.Fatal("MI_REPLAY_NETNS_FAILED_PROBE_POLICY")
 				}
-				if mode == "close-error" {
+				if mode == "close-error" || mode == "no-source-close-error" {
 					return unix.EIO
+				}
+				if mode == "no-source-cancelled" {
+					cancel()
 				}
 				return nil
 			},
@@ -639,6 +720,13 @@ func assertNetnsProbePolicy(t *testing.T) {
 			wantClosed = 0
 		}
 		if netnsExplicitlyBlocked(unix.AF_INET6, stage, err, false) != want || closed != wantClosed || polls > 1 || connects > 1 || sockets > 1 || (mode == "cancelled" && sockets != 0) {
+			t.Fatal("MI_REPLAY_NETNS_FAILED_PROBE_POLICY")
+		}
+		proof := netnsTopologyProof{"net:[2]", "net:[1]", true}
+		if netnsBlockedInEmptyNamespace(unix.AF_INET6, stage, err, false, proof, proof) != (want || mode == "no-source") {
+			t.Fatal("MI_REPLAY_NETNS_FAILED_PROBE_POLICY")
+		}
+		if strings.HasPrefix(mode, "no-source") && (polls != 0 || connects != 1 || sockets != 1 || closed != 1) {
 			t.Fatal("MI_REPLAY_NETNS_FAILED_PROBE_POLICY")
 		}
 	}

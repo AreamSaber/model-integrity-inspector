@@ -214,6 +214,14 @@ B1 完成最多意味着：两个真实受控 TLS 开发捕获，实际最终 At
 
 本机 Windows 验证：Linux amd64 tagged test 交叉编译通过；同 tag 的 golangci-lint 为 0 issues；包装器 `-PolicyOnly` 与 PowerShell AST 解析通过；普通 Windows CLI 包测试通过。没有在本机执行 Linux tagged 回归或 namespace。此 checkpoint 仍须下一次真实 Ubuntu CI 确认，不能据交叉编译或纯策略通过宣布 B1-4 已完成或旧失败根因已修复。
 
+### B1-4 IPv6 无源地址的拓扑组合证明（2026-09-08）
+
+`e8a52a6` / CI `34179919964` 已实际给出 `IPV6 / CONNECT / EADDRNOTAVAIL`，identity、topology 和 loopback 三阶段成功，quality 最终失败。这个 errno 单独不能证明断网，也可能是端口资源问题；通用 `netnsExplicitlyBlocked` 仍拒绝它。Linux v6.8 的 [IPv6 路由查询代码](https://github.com/torvalds/linux/blob/v6.8/net/ipv6/ip6_output.c#L1040-L1082) 在最终路由错误之前尝试选源，[源地址选择代码](https://github.com/torvalds/linux/blob/v6.8/net/ipv6/addrconf.c#L1757-L1765) 在无候选源时返回该 errno。因此“空 netns 先报告无源地址”是与实际日志相符的解释，不是旧日志已经证明了完整内核调用轨迹。
+
+修订要求实际每次数字 connect 前后均重新观察：仍为同一独立 namespace、唯一 lo 且 DOWN、该接口 Addrs 为空、`/proc/net/if_inet6` 为空、无可用 IPv4/IPv6 路由。proc 文件以 64 KiB 上限读取，读取/关闭失败、缺文件、异常内容、任何源地址或 namespace 改变均失败。只有这些真实观测生成的相同私有 receipt，才允许 AF_INET6 的同步 CONNECT 对固定文档地址返回 EADDRNOTAVAIL；SOCKET/SO_ERROR、IPv4、loopback、无 receipt、成功/超时/权限错误仍拒绝。未增加 bind/freebind 或接口配置来制造 errno。整个 CLI/负例/原子文件测试结束后再次验证拓扑，原非 root/capability/fd、正负控制、八阶段和必跑 CI 门禁不变。
+
+新增纯策略反例覆盖源地址/异常表/超限、零 receipt、namespace 前后变化、错误 family/stage、异步结果和成功连接；这些在 mandatory parent test 内执行，不增添包装器可误计的测试成功事件。Windows 仅能执行普通 CLI/契约/包装策略，实际 Linux syscall 与 namespace 结果仍须新 CI 验证，不能用交叉编译冒称完成。
+
 ## 14. B1-5 真实受控捕获的私有文件导出与独立 CLI
 
 本单元只改 `tests/replay/capturefixture/**` 的 `_test.go` 控制端与相关说明，不增加生产入口、公开测试来源 capability、Worker/repository/HTTP 旁路或新的 CLI 参数。
