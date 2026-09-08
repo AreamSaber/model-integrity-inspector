@@ -133,7 +133,7 @@ func startRunWorker(t *testing.T, f runFixture, config RunConfig, log io.Writer)
 	}
 	ctx, cancel := context.WithCancel(f.ctx)
 	done := make(chan error, 1)
-	go func() { done <- runner.Run(ctx) }()
+	go func() { done <- runWorkerWithFailureDiagnostic(t, ctx, runner, workerDiagnosticRunRunner) }()
 	t.Cleanup(func() {
 		cancel()
 		select {

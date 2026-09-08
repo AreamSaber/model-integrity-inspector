@@ -35,6 +35,7 @@ func newSQLiteTestDirectory(t *testing.T) string {
 		t.Fatal("SQLite fixture stage=profile_path", err)
 	}
 	if err := s.openChain(profile); err != nil {
+		logSQLiteProfileAncestryFailure(t, s, profile, err)
 		t.Fatal("SQLite fixture stage=profile_ancestry", err)
 	}
 	var nonce [16]byte

@@ -190,7 +190,7 @@ func startRunner(t *testing.T, f workerFixture, handler Handler) (*Runner, conte
 	}
 	ctx, cancel := context.WithCancel(f.ctx)
 	done := make(chan error, 1)
-	go func() { done <- runner.Run(ctx) }()
+	go func() { done <- runWorkerWithFailureDiagnostic(t, ctx, runner, workerDiagnosticPrecheckRunner) }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -420,7 +420,9 @@ func TestPrecheckCancellationRotationAndDisableStopOutbound(t *testing.T) {
 				switch mode {
 				case "cancel":
 					code = "MI_PRECHECK_CANCELLED"
+					updateStarted := time.Now()
 					if _, err := f.db.ExecContext(f.ctx, "UPDATE integrity_jobs SET cancel_requested_at = $1 WHERE organization_id = $2 AND id = $3", time.Now().UTC(), f.orgID, queued.JobID); err != nil {
+						logWorkerSQLFailure(t, f.ctx, workerDiagnosticCancelUpdate, err, time.Since(updateStarted))
 						t.Fatal("cancel fixture job failed")
 					}
 				case "rotate":

@@ -237,7 +237,7 @@ func pendingModeTLSAttempt(t *testing.T, f runFixture, days int, mode string) de
 
 func rejectDerivedBodyInserts(t *testing.T, f runFixture) {
 	t.Helper()
-	for _, ddl := range []struct{ postgres, sqlite string }{
+	for index, ddl := range []struct{ postgres, sqlite string }{
 		{"ALTER TABLE integrity_response_evidence ADD CONSTRAINT worker_no_body_insert CHECK (false) NOT VALID", "CREATE TRIGGER worker_no_body_raw BEFORE INSERT ON integrity_response_evidence BEGIN SELECT RAISE(ABORT, 'synthetic body insert forbidden'); END"},
 		{"ALTER TABLE integrity_display_evidence ADD CONSTRAINT worker_no_body_insert CHECK (false) NOT VALID", "CREATE TRIGGER worker_no_body_display BEFORE INSERT ON integrity_display_evidence BEGIN SELECT RAISE(ABORT, 'synthetic body insert forbidden'); END"},
 	} {
@@ -245,7 +245,13 @@ func rejectDerivedBodyInserts(t *testing.T, f runFixture) {
 		if strings.HasSuffix(t.Name(), "/sqlite") {
 			statement = ddl.sqlite
 		}
+		started := time.Now()
 		if _, err := f.db.ExecContext(f.ctx, statement); err != nil {
+			operation := workerDiagnosticRawInsertProhibition
+			if index == 1 {
+				operation = workerDiagnosticDisplayInsertProhibition
+			}
+			logWorkerSQLFailure(t, f.ctx, operation, err, time.Since(started))
 			t.Fatal("install actual body INSERT prohibition")
 		}
 	}
