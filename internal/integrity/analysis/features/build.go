@@ -49,7 +49,14 @@ func New(config Config) (*Builder, error) {
 // Build does not open a database or network connection. It replays the signed
 // Manifest, then checks every persisted identity and both request encodings.
 // Missing evidence is a partial observation; broken identity is a hard error.
+// This legacy entry point never accepts a signed derived-source manifest.
 func (b *Builder) Build(input Input) (*Batch, error) {
+	return b.build(input, "")
+}
+
+// Only explicit, authenticated entry points choose the expected source mode.
+// Keep the graph, final pointer, exact replay and extraction checks identical.
+func (b *Builder) build(input Input, sourceVersion string) (*Batch, error) {
 	if b == nil || b.verifier == nil || b.tokens == nil {
 		return nil, ErrConfiguration
 	}
@@ -58,7 +65,7 @@ func (b *Builder) Build(input Input) (*Batch, error) {
 		return nil, ErrBinding
 	}
 	m, err := b.verifier.Verify(run.Plan.Manifest, run.Plan.ManifestHash, run.OrganizationID)
-	if err != nil || m.TemplateHash != b.hash || m.TemplateVersion != b.version || m.TokenizerHash != b.tokens.Hash() || m.TokenizerVersion != b.tokens.Version() {
+	if err != nil || m.Options.AnalysisSourceVersion != sourceVersion || m.TemplateHash != b.hash || m.TemplateVersion != b.version || m.TokenizerHash != b.tokens.Hash() || m.TokenizerVersion != b.tokens.Version() {
 		return nil, ErrBinding
 	}
 	plan, err := b.verifier.ExecutionPlan(run.Plan.Manifest, run.Plan.ManifestHash, run.OrganizationID)

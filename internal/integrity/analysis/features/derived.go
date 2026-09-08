@@ -84,7 +84,7 @@ func (b *Builder) DeriveAttempt(ctx context.Context, run RunBinding, row SampleB
 		return nil, ErrBinding
 	}
 	m, err := b.verifier.Verify(run.Plan.Manifest, run.Plan.ManifestHash, run.OrganizationID)
-	if err != nil || m.TemplateHash != b.hash || m.TemplateVersion != b.version || m.TokenizerHash != b.tokens.Hash() || m.TokenizerVersion != b.tokens.Version() {
+	if err != nil || m.Options.AnalysisSourceVersion != DerivedVersion || m.TemplateHash != b.hash || m.TemplateVersion != b.version || m.TokenizerHash != b.tokens.Hash() || m.TokenizerVersion != b.tokens.Version() {
 		return nil, ErrBinding
 	}
 	plan, err := b.verifier.ExecutionPlan(run.Plan.Manifest, run.Plan.ManifestHash, run.OrganizationID)
@@ -103,18 +103,9 @@ func (b *Builder) DeriveAttempt(ctx context.Context, run RunBinding, row SampleB
 	if err != nil || a.RequestHash != snapshot.RequestHash || !sameSnapshot(a.Snapshot, snapshot) {
 		return nil, ErrBinding
 	}
-	sourceHash := digestJSON([]string{"mii/derived-source/v1", a.RequestHash, "no_response"})
-	if a.Evidence != nil {
-		if a.Evidence.scope != (EvidenceScope{run.OrganizationID, run.ID, row.ID, a.ID, a.RequestHash}) || !responseBounded(a.Evidence.response) {
-			return nil, ErrBinding
-		}
-		encoded, encodeErr := json.Marshal(a.Evidence.response)
-		if encodeErr != nil || len(encoded) > MaxResponseBytes {
-			clear(encoded)
-			return nil, ErrLimit
-		}
-		sourceHash = digestJSON([]string{"mii/derived-source/v1", a.RequestHash, digest(encoded)})
-		clear(encoded)
+	sourceHash, err := derivedSourceHash(run, row, a)
+	if err != nil {
+		return nil, err
 	}
 	// A private projection is used to invoke exactly the same per-final-attempt
 	// extractor. The real persisted final pointer is never modified or assumed.
@@ -174,7 +165,7 @@ func (b *Builder) BuildDerived(ctx context.Context, input Input, records []Deriv
 	}
 	// Reuse the complete raw-path persisted graph, final-pointer, temporal and
 	// exact request checks before any observation can enter an aggregate.
-	batch, err := b.Build(input)
+	batch, err := b.build(input, DerivedVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +233,86 @@ func (b *Builder) BuildDerived(ctx context.Context, input Input, records []Deriv
 		return nil, err
 	}
 	return batch, nil
+}
+
+// BuildResponseReference is an explicit verification oracle, never an automatic
+// fallback. It requires the complete authenticated derived record set before
+// building a raw-response reference for the SAME signed derived-mode Run. All
+// provided response fields and explicit no-response observations must match the
+// authenticated source hashes, including non-final attempts. Without original
+// responses for a recorded source, a response reference cannot be constructed.
+func (b *Builder) BuildResponseReference(ctx context.Context, input Input, records []DerivedRecord, verifier *DerivedVerifier) (*Batch, error) {
+	if ctx == nil {
+		return nil, ErrConfiguration
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(input.Samples) > 150 || len(records) > 450 {
+		return nil, ErrLimit
+	}
+	// Clone only the slices we modify. All other projections are read-only and
+	// Evidence itself owns its detached response; never clear the caller's input.
+	bodyless := input
+	bodyless.Samples = slices.Clone(input.Samples)
+	count := 0
+	for i := range bodyless.Samples {
+		count += len(bodyless.Samples[i].Attempts)
+		if count > 450 {
+			return nil, ErrLimit
+		}
+		bodyless.Samples[i].Attempts = slices.Clone(input.Samples[i].Attempts)
+		for j := range bodyless.Samples[i].Attempts {
+			bodyless.Samples[i].Attempts[j].Evidence = nil
+		}
+	}
+	if _, err := b.BuildDerived(ctx, bodyless, records, verifier); err != nil {
+		return nil, err
+	}
+	// The shared core also enforces the complete raw byte budget before the
+	// source-hash comparisons below. Never release this reference on mismatch.
+	batch, err := b.build(input, DerivedVersion)
+	if err != nil {
+		return nil, err
+	}
+	sources := make(map[int64]string, len(records))
+	for _, record := range records {
+		p, err := verifier.open(ctx, record)
+		if err != nil {
+			return nil, err
+		}
+		sources[p.Scope.AttemptID] = p.SourceHash
+	}
+	for _, row := range input.Samples {
+		for _, a := range row.Attempts {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			sourceHash, err := derivedSourceHash(input.Run, row, a)
+			if err != nil || sourceHash != sources[a.ID] {
+				return nil, ErrBinding
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return batch, nil
+}
+
+func derivedSourceHash(run RunBinding, row SampleBinding, a AttemptBinding) (string, error) {
+	if a.Evidence == nil {
+		return digestJSON([]string{"mii/derived-source/v1", a.RequestHash, "no_response"}), nil
+	}
+	if a.Evidence.scope != (EvidenceScope{run.OrganizationID, run.ID, row.ID, a.ID, a.RequestHash}) || !responseBounded(a.Evidence.response) {
+		return "", ErrBinding
+	}
+	encoded, err := json.Marshal(a.Evidence.response)
+	defer clear(encoded)
+	if err != nil || len(encoded) > MaxResponseBytes {
+		return "", ErrLimit
+	}
+	return digestJSON([]string{"mii/derived-source/v1", a.RequestHash, digest(encoded)}), nil
 }
 
 func (b *Builder) restoreSample(m generator.Manifest, row SampleBinding, p derivedPayload, t *tokenrisk.Sample, batch *Batch) error {

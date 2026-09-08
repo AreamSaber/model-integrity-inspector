@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+
+	"model-integrity-inspector.local/mii/internal/integrity/domain"
 )
 
-const DerivedVersion = "mii.derived-s1.v1"
+const DerivedVersion = domain.AnalysisSourceDerivedV1
 const MaxDerivedBytes = 32 << 10
 
 // DerivedRecord is S1, not a trusted value until its independent-purpose MAC

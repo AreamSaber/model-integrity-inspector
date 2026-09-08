@@ -43,10 +43,11 @@
 
 实际纯层接口：
 
-- `Builder.DeriveAttempt(ctx, run, sample, attempt)`：精确重验 Manifest 和 frozen wire 后，使用原 `Builder.sample` 提取当前 Attempt，返回不可手填的 `PreparedDerived`。不要求尚不存在的 Run 关闭或 Attempt 提交时间；已结算状态和网络错误分类进入 outcome 摘要。
+- `Builder.DeriveAttempt(ctx, run, sample, attempt)`：精确重验已签入派生 source mode 的 Manifest 和 frozen wire 后，使用原 `Builder.sample` 提取当前 Attempt，返回不可手填的 `PreparedDerived`。不要求尚不存在的 Run 关闭或 Attempt 提交时间；已结算状态和网络错误分类进入 outcome 摘要。
 - `NewDerivedCapabilitiesWithMAC(activeVersion, DerivedAuthenticator)`：只依赖 `DerivedMAC(version string, canonical []byte) ([]byte,error)`。KeyVersion 与现 KeyRing 的大小写字母、数字、点、下划线和连字符规则一致，历史版本能力由可信启动配置决定，没有另设 8 版本限制。
 - `DerivedSealer.Seal(ctx, prepared)`：域为 `mii/derived-s1/auth/v1` + NUL + `mii.derived-s1.v1` + NUL + key version + NUL + canonical payload，MAC 必须 32 字节。底层能力错误折叠为闭合错误，最后一次 MAC 操作期间的取消仍在释放前检查。配置接口不接收 HTTP 参数或任意 JSON；只有纯测试的独立密钥构造接收 key bytes。
-- `Builder.BuildDerived(ctx, input, records, verifier)`：先复用原 Build 的完整持久图/时序/最终指针/请求校验，输入必须不混有原始 Evidence。每个已存在 Attempt 必须有一条认证记录，包含真实缺失响应的显式派生观察；无 Attempt 的 NOT_APPLICABLE 样本不制造记录。恢复后仅统计真正最终 Attempt，重试不变成额外样本。
+- `Builder.BuildDerived(ctx, input, records, verifier)`：先复用与原 Build 相同的私有核心做完整持久图/时序/最终指针/请求校验，且 Manifest 必须签入精确派生 source mode，输入必须不混有原始 Evidence。每个已存在 Attempt 必须有一条认证记录，包含真实缺失响应的显式派生观察；无 Attempt 的 NOT_APPLICABLE 样本不制造记录。恢复后仅统计真正最终 Attempt，重试不变成额外样本。
+- `Builder.BuildResponseReference(ctx, input, records, verifier)`：显式 raw 对照 API，不是失败时的备用分析路径。先对独立 Samples/Attempts slice 的去 Evidence 副本执行完整 BuildDerived 认证/校验，再经同一私有核心提取真实 raw 特征，并在释放前将每个 Attempt（含非最终重试）的完整 NormalizedResponse sourceHash 与已认证 payload 核对。任一必需 S1 缺失、原始响应缺失或不一致均拒绝；真实采集时明确 no_response 的记录只能对应 nil Evidence。原输入及签名 Manifest 不会被改写。
 - `behavior.DecodeAuthenticatedDerived` 仅是外层 MAC 已验证之后的严格 codec，不是独立认证。`VerifyDerivedBinding` 在 Batch 暴露前复验当前冻结合同/变量/Pair 摘要、registry 和 duplicated feature 一致性；恢复参数中的正文必须为空。它只能校验已有私有观测，不能由手填 Features 构造观测。聚合和配对继续使用 raw 路径的唯一函数。
 
 提取器签名覆盖 features、behavior、structure、tokenizer bundle / implementation、template 的精确版本与 artifact hash。独立 `source_hash` 为 `digestJSON(["mii/derived-source/v1", wire_hash, SHA256(json.Marshal(NormalizedResponse))])`；无响应时末项为闭合 `no_response`。它不是 `ResponseHash`、分析密文 ContentHash 或 display SourceHash，不能混用。Token Seed、Nonce、合同原句等只来自再次核验的 S2 签名计划，在恢复内存里使用，绝不写入派生记录。
@@ -72,3 +73,21 @@
 最小生产修复仅在 `analysis/scoring/analyze.go` 对 family 名排序后按固定顺序求和；不改变公式、浮点精度、阈值、参数 artifact、golden 或 JSON 精度。测试继续要求完整 JSON 字节等价，增加第 19 个真实 `refusal-uneven` 场景和同一 raw batch 重复 128 次的确定性回归。
 
 修复后 features / behavior / tokenrisk / scoring / analyzer 三轮实际通过（30.408s / 0.480s / 1.702s / 0.834s / 0.587s）。原 refusal 模式 1000 轮通过（230.900s）；确定性与安全诊断三轮再通过（1.304s）；最终相关 features / behavior / scoring lint 为 0 issues，全仓 `go test ./... -run '^$' -count=1` 编译检查通过。没有实际在 Linux 运行这些本地复测；此处不是新远端 CI 已通过的声明。此修复单元仅修改评分器顺序、派生外部测试和本节记录，等待主任务提交复核。
+
+## 签名来源模式与防静默降级（2026-09-08）
+
+`domain.AnalysisSourceDerivedV1` 固定为 `mii.derived-s1.v1`，`features.DerivedVersion` 保留为同值 alias。`generator.Options.AnalysisSourceVersion` 使用 `json:"analysis_source_version,omitempty"`，随 Manifest.Options 全体进入既有 HMAC；`domain.ExecutionPlan.AnalysisSourceVersion` 为已验签 Options 的同名投影，并参与现有完整 Plan 等价校验。Generate / Verify 的闭集只有空值（legacy）和该精确版本，未知或未来版本不会自动按 v1 解释。GeneratorVersion、模板、tokenizer、规则/评分 artifact hash 和旧 golden 均未改变。
+
+空字段省略后旧 Options / Manifest / ExecutionPlan 的 canonical 字节不变；测试使用去除此新字段的旧结构形状，独立编码完整 legacy canonical 并计算原 manifest-v1 MAC，确认旧字节、hash、签名与新版一致且可验证。新非空标记改变该 Run 的 ManifestHash 和 MAC，但不改变冻结请求、样本、参数或估算。显式空字符串/null 的非 canonical 注入也拒绝。旧程序不能识别新字段时将关闭失败，未声明混合新旧 Worker 可安全处理新模式。
+
+公开 `Build` 仅接受空模式，`DeriveAttempt` / `BuildDerived` / `BuildResponseReference` 仅接受精确派生模式；三个调用路径共用私有图/请求校验和原始测量核心，没有可由调用者开启的 allowDerivedRaw 开关。删除 S1、仅改 Plan/数据库投影模式、直接删除签名字段并重算数据库 plain hash，均不能使派生 Run 降为 legacy。历史目的密钥、全部重试链、缺失观察、scope 和提取器版本的既有校验均保留。19 类完整 analyzer JSON 等价用例现均从真实生成器签入新模式，再通过显式响应对照 API 得到 raw oracle；不去掉或重签模式以走旧路径。
+
+对照额外反例覆盖正文、provider request ID、MIME、model、usage、raw 缺失、AAD scope、S1 缺失/重复/篡改、final pointer、非最终真实重试源差异，以及通过测试用途能力认证但与实际响应不同的 sourceHash。记录/样本/Attempt 个数和原始/S1 字节预算继续受界；完整 BuildDerived 成功后的后续 MAC 取消同样拒绝释放对照。对照要求全部真实响应源在场，不支持从 0 天未留存的原始响应生成 reference。
+
+服务和 app 接线由主任务实现：实际新 Estimate 明确签入派生版本，未确认的旧模式 draft 在切换后返回 EstimateStale；已确认的 legacy Run 保持原签名和模式，先恢复其既有 receipt，不重新签署历史计划。本单元不改数据库、Worker、run.Service、app 或 replay，亦不把派生纯层通过声称为已启用留存策略。后续真实 Worker / replay 受控验证须提供完整可信 S1 给 BuildResponseReference，不可先删 marker 再调用 Build。
+
+防护边界：现签名绑定组织及 RunNonce，未绑定随后生成的数据库 RunID。本改动阻止直接删 S1 / 改模式降级，不宣称抵抗攻击者用同组织另一份有效 legacy Manifest 替换整套 Run 持久数据。可删除的独立 activation 行不构成额外防降级依据。新模式无需修改迁移 17 或回填旧 Manifest；S1 持久结算由后续独立迁移处理。
+
+本地验证：最终补强后的 generator / features / behavior / tokenrisk / scoring / analyzer 三轮通过（1.086s / 20.886s / 0.656s / 1.488s / 0.695s / 0.528s），原有 golden 未修改；新增来源与 reference 反例独立三轮通过（1.579s）；最终 domain / generator / features lint 为 0 issues；全仓 compile-only 通过。这些不是新远端 CI 或 Linux 实跑证据。
+
+本单元冻结文件：domain/execution.go；generator/manifest.go、generator.go、replay.go、新 analysis_source_test.go；features/build.go、derived.go、derived_auth.go、derived_test.go、derived_analyzer_test.go、新 derived_source_test.go；以及本 notes。未执行 Git，待主任务复核整合。恢复入口为 BuildResponseReference 及上述来源模式负例；不再通过去掉签名标记来适配未来 Worker/replay 测试。

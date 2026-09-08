@@ -59,6 +59,7 @@ func analyzerFixture(t *testing.T, mode string) (*features.Builder, features.Inp
 		t.Fatal(err)
 	}
 	opts := generator.Options{OrganizationID: 42, Target: domain.ExecutionTarget{ID: 11, Version: 2, SecretID: 12, SecretVersion: 3, Model: "gpt-4o-2024-08-06", Endpoint: "https://example.com/v1", Protocol: "openai_chat", MaxOutputParameter: "max_tokens", AuthType: "bearer", TimeoutSeconds: 180}, Package: "standard", Budget: domain.ExecutionBudget{MaxRequests: 150, MaxTokens: 1000000, TimeoutSeconds: 600}, RuleVersion: "1.0.0-dev.1", ScoringVersion: "1.0.0-dev.1", StandardModel: "gpt-4o-2024-08-06", ContextWindow: 128000, MaxOutputTokens: 4096, SupportsSeed: mode != "no-seed", SupportsStream: true, Concurrency: 3, MaxRetries: 2, ReasoningModel: strings.HasPrefix(mode, "reasoning")}
+	opts.AnalysisSourceVersion = domain.AnalysisSourceDerivedV1
 	m, err := g.Generate(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -188,14 +189,6 @@ func TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath(t *testing.T) {
 	for _, mode := range []string{"normal", "no-seed", "affix", "paired-cues", "missing-usage", "reasoning-unseparated", "reasoning-separated", "reported-model", "partial-stream", "protocol", "refusal", "refusal-uneven", "structure-limit", "behavior-limit", "missing-response", "uncertain", "invalid", "no-final", "retry"} {
 		t.Run(mode, func(t *testing.T) {
 			builder, input, manifest := analyzerFixture(t, mode)
-			rawBatch, err := builder.Build(input)
-			if err != nil {
-				t.Fatal(err)
-			}
-			rawDoc, err := analyzer.Analyze(rawBatch)
-			if err != nil {
-				t.Fatal(err)
-			}
 			sealer, verifier, err := features.NewDerivedCapabilities("synthetic.v1", bytes.Repeat([]byte{0x5a}, 32))
 			if err != nil {
 				t.Fatal(err)
@@ -236,9 +229,17 @@ func TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath(t *testing.T) {
 						}
 					}
 					records = append(records, record)
-					input.Samples[i].Attempts[j].Evidence = nil
 				}
 			}
+			rawBatch, err := builder.BuildResponseReference(t.Context(), input, records, verifier)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawDoc, err := analyzer.Analyze(rawBatch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input = withoutResponses(input)
 			derivedBatch, err := builder.BuildDerived(t.Context(), input, records, verifier)
 			if err != nil {
 				t.Fatal(err)
@@ -267,7 +268,12 @@ func TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath(t *testing.T) {
 
 func TestDerivedRefusalRawAnalyzerIsByteDeterministic(t *testing.T) {
 	builder, input, _ := analyzerFixture(t, "refusal-uneven")
-	batch, err := builder.Build(input)
+	sealer, verifier, err := features.NewDerivedCapabilities("synthetic.v1", bytes.Repeat([]byte{0x5a}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := sealResponseFixture(t, builder, input, sealer)
+	batch, err := builder.BuildResponseReference(t.Context(), input, records, verifier)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,21 +318,6 @@ func TestDerivedRefusalRawAnalyzerIsByteDeterministic(t *testing.T) {
 
 func TestDerivedActualSecretPurposeCapabilityAndHistoricalVersions(t *testing.T) {
 	builder, input, _ := analyzerFixture(t, "affix")
-	rawBatch, err := builder.Build(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rawDocument, err := analyzer.Analyze(rawBatch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rawDocument.Features.Included == 0 || len(rawDocument.Behavior.Patterns) == 0 {
-		t.Fatal("fixture has no real measured behavior")
-	}
-	expected, err := json.Marshal(rawDocument)
-	if err != nil {
-		t.Fatal(err)
-	}
 	oldMaster, newMaster := bytes.Repeat([]byte{0x51}, 32), bytes.Repeat([]byte{0x67}, 32)
 	newCapabilities := func(active string, masters map[string][]byte) (*features.DerivedSealer, *features.DerivedVerifier) {
 		t.Helper()
@@ -365,9 +356,24 @@ func TestDerivedActualSecretPurposeCapabilityAndHistoricalVersions(t *testing.T)
 				t.Fatal("versioned actual purpose authentication is not detached from measurement bytes")
 			}
 			oldRecords, newRecords = append(oldRecords, oldRecord), append(newRecords, newRecord)
-			input.Samples[i].Attempts[j].Evidence = nil
 		}
 	}
+	rawBatch, err := builder.BuildResponseReference(t.Context(), input, oldRecords, oldVerifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawDocument, err := analyzer.Analyze(rawBatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rawDocument.Features.Included == 0 || len(rawDocument.Behavior.Patterns) == 0 {
+		t.Fatal("fixture has no real measured behavior")
+	}
+	expected, err := json.Marshal(rawDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input = withoutResponses(input)
 	for _, tc := range []struct {
 		name     string
 		records  []features.DerivedRecord
@@ -402,6 +408,36 @@ func TestDerivedActualSecretPurposeCapabilityAndHistoricalVersions(t *testing.T)
 			t.Fatal("wrong ring, missing historical purpose or raw master authenticated records", err)
 		}
 	}
+}
+
+func withoutResponses(input features.Input) features.Input {
+	input.Samples = slices.Clone(input.Samples)
+	for i := range input.Samples {
+		input.Samples[i].Attempts = slices.Clone(input.Samples[i].Attempts)
+		for j := range input.Samples[i].Attempts {
+			input.Samples[i].Attempts[j].Evidence = nil
+		}
+	}
+	return input
+}
+
+func sealResponseFixture(t *testing.T, builder *features.Builder, input features.Input, sealer *features.DerivedSealer) []features.DerivedRecord {
+	t.Helper()
+	records := []features.DerivedRecord{}
+	for _, row := range input.Samples {
+		for _, attempt := range row.Attempts {
+			prepared, err := builder.DeriveAttempt(t.Context(), input.Run, row, attempt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := sealer.Seal(t.Context(), prepared)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records = append(records, record)
+		}
+	}
+	return records
 }
 
 // Diagnostics are limited to field names from the closed analysis DTO and

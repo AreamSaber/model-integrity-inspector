@@ -42,6 +42,9 @@ var label = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 var noncePattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 func validateOptions(o Options) bool {
+	if o.AnalysisSourceVersion != "" && o.AnalysisSourceVersion != domain.AnalysisSourceDerivedV1 {
+		return false
+	}
 	if o.PrecheckID < 0 || (o.ModelProfile != nil && (o.ModelProfile.ID <= 0 || o.ModelProfile.Version <= 0)) {
 		return false
 	}

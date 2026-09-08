@@ -31,12 +31,15 @@ type Config struct {
 	Generator                   *generator.Generator
 	Limits                      domain.ExecutionLimits
 	RuleVersion, ScoringVersion string
-	ExecutionReady              func(context.Context) bool
+	// Trusted deployment selection, never accepted from HTTP Options. Empty
+	// preserves explicitly legacy plans until the full derived pipeline is ready.
+	AnalysisSourceVersion string
+	ExecutionReady        func(context.Context) bool
 }
 type Service struct{ cfg Config }
 
 func NewService(cfg Config) (*Service, error) {
-	if cfg.Store == nil || cfg.Targets == nil || cfg.Generator == nil || cfg.RuleVersion == "" || cfg.ScoringVersion == "" {
+	if cfg.Store == nil || cfg.Targets == nil || cfg.Generator == nil || cfg.RuleVersion == "" || cfg.ScoringVersion == "" || (cfg.AnalysisSourceVersion != "" && cfg.AnalysisSourceVersion != domain.AnalysisSourceDerivedV1) {
 		return nil, ErrInvalid
 	}
 	if _, err := scheduler.NewPolicy(cfg.Limits); err != nil {
@@ -170,6 +173,7 @@ func (s *Service) Estimate(ctx context.Context, orgID int64, input Input) (Quote
 		}
 	}
 	o := generator.Options{OrganizationID: orgID, PrecheckID: precheck.ID, Target: domain.ExecutionTarget{ID: snapshot.TargetID, Version: snapshot.TargetVersion, SecretID: snapshot.SecretID, SecretVersion: snapshot.SecretVersion, Endpoint: snapshot.Endpoint, Model: snapshot.Model, Protocol: snapshot.Protocol, MaxOutputParameter: precheck.MaxOutputParameter, AuthType: snapshot.AuthType, AuthHeaderName: snapshot.AuthHeaderName, TimeoutSeconds: snapshot.Options.TimeoutSeconds}, Package: input.Package, RuleVersion: s.cfg.RuleVersion, ScoringVersion: s.cfg.ScoringVersion, ContextWindow: 4096, MaxOutputTokens: 1024, ModelLimitsAssumed: true, SupportsStream: supportsStream, StreamModes: slices.Clone(input.Options.StreamModes)}
+	o.AnalysisSourceVersion = s.cfg.AnalysisSourceVersion
 	if snapshot.ModelProfileID != nil {
 		profile, err := tenant.GetModelProfile(*snapshot.ModelProfileID)
 		if err != nil {
@@ -284,7 +288,7 @@ func (s *Service) Confirm(ctx context.Context, orgID, estimateID int64, hash str
 	// A deployment may have changed the active rule/scoring implementation while
 	// this draft was open. Existing receipts above remain recoverable, but a new
 	// Run must not be created against an unavailable implementation version.
-	if verified.Versions.Rule != s.cfg.RuleVersion || verified.Versions.Scoring != s.cfg.ScoringVersion {
+	if verified.Versions.Rule != s.cfg.RuleVersion || verified.Versions.Scoring != s.cfg.ScoringVersion || verified.AnalysisSourceVersion != s.cfg.AnalysisSourceVersion {
 		return repository.RunRecord{}, repository.ErrEstimateStale
 	}
 	snapshot, err := s.cfg.Targets.Snapshot(ctx, orgID, verified.Target.ID)

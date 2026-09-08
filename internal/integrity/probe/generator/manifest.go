@@ -27,28 +27,29 @@ type Signer interface {
 // Options is trusted composition data after authorization/catalog lookup and
 // administrator budget clamping. Never bind it or an ExecutionPlan from HTTP.
 type Options struct {
-	PrecheckID         int64                         `json:"precheck_id,omitempty"`
-	ModelProfile       *domain.ExecutionModelProfile `json:"model_profile,omitempty"`
-	ModelLimitsAssumed bool                          `json:"model_limits_assumed,omitempty"`
-	ReasoningModel     bool                          `json:"reasoning_model,omitempty"`
-	OrganizationID     int64                         `json:"organization_id,string"`
-	Target             domain.ExecutionTarget        `json:"target"`
-	Package            string                        `json:"package"`
-	Budget             domain.ExecutionBudget        `json:"budget"`
-	Pricing            domain.ExecutionPricing       `json:"pricing"`
-	RuleVersion        string                        `json:"rule_version"`
-	ScoringVersion     string                        `json:"scoring_version"`
-	StandardModel      string                        `json:"standard_model"`
-	ContextWindow      int                           `json:"context_window"`
-	MaxOutputTokens    int                           `json:"max_output_tokens"`
-	SupportsStream     bool                          `json:"supports_stream"`
-	SupportsSeed       bool                          `json:"supports_seed"`
-	StreamModes        []bool                        `json:"stream_modes,omitempty"`
-	Temperature        *float64                      `json:"temperature"`
-	Concurrency        int                           `json:"concurrency"`
-	MaxRetries         int                           `json:"max_retries"`
-	BaselineRunID      *int64                        `json:"baseline_run_id,omitempty"`
-	Custom             *Custom                       `json:"custom,omitempty"`
+	AnalysisSourceVersion string                        `json:"analysis_source_version,omitempty"`
+	PrecheckID            int64                         `json:"precheck_id,omitempty"`
+	ModelProfile          *domain.ExecutionModelProfile `json:"model_profile,omitempty"`
+	ModelLimitsAssumed    bool                          `json:"model_limits_assumed,omitempty"`
+	ReasoningModel        bool                          `json:"reasoning_model,omitempty"`
+	OrganizationID        int64                         `json:"organization_id,string"`
+	Target                domain.ExecutionTarget        `json:"target"`
+	Package               string                        `json:"package"`
+	Budget                domain.ExecutionBudget        `json:"budget"`
+	Pricing               domain.ExecutionPricing       `json:"pricing"`
+	RuleVersion           string                        `json:"rule_version"`
+	ScoringVersion        string                        `json:"scoring_version"`
+	StandardModel         string                        `json:"standard_model"`
+	ContextWindow         int                           `json:"context_window"`
+	MaxOutputTokens       int                           `json:"max_output_tokens"`
+	SupportsStream        bool                          `json:"supports_stream"`
+	SupportsSeed          bool                          `json:"supports_seed"`
+	StreamModes           []bool                        `json:"stream_modes,omitempty"`
+	Temperature           *float64                      `json:"temperature"`
+	Concurrency           int                           `json:"concurrency"`
+	MaxRetries            int                           `json:"max_retries"`
+	BaselineRunID         *int64                        `json:"baseline_run_id,omitempty"`
+	Custom                *Custom                       `json:"custom,omitempty"`
 }
 
 type Custom struct {

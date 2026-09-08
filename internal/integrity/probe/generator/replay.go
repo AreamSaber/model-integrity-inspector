@@ -116,6 +116,7 @@ func (g *Generator) ExecutionPlan(data []byte, expectedHash string, organization
 	// mutable catalog values when replaying an already confirmed Run.
 	p := domain.ExecutionPlan{Target: o.Target, Package: o.Package, ManifestHash: expectedHash, Manifest: bytes.Clone(data), Versions: domain.BundleVersions{Rule: o.RuleVersion, Template: m.TemplateVersion, Scoring: o.ScoringVersion, Tokenizer: m.TokenizerVersion}, Budget: o.Budget, Pricing: o.Pricing, Concurrency: o.Concurrency, MaxRetries: o.MaxRetries, BaselineRunID: o.BaselineRunID, Probes: []domain.ProbePlan{}}
 	p.PrecheckID, p.ModelProfile = o.PrecheckID, o.ModelProfile
+	p.AnalysisSourceVersion = o.AnalysisSourceVersion
 	for _, s := range m.Samples {
 		request, err := g.request(o, s)
 		if err != nil {

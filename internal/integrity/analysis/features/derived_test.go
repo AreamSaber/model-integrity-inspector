@@ -15,7 +15,7 @@ import (
 
 func derivedFixture(t *testing.T) (fixture, []DerivedRecord, *DerivedVerifier) {
 	t.Helper()
-	f := newFixture(t, func(o *generator.Options) { o.Package = "quick" })
+	f := newFixture(t, func(o *generator.Options) { o.Package, o.AnalysisSourceVersion = "quick", DerivedVersion })
 	sealer, verifier, err := NewDerivedCapabilities("SYNTHETIC.v1", bytes.Repeat([]byte{0x39}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestDerivedAuthenticatedCodecStillRejectsUnknownOrNoncanonical(t *testing.T
 func TestDeriveRequiresFrozenActualBindingAndDetachesMeasurements(t *testing.T) {
 	for _, mode := range []string{"nil", "plan", "scope", "wire", "number", "outcome", "evidence-scope", "limit"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newFixture(t, func(o *generator.Options) { o.Package = "quick" })
+			f := newFixture(t, func(o *generator.Options) { o.Package, o.AnalysisSourceVersion = "quick", DerivedVersion })
 			run, row, a := f.input.Run, f.input.Samples[0], f.input.Samples[0].Attempts[0]
 			switch mode {
 			case "nil":
@@ -164,7 +164,7 @@ func TestDeriveRequiresFrozenActualBindingAndDetachesMeasurements(t *testing.T) 
 			}
 		})
 	}
-	f := newFixture(t, nil)
+	f := newFixture(t, func(o *generator.Options) { o.AnalysisSourceVersion = DerivedVersion })
 	prepared, err := f.builder.DeriveAttempt(t.Context(), f.input.Run, f.input.Samples[0], f.input.Samples[0].Attempts[0])
 	if err != nil {
 		t.Fatal(err)
