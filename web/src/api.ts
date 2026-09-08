@@ -229,5 +229,6 @@ export const api = {
     return request('/roles', page(role), { headers: { 'X-Organization-ID': organizationID }, signal })
   },
   logout: (csrfToken: string, signal?: AbortSignal) => request('/auth/logout', acknowledged, { body: {}, headers: { 'X-CSRF-Token': csrfToken }, signal }),
+  logoutAll: (csrfToken: string, signal?: AbortSignal) => request('/auth/logout-all', (value): value is { ok: true } => acknowledged(value) && Object.keys(value).length === 1, { method: 'POST', body: {}, headers: { 'X-CSRF-Token': csrfToken }, signal }),
   changePassword: (body: { current_password: string; new_password: string }, csrfToken: string, signal?: AbortSignal) => request('/auth/change-password', acknowledged, { body, headers: { 'X-CSRF-Token': csrfToken }, signal }),
 }

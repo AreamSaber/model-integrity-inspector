@@ -56,6 +56,32 @@ describe('API response validation', () => {
   })
 })
 
+describe('self-service logout-all request', () => {
+  it('sends exactly an empty JSON body with CSRF and no query, organization or caller-selected user', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: { ok: true }, request_id: 'logout-all' }))
+    vi.stubGlobal('fetch', fetcher)
+    const controller = new AbortController()
+    await expect(api.logoutAll('synthetic-csrf', controller.signal)).resolves.toEqual({ ok: true })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls[0]).toEqual(['/api/v1/auth/logout-all', expect.objectContaining({ method: 'POST', body: '{}', credentials: 'same-origin', cache: 'no-store', redirect: 'error' })])
+    const headers = new Headers(fetcher.mock.calls[0][1]?.headers)
+    expect(headers.get('X-CSRF-Token')).toBe('synthetic-csrf')
+    expect(headers.get('Content-Type')).toBe('application/json')
+    for (const name of ['X-Organization-ID', 'Authorization', 'Origin']) expect(headers.has(name)).toBe(false)
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+  })
+  it.each([{}, null, { ok: false }, { ok: 'true' }, { ok: true, body: 'SECRET_BODY_CANARY' }])('rejects an ambiguous acknowledgment %#', async (data) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data, request_id: 'logout-all' })))
+    await expect(api.logoutAll('synthetic-csrf')).rejects.toMatchObject({ code: 'MI_INVALID_RESPONSE' })
+  })
+  it('never retries a lost logout-all response', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('SECRET_BODY_CANARY'))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.logoutAll('synthetic-csrf')).rejects.toMatchObject({ code: 'MI_NETWORK_ERROR' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+})
+
 const successLimit = 8 * 1024 * 1024, errorLimit = 64 * 1024
 const successJSON = JSON.stringify({ data: { ok: true }, request_id: 'bounded-request' })
 const errorJSON = JSON.stringify({ error: { code: 'MI_PERMISSION_DENIED', message: 'SECRET_BODY_CANARY' }, request_id: 'bounded-request' })

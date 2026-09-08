@@ -35,9 +35,9 @@
       ],
       "test_case": "REQ-SYS-002",
       "implementation": "in_progress",
-      "code": ["internal/identity/service.go","internal/identity/password.go","internal/integrity/api/control.go","web/src/components/AuthForms.tsx"],
-      "tests": ["internal/identity/service_test.go","internal/identity/password_test.go","internal/integrity/api/control_test.go","web/src/App.test.tsx"],
-      "notes": "本地登录/当前会话退出、CSRF、会话到期、改密撤销全部会话、账号锁定已实现并有双库/浏览器证据；无需改密的独立退出所有会话入口及完整会话管理交互仍待补齐。正式审核延期，不把改密失效等同完整会话管理。",
+      "code": ["internal/identity/service.go","internal/identity/password.go","internal/identity/sessions.go","internal/integrity/repository/identity_sessions.go","internal/integrity/api/control.go","internal/integrity/api/sessions.go","web/src/components/AuthForms.tsx","web/src/components/SessionSecurity.tsx"],
+      "tests": ["internal/identity/service_test.go","internal/identity/password_test.go","internal/identity/sessions_test.go","internal/integrity/repository/identity_sessions_test.go","internal/integrity/api/control_test.go","internal/integrity/api/sessions_test.go","web/src/components/SessionSecurity.test.tsx","web/src/App.test.tsx","tests/contracts/sessions_test.go"],
+      "notes": "本地登录/当前退出、CSRF、会话到期、改密注销及账号锁定已有双库/浏览器证据；独立退出所有会话服务/HTTP/账户与强改密页面已接线，无需改密和组织授权，锁后身份复验/审计失败原子回滚/前端未知结果不自动重试有回归。2026-09-08真实SQLite浏览器确认全退→刷新保持未登录→原密码重新登录→取消确认/普通退出通过，窄屏无整页溢出，无控制台警告/错误。不是多设备浏览器验收；完整M7统一验收与正式审核仍待进行。",
       "goal_included": true
     },
     {
@@ -114,9 +114,9 @@
       ],
       "test_case": "REQ-SYS-006",
       "implementation": "in_progress",
-      "code": ["internal/integrity/repository/migrate.go","migrations/migrations.go","internal/app/app.go","internal/integrity/api/control.go"],
-      "tests": ["internal/integrity/repository/store_test.go","internal/integrity/repository/migrate_parser_test.go","internal/app/app_test.go","internal/integrity/api/control_test.go"],
-      "notes": "真实迁移/校验和/版本检查、health/ready与DB/审计尾链/Worker就绪已实现并有双库及故障回归；授权运行状态页#/system和完整监控/运维回执尚未实现，公开readiness不替代管理页。",
+      "code": ["internal/integrity/repository/migrate.go","migrations/migrations.go","internal/app/app.go","internal/app/system_status.go","internal/identity/system_status.go","internal/integrity/api/control.go","internal/integrity/api/system_status.go","internal/integrity/repository/system_status.go","web/src/system-status-api.ts","web/src/components/system/SystemStatusPage.tsx"],
+      "tests": ["internal/integrity/repository/store_test.go","internal/integrity/repository/migrate_parser_test.go","internal/app/app_test.go","internal/app/system_status_test.go","internal/integrity/api/control_test.go","internal/integrity/api/system_status_test.go","internal/integrity/repository/system_status_test.go","tests/contracts/system_status_test.go","web/src/system-status-api.test.ts","web/src/components/system/SystemStatusPage.test.tsx","web/src/App.test.tsx"],
+      "notes": "真实迁移/校验和/health/ready已实现；/system/health在当前系统角色和选定组织run.read/audit.read授权下只读实际DB/schema/Job/审计尾链及本地Worker，双库/实际起停/撤权/限流有证据。key/report仅startup_verified、远端Worker/配额/保留清理/备份明确不可用，coverage=partial不冒称整体ready。#/system已接真实后端；SQLite浏览器读取/刷新、390px窄屏无整页溢出通过；完整监控/运维回执和M7验收仍待完成，正式审核未进行。",
       "goal_included": true
     },
     {

@@ -1255,6 +1255,42 @@
         "x-development-status": "contract-only"
       }
     },
+    "/auth/logout-all": {
+      "post": {
+        "operationId": "logoutAllSessions",
+        "summary": "Revoke every session of the authenticated account, including this session",
+        "description": "Self-service only: no user or organization selector, no password change, and no administrator grant required. Temporary-password sessions may use this route. User and initiating session are revalidated under lock; all revocations and audit events commit atomically. A login serialized after that commit may create a new session. Network failure does not establish whether the transaction committed; clients must not automatically replay this write.",
+        "security": [{ "SessionCookie": [] }],
+        "parameters": [
+          { "name": "Origin", "in": "header", "required": true, "schema": { "type": "string", "maxLength": 2048 }, "description": "Must exactly match the configured public origin; cross-site requests are rejected." },
+          { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string", "maxLength": 128 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "maxProperties": 0, "properties": {} } } },
+          "description": "Exactly an empty JSON object. Empty body, null, extra fields and all query parameters are rejected."
+        },
+        "responses": {
+          "200": {
+            "description": "Revocation and audit transaction committed; current browser cookie is expired. No session IDs, counts or tokens are returned.",
+            "headers": { "Cache-Control": { "schema": { "type": "string", "const": "no-store" } }, "Set-Cookie": { "schema": { "type": "string" }, "description": "Expires current HttpOnly, SameSite=Strict session cookie; Secure follows deployment policy." } },
+            "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["data", "request_id"], "properties": { "data": { "$ref": "#/components/schemas/Acknowledged" }, "request_id": { "type": "string", "maxLength": 64 } } } } }
+          },
+          "400": { "description": "MI_INVALID_REQUEST: nonempty/invalid JSON or query selector.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "401": { "description": "MI_SESSION_REQUIRED: missing, expired, revoked or otherwise invalid session.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "403": { "description": "MI_CSRF_INVALID: Origin or per-session CSRF check rejected the request.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "409": { "description": "MI_SETUP_REQUIRED: initialization has not completed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "413": { "description": "MI_INVALID_REQUEST: request exceeds the fixed JSON body limit.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "429": { "description": "Reserved common admission failure; this route does not currently use the login limiter.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "503": { "description": "MI_SERVICE_UNAVAILABLE: canceled/deadline, database or audit failure. Do not infer successful revocation from this response.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        },
+        "x-permission": "authenticated",
+        "x-development-status": "implemented",
+        "x-request-deadline-ms": 2000,
+        "x-forced-password-allowed": true,
+        "x-unknown-query-parameters": "reject"
+      }
+    },
     "/auth/change-password": {
       "post": {
         "operationId": "changePassword",
@@ -10206,40 +10242,58 @@
     "/system/health": {
       "get": {
         "operationId": "systemHealth",
-        "summary": "systemHealth",
+        "summary": "Read bounded current-process and selected-organization status",
+        "description": "No upstream, secret decryption, filesystem probe, maintenance or backup action. Active session/user/system-admin and selected-organization membership plus run.read/audit.read are checked in a read-only snapshot and again after local Worker observation. Unavailable/startup_verified remain distinct from current healthy status. HEAD shares entry admission/deadline but is rejected.",
         "security": [
           {
             "SessionCookie": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "成功；只包含授权且脱敏的数据。",
+            "description": "Actual authorized read-only database snapshot and independent local-process observation. Partial/degraded diagnostics do not imply overall readiness.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "additionalProperties": false,
+                  "required": [
+                    "data",
+                    "request_id"
+                  ],
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Health"
+                      "$ref": "#/components/schemas/SystemStatus"
                     },
                     "request_id": {
                       "type": "string",
                       "maxLength": 64
                     }
-                  },
-                  "required": [
-                    "data",
-                    "request_id"
-                  ]
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_INVALID_REQUEST: canonical single organization header required; no query or body.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10249,7 +10303,7 @@
             }
           },
           "401": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_SESSION_REQUIRED: invalid or revoked session.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10259,7 +10313,7 @@
             }
           },
           "403": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_PERMISSION_DENIED or MI_PASSWORD_CHANGE_REQUIRED. System role never grants implicit organization access.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10268,8 +10322,8 @@
               }
             }
           },
-          "404": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+          "405": {
+            "description": "HEAD rejected; GET is the only supported method.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10279,17 +10333,7 @@
             }
           },
           "409": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_SETUP_REQUIRED: initialization not complete.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10299,17 +10343,25 @@
             }
           },
           "429": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_SYSTEM_STATUS_BUSY: process or authorized organization admission exhausted; Retry-After 2.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "const": 2
+                }
+              }
             }
           },
           "503": {
-            "description": "结构化错误，禁止返回凭证、URL query 或原始错误正文。",
+            "description": "MI_SYSTEM_STATUS_TIMEOUT or MI_SERVICE_UNAVAILABLE. If current authorization cannot be checked, no cached diagnostic data is returned.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10319,8 +10371,20 @@
             }
           }
         },
-        "x-permission": "system.read",
-        "x-development-status": "contract-only"
+        "x-permission": [
+          "system.read",
+          "run.read",
+          "audit.read"
+        ],
+        "x-permission-mode": "all",
+        "x-development-status": "implemented",
+        "x-request-deadline-ms": 2000,
+        "x-max-response-bytes": 32768,
+        "x-max-active-jobs": 10000,
+        "x-max-tail-events": 2,
+        "x-process-concurrency": 2,
+        "x-organization-concurrency": 1,
+        "x-unknown-query-parameters": "reject"
       }
     },
     "/system/version": {
@@ -11575,6 +11639,652 @@
       }
     },
     "schemas": {
+      "SystemStatus": {
+        "additionalProperties": false,
+        "description": "Read-only local-process and selected-organization observations. Startup checks are not current capability probes. Unimplemented monitoring, retention enforcement, periodic quotas and backup stay unavailable.",
+        "properties": {
+          "backup_restore": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "build": {
+            "$ref": "#/components/schemas/SystemBuild"
+          },
+          "coverage": {
+            "const": "partial",
+            "type": "string"
+          },
+          "database": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "database_driver": {
+            "enum": [
+              "sqlite",
+              "postgres"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "local_worker": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "master_key": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "observed_state": {
+            "description": "Only the observed checks; not overall readiness or full-system health.",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "organization_audit": {
+            "$ref": "#/components/schemas/SystemAudit"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "organization_jobs": {
+            "$ref": "#/components/schemas/SystemJobs"
+          },
+          "organization_periodic_quotas": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "process_role": {
+            "enum": [
+              "all",
+              "server"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "remote_workers": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "report_storage": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "retention_cleanup": {
+            "$ref": "#/components/schemas/SystemCheck"
+          },
+          "retention_policy": {
+            "$ref": "#/components/schemas/SystemRetention"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/SystemSchema"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/ID"
+          }
+        },
+        "required": [
+          "organization_id",
+          "user_id",
+          "observed_at",
+          "observed_state",
+          "coverage",
+          "process_role",
+          "database_driver",
+          "build",
+          "database",
+          "schema",
+          "local_worker",
+          "remote_workers",
+          "organization_jobs",
+          "organization_audit",
+          "master_key",
+          "report_storage",
+          "retention_policy",
+          "organization_periodic_quotas",
+          "retention_cleanup",
+          "backup_restore"
+        ],
+        "type": "object"
+      },
+      "SystemCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "enum": [
+              "read_connection_only",
+              "migration_history_matches",
+              "migration_history_mismatch",
+              "active_jobs_not_runs_or_samples",
+              "active_job_limit_exceeded",
+              "active_job_records_invalid",
+              "tail_only_not_full_chain",
+              "audit_signer_unavailable",
+              "audit_tail_invalid",
+              "remote_consumer_registry_unavailable",
+              "current_key_file_and_all_credentials_not_probed",
+              "current_capacity_writeability_and_all_artifacts_not_probed",
+              "organization_setting_not_bound_to_write_policy",
+              "organization_periodic_quotas_not_implemented",
+              "retention_handler_not_registered",
+              "backup_restore_receipts_unavailable",
+              "server_role_has_no_local_worker",
+              "local_runner_reports_ready",
+              "local_runner_not_ready"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_database_snapshot",
+              "selected_organization",
+              "not_observed",
+              "local_process_startup",
+              "local_process"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "error",
+              "unavailable",
+              "startup_verified",
+              "not_applicable"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "checked_at",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SystemBuild": {
+        "additionalProperties": false,
+        "properties": {
+          "built_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "pattern": "^[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule_bundle": {
+            "maxLength": 129,
+            "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$",
+            "type": "string"
+          },
+          "scoring": {
+            "maxLength": 129,
+            "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$",
+            "type": "string"
+          },
+          "template_bundle": {
+            "maxLength": 129,
+            "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$",
+            "type": "string"
+          },
+          "tokenizer_bundle": {
+            "maxLength": 129,
+            "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 129,
+            "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "commit",
+          "built_at",
+          "rule_bundle",
+          "template_bundle",
+          "scoring",
+          "tokenizer_bundle"
+        ],
+        "type": "object"
+      },
+      "SystemSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_migrations": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "observed_migrations": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "read_connection_only",
+              "migration_history_matches",
+              "migration_history_mismatch",
+              "active_jobs_not_runs_or_samples",
+              "active_job_limit_exceeded",
+              "active_job_records_invalid",
+              "tail_only_not_full_chain",
+              "audit_signer_unavailable",
+              "audit_tail_invalid",
+              "remote_consumer_registry_unavailable",
+              "current_key_file_and_all_credentials_not_probed",
+              "current_capacity_writeability_and_all_artifacts_not_probed",
+              "organization_setting_not_bound_to_write_policy",
+              "organization_periodic_quotas_not_implemented",
+              "retention_handler_not_registered",
+              "backup_restore_receipts_unavailable",
+              "server_role_has_no_local_worker",
+              "local_runner_reports_ready",
+              "local_runner_not_ready"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_database_snapshot",
+              "selected_organization",
+              "not_observed",
+              "local_process_startup",
+              "local_process"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "error",
+              "unavailable",
+              "startup_verified",
+              "not_applicable"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "checked_at",
+          "reason",
+          "expected_migrations",
+          "observed_migrations"
+        ],
+        "type": "object"
+      },
+      "SystemJobs": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_delayed": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_ready": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "enum": [
+              "read_connection_only",
+              "migration_history_matches",
+              "migration_history_mismatch",
+              "active_jobs_not_runs_or_samples",
+              "active_job_limit_exceeded",
+              "active_job_records_invalid",
+              "tail_only_not_full_chain",
+              "audit_signer_unavailable",
+              "audit_tail_invalid",
+              "remote_consumer_registry_unavailable",
+              "current_key_file_and_all_credentials_not_probed",
+              "current_capacity_writeability_and_all_artifacts_not_probed",
+              "organization_setting_not_bound_to_write_policy",
+              "organization_periodic_quotas_not_implemented",
+              "retention_handler_not_registered",
+              "backup_restore_receipts_unavailable",
+              "server_role_has_no_local_worker",
+              "local_runner_reports_ready",
+              "local_runner_not_ready"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "row_limit": {
+            "const": 10000,
+            "type": "integer"
+          },
+          "running_expired": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running_leased": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "authorized_database_snapshot",
+              "selected_organization",
+              "not_observed",
+              "local_process_startup",
+              "local_process"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "error",
+              "unavailable",
+              "startup_verified",
+              "not_applicable"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "total_active_jobs": {
+            "anyOf": [
+              {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "checked_at",
+          "reason",
+          "row_limit",
+          "total_active_jobs",
+          "pending_ready",
+          "pending_delayed",
+          "running_leased",
+          "running_expired"
+        ],
+        "type": "object"
+      },
+      "SystemAudit": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "enum": [
+              "read_connection_only",
+              "migration_history_matches",
+              "migration_history_mismatch",
+              "active_jobs_not_runs_or_samples",
+              "active_job_limit_exceeded",
+              "active_job_records_invalid",
+              "tail_only_not_full_chain",
+              "audit_signer_unavailable",
+              "audit_tail_invalid",
+              "remote_consumer_registry_unavailable",
+              "current_key_file_and_all_credentials_not_probed",
+              "current_capacity_writeability_and_all_artifacts_not_probed",
+              "organization_setting_not_bound_to_write_policy",
+              "organization_periodic_quotas_not_implemented",
+              "retention_handler_not_registered",
+              "backup_restore_receipts_unavailable",
+              "server_role_has_no_local_worker",
+              "local_runner_reports_ready",
+              "local_runner_not_ready"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_database_snapshot",
+              "selected_organization",
+              "not_observed",
+              "local_process_startup",
+              "local_process"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "error",
+              "unavailable",
+              "startup_verified",
+              "not_applicable"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "verified_tail_events": {
+            "anyOf": [
+              {
+                "maximum": 2,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "checked_at",
+          "reason",
+          "verified_tail_events",
+          "last_event_at"
+        ],
+        "type": "object"
+      },
+      "SystemRetention": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured_body_days": {
+            "maximum": 180,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "current_write_policy_days": {
+            "const": 30,
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "read_connection_only",
+              "migration_history_matches",
+              "migration_history_mismatch",
+              "active_jobs_not_runs_or_samples",
+              "active_job_limit_exceeded",
+              "active_job_records_invalid",
+              "tail_only_not_full_chain",
+              "audit_signer_unavailable",
+              "audit_tail_invalid",
+              "remote_consumer_registry_unavailable",
+              "current_key_file_and_all_credentials_not_probed",
+              "current_capacity_writeability_and_all_artifacts_not_probed",
+              "organization_setting_not_bound_to_write_policy",
+              "organization_periodic_quotas_not_implemented",
+              "retention_handler_not_registered",
+              "backup_restore_receipts_unavailable",
+              "server_role_has_no_local_worker",
+              "local_runner_reports_ready",
+              "local_runner_not_ready"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_database_snapshot",
+              "selected_organization",
+              "not_observed",
+              "local_process_startup",
+              "local_process"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "error",
+              "unavailable",
+              "startup_verified",
+              "not_applicable"
+            ],
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "checked_at",
+          "reason",
+          "configured_body_days",
+          "current_write_policy_days"
+        ],
+        "type": "object"
+      },
       "Overview": {
         "additionalProperties": false,
         "properties": {
@@ -13852,7 +14562,7 @@
           },
           "must_change_password": {
             "type": "boolean",
-            "description": "Temporary credentials permit only current-session lookup, logout and password change until successfully replaced."
+            "description": "Temporary credentials permit only current-session lookup, logout, logout-all and password change until successfully replaced."
           },
           "version": {
             "type": "integer",

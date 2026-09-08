@@ -33,6 +33,7 @@ const sessionCookie = "mii_session"
 var ErrControlConfig = errors.New("MI_CONTROL_CONFIGURATION_INVALID")
 
 type ControlConfig struct {
+	SystemStatus          *identity.SystemStatusService
 	Baselines             *baseline.Service
 	Reports               *runservice.ReportService
 	Runs                  *runservice.Service
@@ -88,6 +89,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	mux.HandleFunc("GET /api/v1/auth/me", c.me)
 	mux.HandleFunc("GET /api/v1/auth/permissions", c.effectivePermissions)
 	mux.HandleFunc("POST /api/v1/auth/logout", c.logout)
+	mux.HandleFunc("POST /api/v1/auth/logout-all", c.logoutAll)
 	mux.HandleFunc("POST /api/v1/auth/change-password", c.changePassword)
 	c.registerManagementRoutes(mux)
 	if cfg.Catalog != nil {
@@ -110,6 +112,9 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 		c.registerReviewRoutes(mux)
 	}
 	mux.HandleFunc("GET /api/v1/system/version", c.systemVersion)
+	if cfg.SystemStatus != nil {
+		c.registerSystemStatusRoutes(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") && cfg.Frontend != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			cfg.Frontend.ServeHTTP(w, r)
@@ -138,7 +143,8 @@ func digest(value string) string {
 
 func (c *control) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview" {
+		isSystemStatus := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/v1/system/health"
+		if (r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview") || isSystemStatus || (r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout-all") {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			r = r.WithContext(ctx)
@@ -158,6 +164,12 @@ func (c *control) middleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 		ctx = audit.WithActor(ctx, audit.Actor{ReasonCode: "http.request", IPSummary: digest(requestIP(r)), UserAgentSummary: digest(r.UserAgent())})
 		r = r.WithContext(ctx)
+		if isSystemStatus {
+			if !c.systemStatusEntry(w, r) {
+				return
+			}
+			defer func() { <-systemStatusAdmission.global }()
+		}
 		defer func() {
 			if recover() != nil {
 				c.failure(w, r, http.StatusInternalServerError, "MI_SERVICE_UNAVAILABLE")
@@ -179,7 +191,7 @@ func (c *control) middleware(next http.Handler) http.Handler {
 				c.error(w, r, identity.ErrSetupRequired)
 				return
 			}
-			if r.URL.Path != "/api/v1/auth/login" && r.URL.Path != "/api/v1/auth/me" && r.URL.Path != "/api/v1/auth/logout" && r.URL.Path != "/api/v1/auth/change-password" && token(r) != "" {
+			if r.URL.Path != "/api/v1/auth/login" && r.URL.Path != "/api/v1/auth/me" && r.URL.Path != "/api/v1/auth/logout" && r.URL.Path != "/api/v1/auth/logout-all" && r.URL.Path != "/api/v1/auth/change-password" && token(r) != "" {
 				material, err := c.cfg.Identity.Current(r.Context(), token(r))
 				if err != nil {
 					c.error(w, r, err)
@@ -211,6 +223,10 @@ func (c *control) failure(w http.ResponseWriter, r *http.Request, status int, co
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": code}, "request_id": id})
 }
 func (c *control) error(w http.ResponseWriter, r *http.Request, err error) {
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/v1/system/health" && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
+		c.failure(w, r, 503, "MI_SYSTEM_STATUS_TIMEOUT")
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview" && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
 		c.failure(w, r, 503, "MI_OVERVIEW_TIMEOUT")
 		return

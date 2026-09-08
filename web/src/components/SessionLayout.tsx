@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, passwordChangeRequired, sessionInvalid, type Organization, type Role, type Session } from '../api'
 import { AuthForm } from './AuthForms'
+import { SessionSecurity } from './SessionSecurity'
 import { ErrorNotice, Loading } from './Feedback'
 import { TargetsPage } from './targets/TargetsPage'
 import { UsersPage } from './management/UsersPage'
@@ -16,6 +17,7 @@ import { comparisonRoute } from '../comparison-api'
 import { TrendsPage } from './trends/TrendsPage'
 import { trendsRoute } from '../trends-api'
 import { OverviewPage } from './overview/OverviewPage'
+import { SystemStatusPage } from './system/SystemStatusPage'
 
 const navigation = [
   ['overview', '检测总览', '工作空间'],
@@ -122,7 +124,8 @@ export function SessionLayout({ session, onSignedOut, onPasswordRequired }: { se
           route === 'targets' ? (organization ? <TargetsPage key={organization.id} organizationID={organization.id} userID={session.user.id} csrfToken={session.csrf_token} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理检测目标。</p></section>) :
           route === 'providers' || route === 'model-profiles' ? (organization ? <CatalogPage key={`${organization.id}-${route}`} kind={route} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理目录档案。</p></section>) :
           route === 'baselines' ? (organization ? <BaselinesPage key={`${session.user.id}-${organization.id}`} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以管理参考基线。</p></section>) :
-          route === 'account' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /> :
+          route === 'system' ? (organization ? <SystemStatusPage key={`${session.user.id}-${organization.id}`} {...management} organizationID={organization.id} /> : <section className="panel"><p className="empty-note">请选择一个启用的组织以读取系统状态。</p></section>) :
+          route === 'account' ? <><AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={onPasswordRequired} /><SessionSecurity session={session} onSignedOut={onSignedOut} disabled={busy !== null} /></> :
           route === 'users' ? <UsersPage {...management} /> :
           route === 'organization-management' ? <OrganizationsPage {...management} onChanged={(org) => {
             setOrganizations((current) => current.some((item) => item.id === org.id) ? current.map((item) => item.id === org.id ? org : item) : [...current, org])

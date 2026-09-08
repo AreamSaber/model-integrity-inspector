@@ -5,6 +5,7 @@ import { App } from './App'
 import { type Session } from './api'
 import { StrictMode } from 'react'
 import { overview } from './components/overview/test-fixtures'
+import { systemFixture } from './components/system/test-fixtures'
 
 const password = 'synthetic-password-123'
 const session: Session = {
@@ -55,6 +56,72 @@ async function fillSetup() {
 }
 
 describe('real API interaction boundary', () => {
+  it('connects system navigation to the scoped endpoint and clears the previous organization on switch', async () => {
+    const calls = network((url, options) => url.endsWith('/system/health') ? ok(systemFixture(new Headers(options.headers).get('X-Organization-ID')!, session.user.id)) : undefined, true)
+    window.history.replaceState(null, '', '/#/system')
+    render(<App />)
+    await screen.findByRole('table', { name: '系统状态的观测来源与局限' })
+    await waitFor(() => expect(document.title).toBe('系统 · Model Integrity Inspector'))
+    expect(screen.getByRole('link', { name: '系统' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByText('系统正在开发中')).toBeNull()
+    fireEvent.change(screen.getByLabelText('当前组织'), { target: { value: session.organizations[1].id } })
+    await screen.findByText(`当前组织：${session.organizations[1].id} · 当前用户：${session.user.id}`)
+    expect(screen.queryByText(`当前组织：${session.organizations[0].id} · 当前用户：${session.user.id}`)).toBeNull()
+    const reads = calls.mock.calls.filter(([url]) => String(url).endsWith('/system/health'))
+    expect(reads.map(([, options]) => new Headers(options?.headers).get('X-Organization-ID'))).toEqual(session.organizations.map((org) => org.id))
+    expect(calls.mock.calls.some(([url]) => String(url).endsWith('/auth/permissions'))).toBe(false)
+    expect(calls.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true)
+  })
+
+  it('does not read system state without an active organization and leaves the account exit available', async () => {
+    const calls = network((url) => url.endsWith('/auth/me') ? ok({ ...session, organizations: [] }) : undefined)
+    window.history.replaceState(null, '', '/#/system')
+    render(<App />)
+    await screen.findByText('请选择一个启用的组织以读取系统状态。')
+    expect(calls.mock.calls.some(([url]) => String(url).endsWith('/system/health'))).toBe(false)
+    expect(screen.getByRole('button', { name: '退出登录' })).toBeTruthy()
+  })
+
+  it('handles a server-side system permission denial without relying on the navigation role hint', async () => {
+    const calls = network((url) => {
+      if (url.endsWith('/auth/me')) return ok({ ...session, user: { ...session.user, system_admin: false } })
+      if (url.endsWith('/system/health')) return fail('MI_PERMISSION_DENIED', 403)
+    })
+    window.history.replaceState(null, '', '/#/system')
+    render(<App />)
+    expect((await screen.findByRole('alert')).textContent).toContain('权限不足或已撤销')
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy()
+    expect(calls.mock.calls.filter(([url]) => String(url).endsWith('/system/health'))).toHaveLength(1)
+  })
+
+  it('clears the system page on a revoked session without retaining status data', async () => {
+    let statusReads = 0
+    const calls = network((url) => url.endsWith('/system/health') ? ++statusReads === 1 ? ok(systemFixture()) : fail('MI_SESSION_REQUIRED', 401) : undefined, true)
+    window.history.replaceState(null, '', '/#/system')
+    render(<App />)
+    await screen.findByRole('table', { name: '系统状态的观测来源与局限' })
+    fireEvent.click(screen.getByRole('button', { name: '手动刷新系统状态' }))
+    await screen.findByRole('heading', { name: '登录工作空间' })
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('navigation')).toBeNull()
+    expect(calls.mock.calls.filter(([url]) => String(url).endsWith('/system/health'))).toHaveLength(2)
+  })
+
+  it('aborts a pending system refresh when navigating away and ignores late session failure', async () => {
+    let finish!: (response: Response) => void
+    const calls = network((url) => url.endsWith('/system/health') ? new Promise<Response>((resolve) => { finish = resolve }) : undefined, true)
+    window.history.replaceState(null, '', '/#/system')
+    render(<App />)
+    await waitFor(() => expect(finish).toBeTypeOf('function'))
+    await act(async () => { window.location.hash = '#/account'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await screen.findByRole('button', { name: '退出所有会话' })
+    expect(calls.mock.calls.find(([url]) => String(url).endsWith('/system/health'))?.[1]?.signal?.aborted).toBe(true)
+    await act(async () => finish(fail('MI_SESSION_REQUIRED', 401)))
+    expect(screen.queryByRole('heading', { name: '登录工作空间' })).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
   it('initializes with the one-time header, then requires a separate login', async () => {
     const calls = network((url) => {
       if (url.endsWith('/setup/status')) return ok({ initialized: false })
@@ -467,10 +534,88 @@ describe('real API interaction boundary', () => {
     window.history.replaceState(null, '', '/#/organizations')
     render(<App />)
     await screen.findByRole('heading', { name: '组织与角色' })
-    expect(document.title).toBe('组织与角色 · Model Integrity Inspector')
+    await waitFor(() => expect(document.title).toBe('组织与角色 · Model Integrity Inspector'))
     await userEvent.setup().click(screen.getByRole('button', { name: '退出登录' }))
     await screen.findByRole('heading', { name: '登录工作空间' })
     expect(document.title).toBe('登录 · Model Integrity Inspector')
     expect(window.location.hash).toBe('#/organizations')
+  })
+
+  it.each(['account', 'membershipless', 'forced-password'] as const)('exposes self-service logout-all for %s and removes the entire session tree on success', async (kind) => {
+    const current = { ...session, user: { ...session.user, system_admin: false, must_change_password: kind === 'forced-password' }, organizations: kind === 'account' ? session.organizations : [] }
+    const calls = network((url) => {
+      if (url.endsWith('/auth/me')) return ok(current)
+      if (url.endsWith('/auth/logout-all')) return ok({ ok: true })
+    })
+    window.history.replaceState(null, '', kind === 'forced-password' ? '/#/runs' : '/#/account')
+    render(<App />)
+    await screen.findByRole('button', { name: '退出所有会话' })
+    expect(calls.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0)
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'UNSAVED_PASSWORD_CANARY' } })
+    fireEvent.click(screen.getByRole('button', { name: '退出所有会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认退出所有会话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认退出所有会话' }))
+    await screen.findByRole('heading', { name: '登录工作空间' })
+    expect(screen.getByRole('status').textContent).toContain('包括当前会话')
+    expect(screen.getByRole('status').textContent).toContain('密码未修改')
+    expect(screen.queryByLabelText('当前组织')).toBeNull()
+    expect(screen.queryByLabelText('当前密码')).toBeNull()
+    expect(screen.queryByRole('navigation')).toBeNull()
+    expect(screen.queryByRole('button', { name: '退出所有会话' })).toBeNull()
+    expect(document.body.textContent).not.toContain('UNSAVED_PASSWORD_CANARY')
+    const mutations = calls.mock.calls.filter(([, options]) => options?.method === 'POST')
+    expect(mutations).toHaveLength(1)
+    expect(mutations[0][0]).toBe('/api/v1/auth/logout-all')
+    expect(mutations[0][1]?.body).toBe('{}')
+    expect(new Headers(mutations[0][1]?.headers).has('X-Organization-ID')).toBe(false)
+    expect(document.title).toBe('登录 · Model Integrity Inspector')
+  })
+
+  it.each([['MI_SESSION_REQUIRED', 401], ['MI_CSRF_INVALID', 403]] as const)('clears the business tree on logout-all %s without a false success receipt', async (code, status) => {
+    const calls = network((url) => url.endsWith('/auth/logout-all') ? fail(code, status) : undefined, true)
+    window.history.replaceState(null, '', '/#/account')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '退出所有会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认退出所有会话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认退出所有会话' }))
+    await screen.findByRole('heading', { name: '登录工作空间' })
+    expect(screen.getByRole('status').textContent).toContain('结果未确认')
+    expect(screen.getByRole('status').textContent).not.toContain('已退出此账号的所有会话')
+    expect(screen.queryByRole('navigation')).toBeNull()
+    expect(calls.mock.calls.filter(([url]) => String(url).endsWith('/auth/logout-all'))).toHaveLength(1)
+  })
+
+  it('keeps an unknown logout-all outcome explicit and returns to login only on user action', async () => {
+    const calls = network((url) => url.endsWith('/auth/logout-all') ? fail('MI_SERVICE_UNAVAILABLE', 503) : undefined, true)
+    window.history.replaceState(null, '', '/#/account')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '退出所有会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认退出所有会话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认退出所有会话' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('可能已经生效，也可能未生效')
+    expect(screen.queryByRole('heading', { name: '登录工作空间' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '返回登录（结果未确认）' }))
+    await screen.findByRole('heading', { name: '登录工作空间' })
+    expect(screen.getByRole('status').textContent).toContain('结果未确认')
+    expect(calls.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1)
+    expect(document.body.textContent).not.toContain('PRIVATE-SERVER-DETAIL')
+  })
+
+  it('aborts logout-all when navigating away and does not apply a late success to another page', async () => {
+    let release!: (response: Response) => void
+    const calls = network((url) => url.endsWith('/auth/logout-all') ? new Promise<Response>((resolve) => { release = resolve }) : undefined, true)
+    window.history.replaceState(null, '', '/#/account')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '退出所有会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认退出所有会话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认退出所有会话' }))
+    await waitFor(() => expect(release).toBeTypeOf('function'))
+    await act(async () => { window.location.hash = '#/organizations'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await screen.findByRole('heading', { name: '组织与角色' })
+    expect(calls.mock.calls.find(([url]) => String(url).endsWith('/auth/logout-all'))?.[1]?.signal?.aborted).toBe(true)
+    await act(async () => release(ok({ ok: true })))
+    expect(screen.queryByRole('heading', { name: '登录工作空间' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '确认退出所有会话' })).toBeNull()
+    expect(calls.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1)
   })
 })

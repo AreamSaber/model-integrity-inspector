@@ -3,6 +3,7 @@ import { api, sessionInvalid, type Session } from '../api'
 import { AuthForm } from './AuthForms'
 import { ErrorNotice, Loading } from './Feedback'
 import { SessionLayout } from './SessionLayout'
+import { SessionSecurity } from './SessionSecurity'
 
 // A password-required response removes the complete business subtree before
 // refreshing /auth/me. No original request is replayed, including read requests.
@@ -78,5 +79,6 @@ export function AuthenticatedSession({ initialSession, onSignedOut }: { initialS
     {gate === 'required' ? <AuthForm mode="password" session={session} onSignedOut={onSignedOut} onPasswordRequired={recoverSession} /> :
       <section className="auth-card"><h1>读取账号安全状态</h1>{gate === 'recovering' ? <Loading>正在重新读取会话…</Loading> : <button disabled={logoutPending} onClick={recoverSession}>重新读取会话</button>}</section>}
     <button className="gate-logout" disabled={logoutPending} onClick={() => void logout()}>{logoutPending ? '正在退出…' : '退出登录'}</button>
+    <SessionSecurity session={session} onSignedOut={onSignedOut} disabled={logoutPending || gate === 'recovering'} />
   </main>
 }

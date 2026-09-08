@@ -209,7 +209,11 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Frontend: webui.Handler()})
+		systemStatus, err := app.systemStatus(service, cfg)
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{SystemStatus: systemStatus, Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}

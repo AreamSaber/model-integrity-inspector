@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/baseline"
 	"model-integrity-inspector.local/mii/internal/integrity/report"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
@@ -27,6 +28,8 @@ func TestPublicRunReadSchemasMatchActualClosedDTOs(t *testing.T) {
 		t.Fatal(err)
 	}
 	types := map[string]reflect.Type{
+		"SystemStatus": reflect.TypeFor[identity.SystemStatus](), "SystemCheck": reflect.TypeFor[identity.SystemCheck](), "SystemBuild": reflect.TypeFor[identity.SystemBuild](),
+		"SystemSchema": reflect.TypeFor[identity.SystemSchema](), "SystemJobs": reflect.TypeFor[identity.SystemJobs](), "SystemAudit": reflect.TypeFor[identity.SystemAudit](), "SystemRetention": reflect.TypeFor[identity.SystemRetention](),
 		"RunHistoryItem": reflect.TypeFor[runservice.HistoryItem](), "ResultSummary": reflect.TypeFor[runservice.ResultSummary](),
 		"RunTrendItem": reflect.TypeFor[runservice.TrendItem](), "AttemptTrend": reflect.TypeFor[runservice.AttemptTrendView](),
 		"Overview": reflect.TypeFor[runservice.OverviewView](), "OverviewWindow": reflect.TypeFor[runservice.OverviewWindow](),

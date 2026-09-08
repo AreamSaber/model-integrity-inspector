@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/baseline"
 	"model-integrity-inspector.local/mii/internal/integrity/report"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
@@ -26,6 +27,13 @@ type reportArtifact struct {
 }
 
 var names = map[reflect.Type]string{
+	reflect.TypeFor[identity.SystemStatus]():           "SystemStatus",
+	reflect.TypeFor[identity.SystemCheck]():            "SystemCheck",
+	reflect.TypeFor[identity.SystemBuild]():            "SystemBuild",
+	reflect.TypeFor[identity.SystemSchema]():           "SystemSchema",
+	reflect.TypeFor[identity.SystemJobs]():             "SystemJobs",
+	reflect.TypeFor[identity.SystemAudit]():            "SystemAudit",
+	reflect.TypeFor[identity.SystemRetention]():        "SystemRetention",
 	reflect.TypeFor[runservice.HistoryItem]():          "RunHistoryItem",
 	reflect.TypeFor[runservice.TrendItem]():            "RunTrendItem",
 	reflect.TypeFor[runservice.AttemptTrendView]():     "AttemptTrend",
@@ -194,6 +202,7 @@ func main() {
 		result[name] = objectSchema(t)
 	}
 	overviewSchemas(result)
+	systemStatusSchemas(result)
 	properties := func(name string) schema { return result[name].(schema)["properties"].(schema) }
 	trend := properties("AttemptTrend")
 	for _, field := range []string{"dispatched", "retry_attempts", "succeeded", "failed", "uncertain", "in_flight", "success_rate_denominator", "latency_samples"} {
@@ -251,6 +260,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, "cannot encode public DTO schemas")
 		os.Exit(1)
 	}
+}
+
+func systemStatusSchemas(result schema) {
+	properties := func(name string) schema { return result[name].(schema)["properties"].(schema) }
+	choice := func(values ...string) schema { return schema{"type": "string", "enum": values, "maxLength": 128} }
+	for _, name := range []string{"SystemCheck", "SystemSchema", "SystemJobs", "SystemAudit", "SystemRetention"} {
+		p := properties(name)
+		p["state"] = choice("ok", "error", "unavailable", "startup_verified", "not_applicable")
+		p["source"] = choice("authorized_database_snapshot", "selected_organization", "not_observed", "local_process_startup", "local_process")
+		p["reason"] = choice("read_connection_only", "migration_history_matches", "migration_history_mismatch", "active_jobs_not_runs_or_samples", "active_job_limit_exceeded", "active_job_records_invalid", "tail_only_not_full_chain", "audit_signer_unavailable", "audit_tail_invalid", "remote_consumer_registry_unavailable", "current_key_file_and_all_credentials_not_probed", "current_capacity_writeability_and_all_artifacts_not_probed", "organization_setting_not_bound_to_write_policy", "organization_periodic_quotas_not_implemented", "retention_handler_not_registered", "backup_restore_receipts_unavailable", "server_role_has_no_local_worker", "local_runner_reports_ready", "local_runner_not_ready")
+	}
+	p := properties("SystemStatus")
+	p["user_id"] = schema{"$ref": "#/components/schemas/ID"}
+	p["observed_state"] = choice("ok", "degraded")
+	p["observed_state"].(schema)["description"] = "Only the observed checks; not overall readiness or full-system health."
+	p["coverage"] = schema{"type": "string", "const": "partial"}
+	p["process_role"] = choice("all", "server")
+	p["database_driver"] = choice("sqlite", "postgres")
+	p = properties("SystemBuild")
+	p["commit"] = nullable(schema{"type": "string", "pattern": "^[0-9a-f]{40}$", "maxLength": 40})
+	for _, key := range []string{"version", "rule_bundle", "template_bundle", "scoring", "tokenizer_bundle"} {
+		p[key] = schema{"type": "string", "pattern": "^v?[0-9][0-9A-Za-z.+-]{0,127}$", "maxLength": 129}
+	}
+	p = properties("SystemJobs")
+	p["row_limit"] = schema{"type": "integer", "const": 10000}
+	for _, key := range []string{"total_active_jobs", "pending_ready", "pending_delayed", "running_leased", "running_expired"} {
+		p[key] = nullable(schema{"type": "integer", "minimum": 0, "maximum": 10000})
+	}
+	properties("SystemAudit")["verified_tail_events"] = nullable(schema{"type": "integer", "minimum": 0, "maximum": 2})
+	p = properties("SystemRetention")
+	p["configured_body_days"] = schema{"type": "integer", "minimum": 0, "maximum": 180}
+	p["current_write_policy_days"] = schema{"type": "integer", "const": 30}
+	result["SystemStatus"].(schema)["description"] = "Read-only local-process and selected-organization observations. Startup checks are not current capability probes. Unimplemented monitoring, retention enforcement, periodic quotas and backup stay unavailable."
 }
 
 func overviewSchemas(result schema) {

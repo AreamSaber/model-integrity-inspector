@@ -156,6 +156,13 @@ func (s *Store) verifyAuditTail(tx *gorm.DB, head auditChainHead) (AuditVerifica
 	if err := tx.Where("organization_id = ?", head.OrganizationID).Order("sequence DESC").Limit(2).Find(&events).Error; err != nil {
 		return result, persistenceError(err)
 	}
+	return s.verifyAuditTailRecords(head, events)
+}
+
+// Shared pure validation keeps diagnostic readers and append verification on
+// the exact same existing chain/hash rules, without exposing event content.
+func (s *Store) verifyAuditTailRecords(head auditChainHead, events []audit.Event) (AuditVerification, error) {
+	result := AuditVerification{OrganizationID: head.OrganizationID, EventCount: head.EventCount}
 	if head.EventCount == 0 {
 		if len(events) != 0 || head.EventHash != "" {
 			return result, audit.ErrIntegrity
