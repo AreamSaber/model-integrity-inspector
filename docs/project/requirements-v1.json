@@ -1222,17 +1222,24 @@
       "test_case": "REQ-REP-003",
       "implementation": "in_progress",
       "code": [
+        "internal/integrity/worker/run.go",
+        "internal/integrity/repository/execution_display.go",
+        "internal/integrity/evidencedisplay/prepare.go",
+        "internal/integrity/secret/display.go",
         "internal/integrity/run/result.go",
         "internal/integrity/api/run_results.go",
         "web/src/components/results/ResultsPage.tsx",
         "web/src/components/results/ResultViews.tsx"
       ],
       "tests": [
+        "internal/integrity/worker/execution_display_test.go",
+        "internal/integrity/repository/execution_display_test.go",
+        "internal/integrity/repository/execution_display_migration_test.go",
         "internal/app/pipeline_test.go",
         "internal/integrity/api/run_results_test.go",
         "web/src/components/results/ResultsPage.test.tsx"
       ],
-      "notes": "已有S1 Usage/停止原因/耗时/最终Attempt；授权脱敏正文/完整请求参数/复现入口尚缺，不能以元数据替代完整要求。",
+      "notes": "已有S1 Usage/停止原因/耗时/最终Attempt；实际Worker采集脱敏请求与响应、独立加密和同事务持久化通过双库三轮/完整Worker及实际应用回归，仍固定30天。授权读取HTTP/正文页面、完整保留策略与0天分析仍未接入，不能以后台采集替代完整展示要求。",
       "goal_included": true
     },
     {
@@ -1277,10 +1284,19 @@
         "M7-01"
       ],
       "test_case": "REQ-REP-005",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/evidencedisplay/prepare.go",
+        "internal/integrity/secret/display.go",
+        "internal/integrity/worker/run.go",
+        "internal/integrity/repository/execution_display.go"
+      ],
+      "tests": [
+        "internal/integrity/evidencedisplay/boundaries_test.go",
+        "internal/integrity/secret/display_test.go",
+        "internal/integrity/worker/execution_display_test.go"
+      ],
+      "notes": "实际冻结请求模板副本在Credentials.Use内按实际Key及所有自定义Header值脱敏，并绑定原请求hash、独立模板hash和request_changed，已双库验证采集。尚无授权模板下载/API/UI和最终读取审计；不能宣称复现导出已交付或所有秘密编码都可识别。",
       "goal_included": true
     },
     {

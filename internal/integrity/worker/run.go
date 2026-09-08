@@ -1,13 +1,16 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
+	"model-integrity-inspector.local/mii/internal/integrity/evidencedisplay"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	"model-integrity-inspector.local/mii/internal/integrity/safehttp"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
@@ -18,11 +21,14 @@ type RunConfig struct {
 	Store        *repository.Store
 	Secrets      *secret.Service
 	EvidenceKeys *secret.KeyRing
-	Tokenizer    *tokenizer.Engine
-	URLPolicy    safehttp.URLPolicy
-	Resolver     safehttp.Resolver
-	DialContext  safehttp.DialContextFunc
-	RootCAs      *x509.CertPool
+	// Optional trusted startup override; otherwise derived once from EvidenceKeys.
+	// This capability cannot decrypt either credentials or analysis evidence.
+	DisplaySealer *secret.DisplaySealer
+	Tokenizer     *tokenizer.Engine
+	URLPolicy     safehttp.URLPolicy
+	Resolver      safehttp.Resolver
+	DialContext   safehttp.DialContextFunc
+	RootCAs       *x509.CertPool
 	// Trusted administrator/test ceilings, never request-controlled overrides.
 	RequestTimeout   time.Duration
 	LivenessInterval time.Duration
@@ -31,6 +37,13 @@ type RunConfig struct {
 func NewRunHandlers(config RunConfig) (map[repository.JobType]Handler, error) {
 	if config.Store == nil || config.Secrets == nil || config.EvidenceKeys == nil {
 		return nil, ErrConfiguration
+	}
+	if config.DisplaySealer == nil {
+		var err error
+		config.DisplaySealer, _, err = config.EvidenceKeys.NewDisplayCapabilities(nil)
+		if err != nil {
+			return nil, ErrConfiguration
+		}
 	}
 	if config.RequestTimeout == 0 {
 		config.RequestTimeout = 180 * time.Second
@@ -152,6 +165,9 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 	credentialError := config.Secrets.WithCredentialsForWorker(callCtx, secret.Scope{OrganizationID: sample.OrganizationID, SecretID: plan.Target.SecretID, SecretVersion: plan.Target.SecretVersion}, func(credentials secret.Credentials) error {
 		return credentials.Use(func(key []byte, headers map[string][]byte) error {
 			result = callRunSample(callCtx, execution, config, plan, sample, samplePlan, key, headers)
+			if result.attempt.ID != 0 {
+				result.display = captureRunDisplay(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
+			}
 			return nil
 		})
 	})
@@ -211,8 +227,73 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 	}
 	evidence := repository.ResponseEvidenceRecord{OrganizationID: scope.OrganizationID, RunID: scope.RunID, LogicalSampleID: scope.LogicalSampleID, AttemptID: scope.AttemptID, RequestHash: scope.RequestHash, KeyVersion: sealed.KeyVersion, Nonce: sealed.Nonce, Ciphertext: sealed.Ciphertext, PlaintextBytes: sealed.PlaintextBytes, ContentHash: sealed.ContentHash}
 	return func(tx *repository.TenantTransaction) error {
-		return tx.FinishAttemptWithEvidence(sample.ID, result.attempt.ID, result.outcome, result.jitter, evidence)
+		return tx.FinishAttemptWithEvidenceAndDisplay(sample.ID, result.attempt.ID, result.outcome, result.jitter, evidence, result.display)
 	}, nil
+}
+
+// captureRunDisplay is called only inside the actual Credentials.Use callback,
+// after the adapter/tokenizer have finalized the unchanged analysis response.
+// Its independent bounded failure never mutates response, outcome or parent ctx.
+func captureRunDisplay(ctx context.Context, execution Execution, sealer *secret.DisplaySealer, request domain.NormalizedRequest, result runCallResult, key []byte, headers map[string][]byte) repository.DisplayEvidenceRecord {
+	base := repository.DisplayEvidenceRecord{OrganizationID: result.attempt.OrganizationID, RunID: result.attempt.RunID, LogicalSampleID: result.attempt.LogicalSampleID, AttemptID: result.attempt.ID, RequestHash: result.attempt.RequestHash, Policy: repository.DisplayEvidencePolicy}
+	failure := func(state string) repository.DisplayEvidenceRecord { v := base; v.State = state; return v }
+	displayCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+	defer stop()
+	if displayCtx.Err() != nil {
+		return failure(repository.DisplayUnavailableCancelled)
+	}
+	// Bound before decoding. This is the already-persisted pre-auth snapshot,
+	// never the outbound request whose Header map contains authentication.
+	if len(result.attempt.RequestSnapshot) == 0 || len(result.attempt.RequestSnapshot) > (2<<20) {
+		return failure(repository.DisplayUnavailableSource)
+	}
+	var snapshot domain.RequestSnapshot
+	decoder := json.NewDecoder(bytes.NewBufferString(result.attempt.RequestSnapshot))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&snapshot) != nil || decoder.Decode(new(any)) != io.EOF || snapshot.RequestHash != result.attempt.RequestHash {
+		return failure(repository.DisplayUnavailableSource)
+	}
+	defer clear(snapshot.Payload)
+	var bound repository.DisplayEvidenceRecord
+	err := execution.Queue.WithLease(displayCtx, execution.Lease, func(tx *repository.TenantTransaction) error {
+		var err error
+		bound, err = tx.BindAttemptDisplayCapture(result.attempt.LogicalSampleID, result.attempt.ID, result.attempt.RequestHash)
+		return err
+	})
+	if err != nil {
+		if displayCtx.Err() != nil {
+			return failure(repository.DisplayUnavailableCancelled)
+		}
+		return failure(repository.DisplayUnavailableCapture)
+	}
+	prepared, err := evidencedisplay.Prepare(displayCtx, evidencedisplay.Source{Request: request, Snapshot: snapshot, Response: result.response}, key, headers)
+	if err != nil {
+		switch {
+		case errors.Is(err, evidencedisplay.ErrCancelled):
+			return failure(repository.DisplayUnavailableCancelled)
+		case errors.Is(err, evidencedisplay.ErrPolicy):
+			return failure(repository.DisplayUnavailablePolicy)
+		case errors.Is(err, evidencedisplay.ErrLimit):
+			return failure(repository.DisplayUnavailableLimit)
+		default:
+			return failure(repository.DisplayUnavailableSource)
+		}
+	}
+	defer prepared.Close()
+	sourceHash, _ := prepared.Hashes()
+	binding := secret.DisplayBinding{Scope: secret.EvidenceScope{OrganizationID: bound.OrganizationID, RunID: bound.RunID, LogicalSampleID: bound.LogicalSampleID, AttemptID: bound.AttemptID, RequestHash: bound.RequestHash}, SourceHash: sourceHash, CapturedAtMicros: bound.CapturedAtMicros, ExpiresAtMicros: bound.ExpiresAtMicros}
+	sealed, err := sealer.Seal(displayCtx, binding, prepared)
+	if err != nil {
+		if errors.Is(err, evidencedisplay.ErrCancelled) {
+			return failure(repository.DisplayUnavailableCancelled)
+		}
+		// Includes unavailable keys or worker/database clock skew. Never adjust
+		// the authenticated database times or fall back to raw evidence.
+		return failure(repository.DisplayUnavailableSeal)
+	}
+	bound.SourceHash, bound.Version, bound.KeyVersion = sourceHash, sealed.Version, sealed.KeyVersion
+	bound.Nonce, bound.Ciphertext, bound.PlaintextBytes, bound.PayloadHash = sealed.Nonce, sealed.Ciphertext, sealed.PlaintextBytes, sealed.PayloadHash
+	return bound
 }
 
 func executionStop(err error) bool {
