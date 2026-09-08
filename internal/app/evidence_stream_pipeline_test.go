@@ -424,6 +424,13 @@ func TestApplicationEvidenceDisplayActualTLSMultiBlockAuthorization(t *testing.T
 						}
 						return n, nil
 					}))
+					if (mode == "run.read" || mode == "evidence.read" || mode == "evidence.body") && !errors.Is(err, repository.ErrManagementPermission) {
+						// Revalidate checks the original permit's context/deadline
+						// before reading grants. Permission denial therefore proves
+						// revocation completed while that permit was still live;
+						// natural expiry would return a source/context error instead.
+						t.Fatal("permission revocation was not the actual next-block denial cause")
+					}
 					if err == nil || calls != 1 || n != streamDisplayChunk || partial.Len() != streamDisplayChunk || !bytes.Equal(partial.Bytes(), full[:streamDisplayChunk]) || f.grantCount(t) != before+1 {
 						t.Fatal("authorization change or natural expiry allowed another block or fabricated error output")
 					}

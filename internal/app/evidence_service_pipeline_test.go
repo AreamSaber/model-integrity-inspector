@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -17,11 +18,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"model-integrity-inspector.local/mii/internal/identity"
 	"model-integrity-inspector.local/mii/internal/integrity/audit"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
+	modernsqlite "modernc.org/sqlite"
 )
 
 type pipelineDisplayWriterFunc func([]byte) (int, error)
@@ -363,28 +366,32 @@ func pipelineRemoveDisplayPermission(t *testing.T, db *sql.DB, orgID int64, perm
 	t.Helper()
 	var roleIDs, memberIDs []int64
 	for _, spec := range []struct {
+		stage string
 		query string
 		ids   *[]int64
 	}{
-		{"SELECT role_id FROM role_permissions WHERE organization_id=$1 AND permission_code=$2", &roleIDs},
-		{"SELECT member_id FROM member_permissions WHERE organization_id=$1 AND permission_code=$2", &memberIDs},
+		{"read_role", "SELECT role_id FROM role_permissions WHERE organization_id=$1 AND permission_code=$2", &roleIDs},
+		{"read_member", "SELECT member_id FROM member_permissions WHERE organization_id=$1 AND permission_code=$2", &memberIDs},
 	} {
 		rows, err := db.QueryContext(t.Context(), spec.query, orgID, permission)
 		if err != nil {
-			t.Fatal("read exact permission rows before scoped fault")
+			t.Fatalf("scoped permission phase=%s %s", spec.stage, pipelineSQLDiagnostic(t.Context(), err))
 		}
 		for rows.Next() {
 			var id int64
 			if err := rows.Scan(&id); err != nil {
 				_ = rows.Close()
-				t.Fatal("read scoped permission row")
+				t.Fatalf("scoped permission phase=scan %s", pipelineSQLDiagnostic(t.Context(), err))
 			}
 			*spec.ids = append(*spec.ids, id)
 		}
 		err = rows.Err()
-		_ = rows.Close()
+		closeErr := rows.Close()
 		if err != nil {
-			t.Fatal("complete permission snapshot")
+			t.Fatalf("scoped permission phase=rows %s", pipelineSQLDiagnostic(t.Context(), err))
+		}
+		if closeErr != nil {
+			t.Fatalf("scoped permission phase=rows_close %s", pipelineSQLDiagnostic(t.Context(), closeErr))
 		}
 	}
 	if len(roleIDs)+len(memberIDs) == 0 {
@@ -399,21 +406,78 @@ func pipelineRemoveDisplayPermission(t *testing.T, db *sql.DB, orgID int64, perm
 		defer cancel()
 		for _, id := range roleIDs {
 			if _, err := db.ExecContext(ctx, "INSERT INTO role_permissions(organization_id,role_id,permission_code) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", orgID, id, permission); err != nil {
-				t.Error("restore exact role permission")
+				t.Errorf("scoped permission phase=restore_role %s", pipelineSQLDiagnostic(ctx, err))
 			}
 		}
 		for _, id := range memberIDs {
 			if _, err := db.ExecContext(ctx, "INSERT INTO member_permissions(organization_id,member_id,permission_code) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", orgID, id, permission); err != nil {
-				t.Error("restore exact member permission")
+				t.Errorf("scoped permission phase=restore_member %s", pipelineSQLDiagnostic(ctx, err))
 			}
 		}
 		restored = true
 	}
 	t.Cleanup(restore)
-	for _, query := range []string{"DELETE FROM role_permissions WHERE organization_id=$1 AND permission_code=$2", "DELETE FROM member_permissions WHERE organization_id=$1 AND permission_code=$2"} {
-		if _, err := db.ExecContext(t.Context(), query, orgID, permission); err != nil {
-			t.Fatal("commit scoped permission revocation")
+	for _, spec := range []struct{ stage, query string }{{"revoke_role", "DELETE FROM role_permissions WHERE organization_id=$1 AND permission_code=$2"}, {"revoke_member", "DELETE FROM member_permissions WHERE organization_id=$1 AND permission_code=$2"}} {
+		if _, err := db.ExecContext(t.Context(), spec.query, orgID, permission); err != nil {
+			t.Fatalf("scoped permission phase=%s %s", spec.stage, pipelineSQLDiagnostic(t.Context(), err))
 		}
 	}
 	return restore
+}
+
+// Never format a driver error or its query/table/message fields. Codes are
+// numeric SQLite values or a closed PostgreSQL SQLSTATE allowlist only.
+func pipelineSQLDiagnostic(ctx context.Context, err error) string {
+	class, code, state := "unknown", "none", "missing"
+	if ctx != nil {
+		state = "active"
+		switch {
+		case errors.Is(ctx.Err(), context.Canceled):
+			state = "cancelled"
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			state = "deadline_exceeded"
+		case ctx.Err() != nil:
+			state = "other"
+		}
+	}
+	var sqliteErr *modernsqlite.Error
+	var postgresErr *pgconn.PgError
+	switch {
+	case err == nil:
+		class = "none"
+	case errors.As(err, &sqliteErr):
+		code = strconv.Itoa(sqliteErr.Code())
+		class = "sqlite_other"
+		switch sqliteErr.Code() & 0xff {
+		case 5:
+			class = "sqlite_busy"
+		case 6:
+			class = "sqlite_locked"
+		case 9:
+			class = "sqlite_interrupt"
+		case 10:
+			class = "sqlite_io"
+		case 14:
+			class = "sqlite_open"
+		case 19:
+			class = "sqlite_constraint"
+		}
+	case errors.As(err, &postgresErr):
+		class = "postgres_other"
+		switch postgresErr.Code {
+		case "40001", "40P01", "55P03", "57014", "23502", "23503", "23505", "23514":
+			class, code = "postgres_known", postgresErr.Code
+		}
+	case errors.Is(err, context.Canceled):
+		class = "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		class = "deadline_exceeded"
+	case errors.Is(err, sql.ErrConnDone):
+		class = "connection_done"
+	case errors.Is(err, sql.ErrTxDone):
+		class = "transaction_done"
+	case errors.Is(err, sql.ErrNoRows):
+		class = "no_rows"
+	}
+	return fmt.Sprintf("class=%s code=%s ctx=%s", class, code, state)
 }

@@ -2,6 +2,8 @@ package app
 
 import (
 	"database/sql"
+	"net/url"
+	"strings"
 	"testing"
 
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
@@ -20,15 +22,7 @@ func configurePipelineRetention(t *testing.T, cfg Config, api *pipelineHTTP, day
 	if organization.Version != 2 || organization.Days != days {
 		t.Fatal("actual management policy receipt differs from requested retention")
 	}
-	driver, dsn := "sqlite", cfg.DatabasePath
-	if cfg.DatabaseDriver == "postgres" {
-		driver, dsn = "pgx", cfg.DatabaseDSN
-	}
-	db, err := sql.Open(driver, dsn)
-	if err != nil {
-		t.Fatal("open isolated pipeline database")
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := openPipelineDatabase(t, cfg)
 	if days != 0 {
 		return db
 	}
@@ -47,6 +41,33 @@ func configurePipelineRetention(t *testing.T, cfg Config, api *pipelineHTTP, day
 			t.Fatal("install actual zero-day body INSERT rejection")
 		}
 	}
+	return db
+}
+
+func openPipelineDatabase(t *testing.T, cfg Config) *sql.DB {
+	t.Helper()
+	driver, dsn := "sqlite", cfg.DatabasePath
+	if cfg.DatabaseDriver == "postgres" {
+		driver, dsn = "pgx", cfg.DatabaseDSN
+	} else {
+		// Config validation permits only a literal filesystem path here. Each
+		// newly opened auxiliary connection needs the same safety policy as
+		// repository.sqliteDSN; executing PRAGMA once on a pool is insufficient.
+		if strings.ContainsAny(dsn, "?\x00") {
+			t.Fatal("auxiliary SQLite path is not canonical")
+		}
+		query := url.Values{"_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "journal_mode(WAL)", "synchronous(FULL)"}, "_txlock": {"immediate"}}
+		dsn += "?" + query.Encode()
+	}
+	db, err := sql.Open(driver, dsn)
+	if err != nil {
+		t.Fatal("open isolated pipeline database")
+	}
+	if driver == "sqlite" {
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+	}
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
