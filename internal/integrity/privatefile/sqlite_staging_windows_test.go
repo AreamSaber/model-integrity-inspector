@@ -17,14 +17,20 @@ import (
 )
 
 // The default Windows Temp may grant other users namespace mutation rights.
-// This test-only fixture uses a newly created directory below the verified
-// profile instead. It never repairs an existing ACL or moves production data.
+// This test-only fixture creates a private directory below the profile after
+// validating the profile as an ancestor, not as the private child. It never
+// repairs an existing ACL or moves production data.
 func newSQLiteTestDirectory(t *testing.T) string {
 	t.Helper()
 	profile, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal("SQLite fixture stage=profile")
 	}
+	return newSQLiteTestDirectoryBelow(t, profile)
+}
+
+func newSQLiteTestDirectoryBelow(t *testing.T, profile string) string {
+	t.Helper()
 	s := &sqliteWindowsStaging{}
 	defer func() {
 		if err := s.cleanup(); err != nil {
@@ -34,8 +40,8 @@ func newSQLiteTestDirectory(t *testing.T) string {
 	if _, _, err := splitPath(profile); err != nil {
 		t.Fatal("SQLite fixture stage=profile_path", err)
 	}
-	if err := s.openChain(profile); err != nil {
-		logSQLiteProfileAncestryFailure(t, s, profile, err)
+	if err := openSQLiteTestProfileAncestors(s, profile); err != nil {
+		logSQLiteProfileAncestryFailure(t, s, profile, false, err)
 		t.Fatal("SQLite fixture stage=profile_ancestry", err)
 	}
 	var nonce [16]byte
@@ -58,6 +64,9 @@ func newSQLiteTestDirectory(t *testing.T) string {
 	}
 	t.Cleanup(func() { sqliteWindowsCleanupTestDirectory(t, profile, name, id) })
 	checkErr := sqliteWindowsCheckDirectory(f, path, true)
+	if checkErr == nil {
+		checkErr = revalidateSQLiteTestProfileAncestors(s, profile)
+	}
 	closeErr := f.Close()
 	if checkErr != nil || closeErr != nil {
 		t.Fatal("SQLite fixture stage=created_check")
@@ -84,7 +93,7 @@ func sqliteWindowsCleanupTestDirectory(t *testing.T, profile, name string, id sq
 			t.Error("SQLite fixture stage=cleanup_chain_close", err)
 		}
 	}()
-	if err := s.openChain(profile); err != nil {
+	if err := openSQLiteTestProfileAncestors(s, profile); err != nil {
 		t.Error("SQLite fixture stage=cleanup_ancestry", err)
 		return
 	}
@@ -104,10 +113,89 @@ func sqliteWindowsCleanupTestDirectory(t *testing.T, profile, name string, id sq
 		return
 	}
 	// Only this invocation's validated random child is recursive cleanup scope.
-	// Keep the verified private profile chain pinned through the operation.
+	// Keep every verified ancestor pinned through the operation. Only the
+	// random owned child is required to satisfy the strict private policy.
+	if err := revalidateSQLiteTestProfileAncestors(s, profile); err != nil {
+		t.Error("SQLite fixture stage=cleanup_ancestry_recheck")
+		return
+	}
 	if err := os.RemoveAll(path); err != nil {
 		t.Error("SQLite fixture stage=owned_cleanup")
 	}
+}
+
+func openSQLiteTestProfileAncestors(stage *sqliteWindowsStaging, profile string) error {
+	if stage == nil || stage.closed || len(stage.chain) != 0 {
+		return ErrUnsafe
+	}
+	if _, _, err := splitPath(profile); err != nil {
+		return err
+	}
+	if len(strings.Split(profile[3:], `\`)) > 256 {
+		return ErrLimit
+	}
+	rootPath := filepath.VolumeName(profile) + `\`
+	rootName, err := windows.UTF16PtrFromString(rootPath)
+	if err != nil {
+		return ErrUnsafe
+	}
+	handle, err := windows.CreateFile(rootName, windows.FILE_GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return ErrUnavailable
+	}
+	root := os.NewFile(uintptr(handle), "test-sqlite-ancestor")
+	if root == nil {
+		_ = windows.CloseHandle(handle)
+		return ErrUnavailable
+	}
+	stage.chain = append(stage.chain, sqliteWindowsDirectory{file: root, path: rootPath})
+	for index := 0; ; index++ {
+		entry := &stage.chain[index]
+		entry.id, err = sqliteWindowsFileID(entry.file)
+		if err != nil {
+			return err
+		}
+		// Including the final profile: it will contain a newly private child,
+		// and is not itself the production private staging parent.
+		if err := sqliteWindowsCheckDirectory(entry.file, entry.path, false); err != nil {
+			return err
+		}
+		if strings.EqualFold(entry.path, profile) {
+			return revalidateSQLiteTestProfileAncestors(stage, profile)
+		}
+		relative := strings.TrimPrefix(profile[len(entry.path):], `\`)
+		name, _, _ := strings.Cut(relative, `\`)
+		if name == "" {
+			return ErrUnsafe
+		}
+		next, err := sqliteWindowsOpen(windows.Handle(entry.file.Fd()), name,
+			sqliteWindowsOpenOptions{directory: true, share: windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE})
+		if err != nil {
+			return err
+		}
+		stage.chain = append(stage.chain, sqliteWindowsDirectory{file: next, path: filepath.Join(entry.path, name)})
+	}
+}
+
+func revalidateSQLiteTestProfileAncestors(stage *sqliteWindowsStaging, profile string) error {
+	if stage == nil || stage.closed || len(stage.chain) == 0 || len(stage.chain) > 257 ||
+		!strings.EqualFold(stage.parent().path, profile) {
+		return ErrUnsafe
+	}
+	for _, entry := range stage.chain {
+		if entry.file == nil {
+			return ErrUnsafe
+		}
+		if err := sqliteWindowsMatches(entry.file, entry.id); err != nil {
+			return err
+		}
+		if err := sqliteWindowsCheckDirectory(entry.file, entry.path, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sqliteWindowsTestStage(t *testing.T, parent string) *sqliteWindowsStaging {

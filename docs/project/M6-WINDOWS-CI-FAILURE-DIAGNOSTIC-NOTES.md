@@ -21,3 +21,13 @@
 - Worker纯分类/闭集/不可格式化错误反例三轮0.147s PASS，完整包编译/vet/lint0；本说明写入时尚未执行本诊断组合的真实Worker数据库回归。
 
 下一步：将诊断提交到开发分支，读取新Windows真实日志，再按证据修具体问题。尚不声称CI已通过、Windows根因已修复或备份恢复完整交付；不修改正式审核状态。
+
+## 新CI实际定因与夹具修正
+
+CI34202061195 / ebd81b3 已终态failure；Windows全部16项FAIL仍为staging。新闭集日志明确：三层中depth0 root(owner TrustedInstaller)与depth1(owner SYSTEM)均check=ok；depth2 profile owner SYSTEM也允许，唯一risk为other allow `0x20`（目录traverse），被误以private parent检查拒绝。不是owner/TI或DELETE_CHILD/mutation拒绝。该轮Windows Worker **172.057s PASS**，没有旧UPDATE/DDL/claim/check_lease失败，不能据未复现声称那些原生数据库原因已修。
+
+夹具修正只涉及三个Windows `_test.go`：profile及其所有祖先按原生产ancestor策略逐层native no-follow打开、pin并记录/复核身份与ACL；生产真正工作parent仍是随机新建、严格private的child。创建后和删除前再次验证完整祖先链。没有修改生产openChain、真实profile/system ACL、共享标志或期限，清理仍只作用于原prefix/随机名/原生identity限定的本次子目录。诊断显式标明profile是ancestor，避免继续误标private。
+
+真实新建synthetic-profile仅加Everyone非继承traverse的旧代码反例 **0.086s FAIL**，新代码单案 **0.090s PASS**；七种mutation、late ACL、身份不符、不完整祖先链及private child继承外泄仍拒绝。原生/纯三轮 **0.190s PASS**，traverse祖先→private child→真实SQLite写/只读验证/消费/双层清理三轮 **0.145s PASS**，完整Windows privatefile三轮 **3.334s PASS**，vet/lint0。root已完整复核diff和新测试；还需新远端Windows运行，不以本机夹具反例替代CI。
+
+新CI另外quality失败已定位为App.test.tsx:571退出所有会话的标题断言；见M6-LOGOUT-TITLE-TEST-NOTES.md，独立修正与完整911项验证，不和ACL根因混同。本地Worker诊断组合的目标双库三轮70.435s、完整双库176.908s已通过。

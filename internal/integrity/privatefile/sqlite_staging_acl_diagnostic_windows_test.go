@@ -13,10 +13,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// This failure-only diagnostic reads the handles already retained by openChain.
+// This failure-only diagnostic reads the handles already retained by the opener.
 // It never opens another path, changes an ACL, or retries a rejected fixture.
 // Paths, principal names/SIDs, complete ACLs and native errors are not logged.
-func logSQLiteProfileAncestryFailure(t *testing.T, stage *sqliteWindowsStaging, profile string, failure error) {
+func logSQLiteProfileAncestryFailure(t *testing.T, stage *sqliteWindowsStaging, profile string, profilePrivate bool, failure error) {
 	t.Helper()
 	t.Logf("SQLite ancestry diagnostic failure=%s retained_depths=%d", sqliteACLDiagnosticError(failure), len(stage.chain))
 	current, err := currentSID()
@@ -30,7 +30,7 @@ func logSQLiteProfileAncestryFailure(t *testing.T, stage *sqliteWindowsStaging, 
 			t.Log("SQLite ancestry diagnostic depths=truncated")
 			break
 		}
-		private := strings.EqualFold(entry.path, profile)
+		private := profilePrivate && strings.EqualFold(entry.path, profile)
 		if entry.file == nil {
 			t.Logf("SQLite ancestry diagnostic depth=%d metadata=unavailable", depth)
 			continue
