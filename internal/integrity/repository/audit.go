@@ -81,7 +81,7 @@ func (s *Store) appendAuditWithClock(ctx context.Context, tx *gorm.DB, orgID int
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
 		return persistenceError(err)
 	}
-	query := tx.Where("organization_id = ?", orgID)
+	query := tx.Select(auditHeadReadColumns(tx)).Where("organization_id = ?", orgID)
 	if s.driver == "postgres" {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -156,7 +156,9 @@ func (s *Store) auditUserOrganizations(ctx context.Context, tx *gorm.DB, userID 
 // anchor grants neither membership nor access to the initial organization.
 func initialAuditOrganization(tx *gorm.DB) (int64, error) {
 	var value string
-	if err := tx.Table("system_settings").Select("value_json").Where("setting_key = ?", "initial_organization_id").Scan(&value).Error; err != nil {
+	// A positive int64 decimal (including an existing leading plus) needs at
+	// most 20 bytes. Reject corrupt documents before allocating their contents.
+	if err := tx.Table("system_settings").Select(readBoundedText(tx, "value_json", "value_json", 20)).Where("setting_key = ?", "initial_organization_id").Limit(1).Scan(&value).Error; err != nil {
 		return 0, persistenceError(err)
 	}
 	orgID, err := strconv.ParseInt(value, 10, 64)
@@ -173,7 +175,7 @@ func auditObject(action, objectType string, objectID int64) AuditCommand {
 func (s *Store) verifyAuditTail(tx *gorm.DB, head auditChainHead) (AuditVerification, error) {
 	result := AuditVerification{OrganizationID: head.OrganizationID, EventCount: head.EventCount}
 	var events []audit.Event
-	if err := tx.Where("organization_id = ?", head.OrganizationID).Order("sequence DESC").Limit(2).Find(&events).Error; err != nil {
+	if err := tx.Select(auditEventReadColumns(tx)).Where("organization_id = ?", head.OrganizationID).Order("sequence DESC").Limit(2).Find(&events).Error; err != nil {
 		return result, persistenceError(err)
 	}
 	return s.verifyAuditTailRecords(head, events)
@@ -219,7 +221,7 @@ func (t *Tenant) verifyAudit(full bool) (AuditVerification, error) {
 	}
 	err := t.store.db.WithContext(t.ctx).Transaction(func(tx *gorm.DB) error {
 		var head auditChainHead
-		query := tx.Where("organization_id = ?", t.orgID)
+		query := tx.Select(auditHeadReadColumns(tx)).Where("organization_id = ?", t.orgID)
 		if t.store.driver == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "SHARE"})
 		}
@@ -241,7 +243,7 @@ func (t *Tenant) verifyAudit(full bool) (AuditVerification, error) {
 		// The head SHARE lock serializes appends; cursor batches bound memory.
 		for result.VerifiedCount < head.EventCount {
 			var events []audit.Event
-			if err := tx.Where("organization_id = ? AND sequence > ?", t.orgID, result.VerifiedCount).Order("sequence").Limit(500).Find(&events).Error; err != nil {
+			if err := tx.Select(auditEventReadColumns(tx)).Where("organization_id = ? AND sequence > ?", t.orgID, result.VerifiedCount).Order("sequence").Limit(500).Find(&events).Error; err != nil {
 				return persistenceError(err)
 			}
 			if len(events) == 0 {
@@ -272,6 +274,17 @@ func (t *Tenant) ListAudit(afterSequence int64, limit int) ([]audit.Event, error
 		return nil, ErrConfiguration
 	}
 	var events []audit.Event
-	err := t.scoped().Where("sequence > ?", afterSequence).Order("sequence").Limit(limit).Find(&events).Error
-	return events, persistenceError(err)
+	err := t.scoped().Select(auditEventReadColumns(t.store.db)).Where("sequence > ?", afterSequence).Order("sequence").Limit(limit).Find(&events).Error
+	if err != nil {
+		return nil, persistenceError(err)
+	}
+	// Return no partial page or invalid sentinel. This authenticates each event,
+	// not the page's completeness or the entire chain; full verification remains
+	// a separate API with the unchanged head lock and ordered chain checks.
+	for _, event := range events {
+		if err := audit.Verify(event, t.store.auditSigner); err != nil {
+			return nil, err
+		}
+	}
+	return events, nil
 }
