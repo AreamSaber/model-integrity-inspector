@@ -94,6 +94,9 @@ func (tx *TenantTransaction) ReserveAttempt(sampleID int64, snapshot domain.Requ
 	if _, err := tx.executionJob(JobSampleExecute, sampleID, false); err != nil {
 		return AttemptRecord{}, err
 	}
+	if _, err := tx.LockResponseRetentionPolicy(); err != nil {
+		return AttemptRecord{}, err
+	}
 	if err := tx.serializeReservations(); err != nil {
 		return AttemptRecord{}, err
 	}
@@ -156,6 +159,10 @@ func (tx *TenantTransaction) ReserveAttempt(sampleID int64, snapshot domain.Requ
 	attempt := AttemptRecord{ID: id, OrganizationID: tx.orgID, LogicalSampleID: sample.ID, RunID: run.ID, JobID: tx.leaseJobID, LeaseGeneration: tx.leaseGeneration, AttemptNo: sample.AttemptCount + 1, Status: "DISPATCHED", Validity: "PENDING", RequestSnapshot: string(encoded), RequestHash: snapshot.RequestHash, ResponseMeta: "{}", ReservedTokens: tokens, CostKnown: cost != nil, StartedAt: &now}
 	if cost != nil {
 		attempt.ReservedCostMicros = *cost
+	}
+	if run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1 {
+		attempt.DerivedReceipt = DerivedPending
+		attempt.ResponseBodyReceipt = BodyNotCaptured
 	}
 	if err := tx.db.Create(&attempt).Error; err != nil {
 		return AttemptRecord{}, err
@@ -267,7 +274,7 @@ func (t *Tenant) CheckExecution(runID int64) error {
 		return err
 	}
 	var snapshot executionSnapshot
-	if json.Unmarshal([]byte(run.ConfigSnapshot), &snapshot) != nil {
+	if json.Unmarshal([]byte(run.ConfigSnapshot), &snapshot) != nil || !validRunAnalysisSource(run, snapshot.Plan) {
 		return ErrConfiguration
 	}
 	tx := &TenantTransaction{store: t.store, db: t.store.db.WithContext(t.ctx), ctx: t.ctx, orgID: t.orgID}
@@ -329,10 +336,26 @@ func validAttemptOutcome(outcome domain.AttemptOutcome) bool {
 // FinishAttempt, final sample selection and retry Job enqueue must share the
 // same CompleteWith transaction. A retry retains the exact frozen nonce/request.
 func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int) error {
+	return tx.finishAttempt(sampleID, attemptID, outcome, jitter, nil, nil)
+}
+
+func (tx *TenantTransaction) finishAttempt(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, candidates *AttemptDerivedCandidates, bodies *AttemptBodyCapture) error {
+	original := outcome
 	if !validAttemptOutcome(outcome) || jitter < 0 || jitter > 1000 {
 		return ErrConfiguration
 	}
-	if _, err := tx.executionJob(JobSampleExecute, sampleID, true); err != nil {
+	var job Job
+	var err error
+	if candidates == nil {
+		job, err = tx.executionJob(JobSampleExecute, sampleID, true)
+	} else {
+		job, err = tx.derivedCompletionJob(sampleID)
+	}
+	if err != nil {
+		return err
+	}
+	policy, err := tx.LockResponseRetentionPolicy()
+	if err != nil {
 		return err
 	}
 	if err := tx.serializeReservations(); err != nil {
@@ -346,6 +369,9 @@ func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome do
 	if err != nil {
 		return err
 	}
+	if (run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1) != (candidates != nil) {
+		return ErrAnalysisSource
+	}
 	var attempt AttemptRecord
 	if err := tx.db.Where("organization_id = ? AND id = ? AND logical_sample_id = ? AND job_id = ? AND lease_generation = ? AND status = 'DISPATCHED'", tx.orgID, attemptID, sampleID, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
 		return ErrJobLeaseLost
@@ -354,7 +380,7 @@ func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome do
 	if err != nil {
 		return err
 	}
-	if run.CancelRequestedAt != nil {
+	if run.CancelRequestedAt != nil || job.CancelRequestedAt != nil {
 		outcome.Validity = "NOT_APPLICABLE"
 		outcome.ErrorCode = "MI_EXECUTION_CANCELLED"
 	} else if err := tx.executionTargetCurrent(frozen.Plan.Target); err != nil {
@@ -364,17 +390,46 @@ func (tx *TenantTransaction) FinishAttempt(sampleID, attemptID int64, outcome do
 		outcome.Validity = "NOT_APPLICABLE"
 		outcome.ErrorCode = "MI_EXECUTION_TARGET_STALE"
 	}
-	if run.CancelRequestedAt == nil && run.DeadlineAt != nil && !run.DeadlineAt.After(now) {
+	if run.CancelRequestedAt == nil && job.CancelRequestedAt == nil && run.DeadlineAt != nil && !run.DeadlineAt.After(now) {
 		outcome.Validity = "NOT_APPLICABLE"
 		outcome.ErrorCode = "MI_EXECUTION_BUDGET_EXCEEDED"
 	}
+	if candidates != nil {
+		if err := tx.insertSelectedDerived(run, frozen.Plan, sample, attempt, original, outcome, now, false, *candidates); err != nil {
+			return err
+		}
+	}
 	if err := tx.settleAttempt(run, frozen, sample, plan, attempt, outcome, now, jitter, false); err != nil {
 		return err
+	}
+	if candidates != nil {
+		if err := tx.persistDerivedBodies(run, sample, attempt, policy, bodies); err != nil {
+			return err
+		}
 	}
 	return tx.closeExecutionIfFinished(run.ID, now)
 }
 
 func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapshot, sample LogicalSampleRecord, plan domain.SamplePlan, attempt AttemptRecord, outcome domain.AttemptOutcome, now time.Time, jitter int, uncertain bool) error {
+	receipt := DerivedLegacy
+	if run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1 {
+		if attempt.DerivedReceipt != DerivedPending {
+			return ErrAnalysisSource
+		}
+		receipt = DerivedRecorded
+		if uncertain {
+			receipt = DerivedRecovered
+		}
+		var count int64
+		if err := tx.db.Model(&AttemptDerivedRecord{}).Where("organization_id = ? AND run_id = ? AND logical_sample_id = ? AND attempt_id = ? AND request_hash = ? AND validity = ? AND error_code = ?", tx.orgID, run.ID, sample.ID, attempt.ID, attempt.RequestHash, outcome.Validity, outcome.ErrorCode).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrAnalysisSource
+		}
+	} else if attempt.DerivedReceipt != DerivedLegacy {
+		return ErrAnalysisSource
+	}
 	input := plan.EstimatedInputTokens
 	output := outcome.LocalCompletionTokens
 	if outcome.TokenizerQuality == "unavailable" && outcome.CompletionTokens == nil {
@@ -388,7 +443,7 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	}
 	if outcome.CompletionTokens == nil {
 		switch outcome.ErrorCode {
-		case "MI_TIMEOUT", "MI_NETWORK_TEMPORARY", "MI_CONNECTION_RESET", "MI_CLIENT_SAFETY_LIMIT", "MI_EVIDENCE_LIMIT", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE", "MI_EXECUTION_CIRCUIT_OPEN":
+		case "MI_TIMEOUT", "MI_NETWORK_TEMPORARY", "MI_CONNECTION_RESET", "MI_CLIENT_SAFETY_LIMIT", "MI_EVIDENCE_LIMIT", "MI_EXECUTION_CANCELLED", "MI_EXECUTION_TARGET_STALE", "MI_EXECUTION_BUDGET_EXCEEDED", "MI_EXECUTION_CIRCUIT_OPEN":
 			output = max(output, int64(plan.Request.MaxOutputTokens))
 		case "MI_PROTOCOL_UNSUPPORTED":
 			if outcome.HTTPStatus == 200 {
@@ -441,7 +496,7 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	if outcome.TokenizerQuality == "unavailable" {
 		localTokens = nil
 	}
-	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": localTokens, "tokenizer_id": outcome.TokenizerID, "tokenizer_quality": outcome.TokenizerQuality, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}).Error; err != nil {
+	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "derived_receipt": receipt, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": localTokens, "tokenizer_id": outcome.TokenizerID, "tokenizer_quality": outcome.TokenizerQuality, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}).Error; err != nil {
 		return err
 	}
 	valid := outcome.Validity == "VALID" || outcome.Validity == "VALID_WITH_WARNING"

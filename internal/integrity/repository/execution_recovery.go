@@ -14,7 +14,30 @@ import (
 // RecoverInterruptedSample runs when the same Job is reclaimed with a newer
 // generation. It never retries a possibly billed request automatically.
 func (tx *TenantTransaction) RecoverInterruptedSample(sampleID int64) error {
-	if _, err := tx.executionJob(JobSampleExecute, sampleID, true); err != nil {
+	return tx.recoverInterruptedSample(sampleID, 0, nil)
+}
+
+// RecoverInterruptedSampleWithDerived records the unavailable result of the
+// OLD real Attempt. It never reopens a Secret, checks current target validity,
+// reissues HTTP, or rewrites the old request/job identity.
+func (tx *TenantTransaction) RecoverInterruptedSampleWithDerived(sampleID, attemptID int64, candidates AttemptDerivedCandidates) error {
+	if attemptID <= 0 {
+		return ErrAnalysisSource
+	}
+	return tx.recoverInterruptedSample(sampleID, attemptID, &candidates)
+}
+
+func (tx *TenantTransaction) recoverInterruptedSample(sampleID, attemptID int64, candidates *AttemptDerivedCandidates) error {
+	var err error
+	if candidates == nil {
+		_, err = tx.executionJob(JobSampleExecute, sampleID, true)
+	} else {
+		_, err = tx.derivedCompletionJob(sampleID)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.LockResponseRetentionPolicy(); err != nil {
 		return err
 	}
 	if err := tx.serializeReservations(); err != nil {
@@ -28,15 +51,28 @@ func (tx *TenantTransaction) RecoverInterruptedSample(sampleID int64) error {
 	if err != nil {
 		return err
 	}
+	if (run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1) != (candidates != nil) {
+		return ErrAnalysisSource
+	}
 	var attempt AttemptRecord
-	if err := tx.db.Where("organization_id = ? AND logical_sample_id = ? AND job_id = ? AND lease_generation < ? AND status = 'DISPATCHED'", tx.orgID, sample.ID, tx.leaseJobID, tx.leaseGeneration).First(&attempt).Error; err != nil {
+	query := tx.db.Where("organization_id = ? AND logical_sample_id = ? AND job_id = ? AND lease_generation < ? AND status = 'DISPATCHED'", tx.orgID, sample.ID, tx.leaseJobID, tx.leaseGeneration)
+	if candidates != nil {
+		query = query.Where("id = ?", attemptID)
+	}
+	if err := query.First(&attempt).Error; err != nil {
 		return ErrJobLeaseLost
 	}
 	now, err := queueTime(tx.db, tx.store.driver)
 	if err != nil {
 		return err
 	}
-	if err := tx.settleAttempt(run, frozen, sample, plan, attempt, domain.AttemptOutcome{Validity: "INVALID_RETRYABLE", ErrorCode: "MI_UNCERTAIN_ATTEMPT"}, now, 0, true); err != nil {
+	outcome := domain.AttemptOutcome{Validity: "INVALID_RETRYABLE", ErrorCode: "MI_UNCERTAIN_ATTEMPT"}
+	if candidates != nil {
+		if err := tx.insertSelectedDerived(run, frozen.Plan, sample, attempt, outcome, outcome, now, true, *candidates); err != nil {
+			return err
+		}
+	}
+	if err := tx.settleAttempt(run, frozen, sample, plan, attempt, outcome, now, 0, true); err != nil {
 		return err
 	}
 	return tx.closeExecutionIfFinished(run.ID, now)
@@ -166,6 +202,9 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 		}
 		capability := &TenantTransaction{store: q.store, db: db, ctx: ctx, orgID: organizationID, completing: true}
 		defer capability.closed.Store(true)
+		if _, err := capability.LockResponseRetentionPolicy(); err != nil {
+			return err
+		}
 		if err := capability.serializeReservations(); err != nil {
 			return err
 		}

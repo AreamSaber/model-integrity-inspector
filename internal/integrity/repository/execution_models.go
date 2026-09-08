@@ -7,6 +7,7 @@ import (
 )
 
 type RunRecord struct {
+	AnalysisSourceVersion  string `gorm:"default:legacy_response_v1"`
 	ID                     int64
 	OrganizationID         int64
 	TargetID               int64
@@ -90,6 +91,8 @@ type LogicalSampleRecord struct {
 func (LogicalSampleRecord) TableName() string { return "integrity_logical_samples" }
 
 type AttemptRecord struct {
+	DerivedReceipt        string `gorm:"default:legacy_not_recorded"`
+	ResponseBodyReceipt   string `gorm:"default:legacy_not_recorded"`
 	ID                    int64
 	OrganizationID        int64
 	LogicalSampleID       int64

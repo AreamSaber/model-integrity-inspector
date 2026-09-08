@@ -58,6 +58,9 @@ var executionLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
 var executionHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func validateExecutionPlan(plan domain.ExecutionPlan) bool {
+	if _, err := planAnalysisSource(plan); err != nil {
+		return false
+	}
 	if plan.Target.ID <= 0 || plan.Target.Version <= 0 || plan.Target.SecretID <= 0 || plan.Target.SecretVersion <= 0 || !executionHash.MatchString(plan.ManifestHash) || len(plan.Probes) == 0 || len(plan.Probes) > 200 || (plan.Target.MaxOutputParameter != "max_tokens" && plan.Target.MaxOutputParameter != "max_completion_tokens") || (plan.BaselineRunID != nil && *plan.BaselineRunID <= 0) {
 		return false
 	}
@@ -273,6 +276,10 @@ func (t *Tenant) createRunInTransaction(tx *TenantTransaction, plan domain.Execu
 			return err
 		}
 		result = RunRecord{ID: id, OrganizationID: t.orgID, TargetID: plan.Target.ID, BaselineRunID: plan.BaselineRunID, Package: plan.Package, ObservationMode: "blackbox", Status: "QUEUED", ConfigSnapshot: string(encoded), ManifestHash: plan.ManifestHash, RuleBundleVersion: plan.Versions.Rule, TemplateBundleVersion: plan.Versions.Template, ScoringVersion: plan.Versions.Scoring, TokenizerBundleVersion: plan.Versions.Tokenizer, RequestBudget: plan.Budget.MaxRequests, TokenBudget: plan.Budget.MaxTokens, MoneyBudgetMicros: plan.Budget.MaxCostMicros, CostKnown: plan.Pricing.InputMicrosPerMillion != nil && plan.Pricing.OutputMicrosPerMillion != nil, CreatedBy: actor, CreatedAt: now, Version: 1, RequestKey: requestKey}
+		result.AnalysisSourceVersion, err = planAnalysisSource(plan)
+		if err != nil {
+			return err
+		}
 		if err := tx.db.Create(&result).Error; err != nil {
 			return err
 		}
@@ -331,7 +338,7 @@ func (t *Tenant) GetExecutionPlan(id int64) (domain.ExecutionPlan, error) {
 		return domain.ExecutionPlan{}, err
 	}
 	var s executionSnapshot
-	if json.Unmarshal([]byte(r.ConfigSnapshot), &s) != nil {
+	if json.Unmarshal([]byte(r.ConfigSnapshot), &s) != nil || !validRunAnalysisSource(r, s.Plan) {
 		return domain.ExecutionPlan{}, ErrConfiguration
 	}
 	return s.Plan, nil
@@ -419,7 +426,7 @@ func (tx *TenantTransaction) lockRun(id int64) (RunRecord, executionSnapshot, er
 	if err != nil {
 		return run, snapshot, err
 	}
-	if json.Unmarshal([]byte(run.ConfigSnapshot), &snapshot) != nil {
+	if json.Unmarshal([]byte(run.ConfigSnapshot), &snapshot) != nil || !validRunAnalysisSource(run, snapshot.Plan) {
 		return run, snapshot, ErrConfiguration
 	}
 	return run, snapshot, nil
@@ -428,7 +435,19 @@ func (tx *TenantTransaction) lockRun(id int64) (RunRecord, executionSnapshot, er
 // StartRun is only valid inside completion of the frozen plan Job. Claiming the
 // Job alone does not create any successful sample or issue an outbound request.
 func (tx *TenantTransaction) StartRun(id int64) error {
+	return tx.startRun(id, AnalysisSourceLegacyV1)
+}
+
+// StartRunWithDerivedSource never upgrades an old frozen plan or guesses mode.
+func (tx *TenantTransaction) StartRunWithDerivedSource(id int64) error {
+	return tx.startRun(id, domain.AnalysisSourceDerivedV1)
+}
+
+func (tx *TenantTransaction) startRun(id int64, requiredSource string) error {
 	if _, err := tx.executionJob(JobRunPlan, id, true); err != nil {
+		return err
+	}
+	if _, err := tx.LockResponseRetentionPolicy(); err != nil {
 		return err
 	}
 	run, snapshot, err := tx.lockRun(id)
@@ -437,6 +456,9 @@ func (tx *TenantTransaction) StartRun(id int64) error {
 	}
 	if run.PlanJobID == nil || *run.PlanJobID != tx.leaseJobID {
 		return ErrJobLeaseLost
+	}
+	if run.AnalysisSourceVersion != requiredSource {
+		return ErrAnalysisSource
 	}
 	if run.Status != "QUEUED" && run.Status != "CANCELLING" {
 		return ErrExecutionClosed

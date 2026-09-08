@@ -89,7 +89,7 @@ func validDisplayRecord(v DisplayEvidenceRecord) bool {
 		return false
 	}
 	if v.State == DisplayCaptured {
-		return executionHash.MatchString(v.SourceHash) && v.Version == 1 && responseEvidenceVersion.MatchString(v.KeyVersion) && len(v.Nonce) == 12 && v.PlaintextBytes > 0 && v.PlaintextBytes <= 4<<20 && len(v.Ciphertext) == v.PlaintextBytes+16 && executionHash.MatchString(v.PayloadHash) && v.CapturedAtMicros > 0 && v.CapturedAtMicros <= 1<<62 && v.ExpiresAtMicros-v.CapturedAtMicros == displayRetentionMicros
+		return executionHash.MatchString(v.SourceHash) && v.Version == 1 && responseEvidenceVersion.MatchString(v.KeyVersion) && len(v.Nonce) == 12 && v.PlaintextBytes > 0 && v.PlaintextBytes <= 4<<20 && len(v.Ciphertext) == v.PlaintextBytes+16 && executionHash.MatchString(v.PayloadHash) && v.CapturedAtMicros > 0 && v.CapturedAtMicros <= 1<<62 && v.ExpiresAtMicros >= v.CapturedAtMicros+responseRetentionDayMicros && v.ExpiresAtMicros <= v.CapturedAtMicros+180*responseRetentionDayMicros && (v.ExpiresAtMicros-v.CapturedAtMicros)%responseRetentionDayMicros == 0
 	}
 	switch v.State {
 	case DisplayUnavailablePolicy, DisplayUnavailableLimit, DisplayUnavailableSource, DisplayUnavailableCancelled, DisplayUnavailableCapture, DisplayUnavailableSeal:
@@ -105,6 +105,11 @@ func validDisplayRecord(v DisplayEvidenceRecord) bool {
 func (tx *TenantTransaction) FinishAttemptWithEvidenceAndDisplay(sampleID, attemptID int64, outcome domain.AttemptOutcome, jitter int, evidence ResponseEvidenceRecord, display DisplayEvidenceRecord) error {
 	if tx.closed.Load() {
 		return ErrTransactionClosed
+	}
+	// This compatibility entry remains fixed at its original 30-day policy.
+	// Only a private derived capture can bind the organization's 1..180 days.
+	if display.State == DisplayCaptured && display.ExpiresAtMicros-display.CapturedAtMicros != displayRetentionMicros {
+		return ErrConfiguration
 	}
 	if !validDisplayRecord(display) || display.OrganizationID != tx.orgID || display.OrganizationID != evidence.OrganizationID || display.RunID != evidence.RunID || display.LogicalSampleID != sampleID || display.LogicalSampleID != evidence.LogicalSampleID || display.AttemptID != attemptID || display.AttemptID != evidence.AttemptID || display.RequestHash != evidence.RequestHash {
 		return ErrConfiguration
