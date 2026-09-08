@@ -148,6 +148,15 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 }
 
 func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testing.T) {
+	testApplicationActualPipeline(t, 30)
+}
+
+func TestApplicationActualTLSZeroDayRetentionThroughPublishedArtifacts(t *testing.T) {
+	testApplicationActualPipeline(t, 0)
+}
+
+func testApplicationActualPipeline(t *testing.T, retentionDays int) {
+	t.Helper()
 	for _, driver := range []string{"sqlite", "postgres"} {
 		t.Run(driver, func(t *testing.T) {
 			cfg := pipelineDatabase(t, testConfig(t), driver)
@@ -207,6 +216,7 @@ func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testi
 				t.Fatal("actual application session missing")
 			}
 			http.csrf, http.orgID = session.CSRFToken, session.Organizations[0].ID
+			bodyDB := configurePipelineRetention(t, cfg, &http, retentionDays)
 			var target struct {
 				ID string `json:"id"`
 			}
@@ -315,10 +325,11 @@ func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testi
 			if len(upstream.Records())-repeatedBefore != 9 {
 				t.Fatal("repeated detection did not execute exactly the new bounded TLS plan")
 			}
+			verifyPipelineDerivedStorage(t, bodyDB, http.orgID, retentionDays, record.Planned+9)
 			if err := app.store.VerifyAllAudit(t.Context(), true); err != nil {
 				t.Fatal(fmt.Errorf("actual pipeline audit invalid: %w", err))
 			}
-			if os.Getenv("MII_TEST_BROWSER_HOLD") == driver {
+			if os.Getenv("MII_TEST_BROWSER_HOLD") == driver && retentionDays == 30 {
 				// Opt-in test-only inspection of the real embedded frontend. The
 				// private fixture and TLS mock remain alive for at most five minutes;
 				// a marker in this test-owned temp directory ends the hold early.

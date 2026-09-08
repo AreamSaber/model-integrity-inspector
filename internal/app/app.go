@@ -18,6 +18,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/baseline"
 	runtimebundle "model-integrity-inspector.local/mii/internal/integrity/bundle"
 	"model-integrity-inspector.local/mii/internal/integrity/catalog"
+	"model-integrity-inspector.local/mii/internal/integrity/domain"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/reportstorage"
@@ -143,16 +144,27 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		return nil, err
 	}
 	if cfg.Role.Components().Worker {
+		derivedMAC, err := key.NewDerivedSourceMAC()
+		if err != nil {
+			return nil, err
+		}
+		derivedSealer, derivedVerifier, err := features.NewDerivedCapabilitiesWithMAC(cfg.MasterKeyVersion, derivedMAC)
+		if err != nil {
+			return nil, err
+		}
 		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs})
 		if err != nil {
 			return nil, err
 		}
-		handlers, err := worker.NewRunHandlers(worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, Tokenizer: engine, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs})
+		runConfig := worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, DerivedBuilder: builder, DerivedSealer: derivedSealer, Tokenizer: engine, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs}
+		handlers, err := worker.NewRunHandlers(runConfig)
 		if err != nil {
 			return nil, err
 		}
 		handlers[repository.JobTargetPrecheck] = precheck
-		analysis, err := worker.NewAnalysisHandler(worker.AnalysisConfig{Builder: builder, EvidenceKeys: key})
+		// Legacy confirmed manifests retain their original analysis mode. New
+		// manifests use authenticated S1, without requiring retained responses.
+		analysis, err := worker.NewAnalysisHandler(worker.AnalysisConfig{Builder: builder, EvidenceKeys: key, DerivedVerifier: derivedVerifier})
 		if err != nil {
 			return nil, err
 		}
@@ -162,8 +174,12 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 			return nil, err
 		}
 		handlers[repository.JobReportGenerate] = reportHandler
+		reconcileRuns, err := worker.NewRunReconciler(runConfig)
+		if err != nil {
+			return nil, err
+		}
 		app.worker, err = worker.New(worker.Config{Store: store, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
-			if err := worker.ReconcileRunJobs(ctx, queue); err != nil {
+			if err := reconcileRuns(ctx, queue); err != nil {
 				return err
 			}
 			if err := queue.ReconcileReports(ctx); err != nil {
@@ -197,7 +213,7 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		// The actual analysis handler, immutable bundle admission and authorized
 		// result routes are registered together. Availability never upgrades the
 		// development/uncalibrated evidence grade or substitutes for cost consent.
-		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version, ExecutionReady: readiness})
+		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version, AnalysisSourceVersion: domain.AnalysisSourceDerivedV1, ExecutionReady: readiness})
 		if err != nil {
 			return nil, err
 		}

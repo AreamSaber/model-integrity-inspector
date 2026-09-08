@@ -125,8 +125,11 @@ func (tx *TenantTransaction) PublishRunAnalysis(source *AnalysisSource, publicat
 	if err != nil {
 		return err
 	}
-	if run.Status != "ANALYZING" || run.Version != source.runVersion || run.ManifestHash != source.manifestHash || run.ExecutionClosedAt == nil || run.CancelRequestedAt != nil || run.ReservedTokens != 0 || run.ReservedCostMicros != 0 {
+	if run.Status != "ANALYZING" || run.Version != source.runVersion || run.ManifestHash != source.manifestHash || run.AnalysisSourceVersion != source.sourceVersion || run.ExecutionClosedAt == nil || run.CancelRequestedAt != nil || run.ReservedTokens != 0 || run.ReservedCostMicros != 0 {
 		return ErrAnalysisSource
+	}
+	if err := tx.validateRunAnalysisSource(source); err != nil {
+		return err
 	}
 	// Bind the immutable document's identity and summary to this receipt and
 	// the indexed projection; readers must never see contradictory summaries.

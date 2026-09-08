@@ -14,14 +14,15 @@ import (
 )
 
 type AnalysisConfig struct {
-	Builder      *features.Builder
-	EvidenceKeys *secret.KeyRing
+	Builder         *features.Builder
+	EvidenceKeys    *secret.KeyRing
+	DerivedVerifier *features.DerivedVerifier
 }
 
 // NewAnalysisHandler has no network/credential capability. It consumes only
 // closed execution evidence and returns an atomic immutable publication.
 func NewAnalysisHandler(config AnalysisConfig) (Handler, error) {
-	if config.Builder == nil || config.EvidenceKeys == nil {
+	if config.Builder == nil || (config.EvidenceKeys == nil && config.DerivedVerifier == nil) {
 		return nil, ErrConfiguration
 	}
 	return func(ctx context.Context, execution Execution) (Completion, error) {
@@ -41,7 +42,15 @@ func NewAnalysisHandler(config AnalysisConfig) (Handler, error) {
 			if input.Run.Plan.Versions.Scoring != scoring.Version {
 				return repository.ErrAnalysisSource
 			}
-			batch, err := config.Builder.Build(input)
+			var batch *features.Batch
+			switch data.Run.AnalysisSourceVersion {
+			case repository.AnalysisSourceLegacyV1:
+				batch, err = config.Builder.Build(input)
+			case domain.AnalysisSourceDerivedV1:
+				batch, err = analysisDerivedBatch(ctx, input, data.Derived, config.Builder, config.DerivedVerifier)
+			default:
+				return repository.ErrAnalysisSource
+			}
 			if err != nil {
 				return err
 			}
@@ -70,6 +79,19 @@ func analysisInput(ctx context.Context, data repository.AnalysisData, keys *secr
 		Plan domain.ExecutionPlan `json:"plan"`
 	}
 	if data.Run.ExecutionClosedAt == nil || len(data.Run.ConfigSnapshot) > 8<<20 || json.Unmarshal([]byte(data.Run.ConfigSnapshot), &snapshot) != nil {
+		return features.Input{}, repository.ErrAnalysisSource
+	}
+	derived := data.Run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1
+	switch data.Run.AnalysisSourceVersion {
+	case repository.AnalysisSourceLegacyV1:
+		if snapshot.Plan.AnalysisSourceVersion != "" || len(data.Derived) != 0 || keys == nil {
+			return features.Input{}, repository.ErrAnalysisSource
+		}
+	case domain.AnalysisSourceDerivedV1:
+		if snapshot.Plan.AnalysisSourceVersion != domain.AnalysisSourceDerivedV1 || len(data.Evidence) != 0 {
+			return features.Input{}, repository.ErrAnalysisSource
+		}
+	default:
 		return features.Input{}, repository.ErrAnalysisSource
 	}
 	input := features.Input{Run: features.RunBinding{OrganizationID: data.Run.OrganizationID, ID: data.Run.ID, Plan: snapshot.Plan, ExecutionClosedAt: *data.Run.ExecutionClosedAt}}
@@ -105,7 +127,7 @@ func analysisInput(ctx context.Context, data repository.AnalysisData, keys *secr
 			if a.ErrorCode != nil {
 				attempt.ErrorCode = *a.ErrorCode
 			}
-			if evidence, found := byAttempt[a.ID]; found {
+			if evidence, found := byAttempt[a.ID]; found && !derived {
 				// Scope comes from authoritative rows, never from payload JSON. An
 				// expired/missing record stays nil; tampered ciphertext/key failure
 				// is explicit failure, not evidence of a normal response.
@@ -125,6 +147,49 @@ func analysisInput(ctx context.Context, data repository.AnalysisData, keys *secr
 		input.Samples = append(input.Samples, row)
 	}
 	return input, nil
+}
+
+// Authenticate each SQL row's declared scope before the complete-set builder.
+// A flat set alone cannot detect two valid payload/MAC pairs swapped between
+// database rows. Neither this helper nor BuildDerived can fall back to bodies.
+func analysisDerivedBatch(ctx context.Context, input features.Input, rows []repository.AttemptDerivedRecord, builder *features.Builder, verifier *features.DerivedVerifier) (*features.Batch, error) {
+	if ctx == nil || builder == nil || verifier == nil {
+		return nil, ErrConfiguration
+	}
+	if len(rows) > 450 {
+		return nil, repository.ErrAnalysisLimit
+	}
+	type binding struct {
+		sample  features.SampleBinding
+		attempt features.AttemptBinding
+	}
+	bindings := make(map[int64]binding)
+	for _, sample := range input.Samples {
+		for _, a := range sample.Attempts {
+			if _, duplicate := bindings[a.ID]; duplicate {
+				return nil, repository.ErrAnalysisSource
+			}
+			bindings[a.ID] = binding{sample, a}
+		}
+	}
+	if len(bindings) != len(rows) {
+		return nil, repository.ErrAnalysisSource
+	}
+	seen := make(map[int64]bool, len(rows))
+	records := make([]features.DerivedRecord, 0, len(rows))
+	for _, row := range rows {
+		bound, ok := bindings[row.AttemptID]
+		if !ok || seen[row.AttemptID] || row.OrganizationID != input.Run.OrganizationID || row.RunID != input.Run.ID || row.LogicalSampleID != bound.sample.ID || row.RequestHash != bound.attempt.RequestHash || row.Status != bound.attempt.Status || row.Validity != bound.attempt.Validity || row.ErrorCode != bound.attempt.ErrorCode {
+			return nil, repository.ErrAnalysisSource
+		}
+		record := features.DerivedRecord{Version: row.Version, KeyVersion: row.KeyVersion, Payload: row.Payload, MAC: row.MAC}
+		if err := builder.VerifyDerivedRecord(ctx, input.Run, bound.sample, bound.attempt, record, verifier); err != nil {
+			return nil, err
+		}
+		seen[row.AttemptID] = true
+		records = append(records, record)
+	}
+	return builder.BuildDerived(ctx, input, records, verifier)
 }
 
 func analysisPublication(document analyzer.Document) (repository.AnalysisPublication, error) {

@@ -22,6 +22,7 @@ type runCallResult struct {
 	attempt    repository.AttemptRecord
 	response   domain.NormalizedResponse
 	display    repository.DisplayEvidenceRecord
+	bodies     *repository.AttemptBodyCapture
 	outcome    domain.AttemptOutcome
 	guardError error
 	jitter     int

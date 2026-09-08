@@ -9,6 +9,7 @@ import (
 	"io"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/features"
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
 	"model-integrity-inspector.local/mii/internal/integrity/evidencedisplay"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
@@ -24,11 +25,16 @@ type RunConfig struct {
 	// Optional trusted startup override; otherwise derived once from EvidenceKeys.
 	// This capability cannot decrypt either credentials or analysis evidence.
 	DisplaySealer *secret.DisplaySealer
-	Tokenizer     *tokenizer.Engine
-	URLPolicy     safehttp.URLPolicy
-	Resolver      safehttp.Resolver
-	DialContext   safehttp.DialContextFunc
-	RootCAs       *x509.CertPool
+	// Both capabilities are required for signed derived-source Runs. Legacy
+	// confirmed Runs keep their original source mode; missing capabilities never
+	// authorize a derived-to-raw fallback.
+	DerivedBuilder *features.Builder
+	DerivedSealer  *features.DerivedSealer
+	Tokenizer      *tokenizer.Engine
+	URLPolicy      safehttp.URLPolicy
+	Resolver       safehttp.Resolver
+	DialContext    safehttp.DialContextFunc
+	RootCAs        *x509.CertPool
 	// Trusted administrator/test ceilings, never request-controlled overrides.
 	RequestTimeout   time.Duration
 	LivenessInterval time.Duration
@@ -36,6 +42,9 @@ type RunConfig struct {
 
 func NewRunHandlers(config RunConfig) (map[repository.JobType]Handler, error) {
 	if config.Store == nil || config.Secrets == nil || config.EvidenceKeys == nil {
+		return nil, ErrConfiguration
+	}
+	if (config.DerivedBuilder == nil) != (config.DerivedSealer == nil) {
 		return nil, ErrConfiguration
 	}
 	if config.DisplaySealer == nil {
@@ -70,9 +79,28 @@ func NewRunHandlers(config RunConfig) (map[repository.JobType]Handler, error) {
 		config.RootCAs = config.RootCAs.Clone()
 	}
 	return map[repository.JobType]Handler{
-		repository.JobRunPlan: func(_ context.Context, execution Execution) (Completion, error) {
+		repository.JobRunPlan: func(ctx context.Context, execution Execution) (Completion, error) {
 			if execution.Queue == nil || repository.JobType(execution.Lease.Job.Type) != repository.JobRunPlan {
 				return nil, repository.ErrJobInvalid
+			}
+			tenant, err := config.Store.WithOrganization(ctx, execution.Lease.Job.OrganizationID)
+			if err != nil {
+				return nil, err
+			}
+			plan, err := tenant.GetExecutionPlan(execution.Lease.Job.ObjectID)
+			if err != nil {
+				return nil, err
+			}
+			if plan.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1 {
+				if config.DerivedBuilder == nil || config.DerivedSealer == nil {
+					return nil, ErrConfiguration
+				}
+				return func(tx *repository.TenantTransaction) error {
+					return tx.StartRunWithDerivedSource(execution.Lease.Job.ObjectID)
+				}, nil
+			}
+			if plan.AnalysisSourceVersion != "" {
+				return nil, repository.ErrAnalysisSource
 			}
 			return func(tx *repository.TenantTransaction) error { return tx.StartRun(execution.Lease.Job.ObjectID) }, nil
 		},
@@ -116,8 +144,30 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 	if err != nil {
 		return nil, err
 	}
+	plan, err := tenant.GetExecutionPlan(sample.RunID)
+	if err != nil {
+		return nil, err
+	}
+	derived := plan.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1
+	if plan.AnalysisSourceVersion != "" && !derived {
+		return nil, repository.ErrAnalysisSource
+	}
+	if derived && (config.DerivedBuilder == nil || config.DerivedSealer == nil) {
+		return nil, ErrConfiguration
+	}
 	for _, attempt := range attempts {
 		if attempt.Status == "DISPATCHED" {
+			if derived {
+				deriveCtx, stop := runDerivationContext(ctx)
+				defer stop()
+				candidates, err := prepareRunDerived(deriveCtx, config, plan, sample, attempt, nil, domain.AttemptOutcome{Validity: "INVALID_RETRYABLE", ErrorCode: "MI_UNCERTAIN_ATTEMPT"}, true)
+				if err != nil {
+					return nil, err
+				}
+				return func(tx *repository.TenantTransaction) error {
+					return tx.RecoverInterruptedSampleWithDerived(sample.ID, attempt.ID, candidates)
+				}, nil
+			}
 			return func(tx *repository.TenantTransaction) error { return tx.RecoverInterruptedSample(sample.ID) }, nil
 		}
 	}
@@ -125,10 +175,6 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		if executionStop(err) {
 			return unstarted()
 		}
-		return nil, err
-	}
-	plan, err := tenant.GetExecutionPlan(sample.RunID)
-	if err != nil {
 		return nil, err
 	}
 	var samplePlan domain.SamplePlan
@@ -166,7 +212,11 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		return credentials.Use(func(key []byte, headers map[string][]byte) error {
 			result = callRunSample(callCtx, execution, config, plan, sample, samplePlan, key, headers)
 			if result.attempt.ID != 0 {
-				result.display = captureRunDisplay(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
+				if derived {
+					result.bodies, result.display = captureRunDerivedBody(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
+				} else {
+					result.display = captureRunDisplay(callCtx, execution, config.DisplaySealer, samplePlan.Request, result, key, headers)
+				}
 			}
 			return nil
 		})
@@ -197,7 +247,7 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		if errors.Is(cause, repository.ErrUnavailable) || errors.Is(cause, repository.ErrJobLeaseLost) {
 			return nil, cause
 		}
-		if errors.Is(cause, repository.ErrExecutionCancelled) {
+		if errors.Is(cause, repository.ErrExecutionCancelled) || errors.Is(cause, repository.ErrJobCancelled) {
 			result.outcome.Validity = "NOT_APPLICABLE"
 			result.outcome.ErrorCode = "MI_EXECUTION_CANCELLED"
 		} else if errors.Is(cause, repository.ErrExecutionStale) {
@@ -220,12 +270,31 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 		// Preserve the loss classification without disguising a truncated body as
 		// complete evidence. Usage/cost remain on the separately settled Attempt.
 		minimal := domain.NormalizedResponse{HTTPStatus: result.response.HTTPStatus, ParseStatus: "invalid", EndCause: "client_safety_limit", ParseWarnings: []string{"MI_EVIDENCE_LIMIT"}, DurationMs: result.response.DurationMs}
+		result.response = minimal
 		sealed, err = config.EvidenceKeys.EncryptResponseEvidence(scope, minimal)
 	}
 	if err != nil {
 		return nil, repository.ErrUnavailable
 	}
 	evidence := repository.ResponseEvidenceRecord{OrganizationID: scope.OrganizationID, RunID: scope.RunID, LogicalSampleID: scope.LogicalSampleID, AttemptID: scope.AttemptID, RequestHash: scope.RequestHash, KeyVersion: sealed.KeyVersion, Nonce: sealed.Nonce, Ciphertext: sealed.Ciphertext, PlaintextBytes: sealed.PlaintextBytes, ContentHash: sealed.ContentHash}
+	if derived {
+		deriveCtx, stop := runDerivationContext(ctx)
+		defer stop()
+		candidates, err := prepareRunDerived(deriveCtx, config, plan, sample, result.attempt, &result.response, result.outcome, false)
+		if err != nil {
+			return nil, err
+		}
+		var bodies *repository.AttemptBodyCapture
+		if result.bodies != nil {
+			bodies, err = result.bodies.WithRecords(evidence, result.display)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return func(tx *repository.TenantTransaction) error {
+			return tx.FinishAttemptWithDerived(sample.ID, result.attempt.ID, result.outcome, result.jitter, candidates, bodies)
+		}, nil
+	}
 	return func(tx *repository.TenantTransaction) error {
 		return tx.FinishAttemptWithEvidenceAndDisplay(sample.ID, result.attempt.ID, result.outcome, result.jitter, evidence, result.display)
 	}, nil
@@ -235,6 +304,10 @@ func executeRunSample(ctx context.Context, execution Execution, config RunConfig
 // after the adapter/tokenizer have finalized the unchanged analysis response.
 // Its independent bounded failure never mutates response, outcome or parent ctx.
 func captureRunDisplay(ctx context.Context, execution Execution, sealer *secret.DisplaySealer, request domain.NormalizedRequest, result runCallResult, key []byte, headers map[string][]byte) repository.DisplayEvidenceRecord {
+	return captureRunDisplayUsingBinding(ctx, execution, sealer, request, result, key, headers, nil)
+}
+
+func captureRunDisplayUsingBinding(ctx context.Context, execution Execution, sealer *secret.DisplaySealer, request domain.NormalizedRequest, result runCallResult, key []byte, headers map[string][]byte, captured *repository.DisplayEvidenceRecord) repository.DisplayEvidenceRecord {
 	base := repository.DisplayEvidenceRecord{OrganizationID: result.attempt.OrganizationID, RunID: result.attempt.RunID, LogicalSampleID: result.attempt.LogicalSampleID, AttemptID: result.attempt.ID, RequestHash: result.attempt.RequestHash, Policy: repository.DisplayEvidencePolicy}
 	failure := func(state string) repository.DisplayEvidenceRecord { v := base; v.State = state; return v }
 	displayCtx, stop := context.WithTimeout(ctx, 2*time.Second)
@@ -255,11 +328,16 @@ func captureRunDisplay(ctx context.Context, execution Execution, sealer *secret.
 	}
 	defer clear(snapshot.Payload)
 	var bound repository.DisplayEvidenceRecord
-	err := execution.Queue.WithLease(displayCtx, execution.Lease, func(tx *repository.TenantTransaction) error {
-		var err error
-		bound, err = tx.BindAttemptDisplayCapture(result.attempt.LogicalSampleID, result.attempt.ID, result.attempt.RequestHash)
-		return err
-	})
+	var err error
+	if captured != nil {
+		bound = *captured
+	} else {
+		err = execution.Queue.WithLease(displayCtx, execution.Lease, func(tx *repository.TenantTransaction) error {
+			var err error
+			bound, err = tx.BindAttemptDisplayCapture(result.attempt.LogicalSampleID, result.attempt.ID, result.attempt.RequestHash)
+			return err
+		})
+	}
 	if err != nil {
 		if displayCtx.Err() != nil {
 			return failure(repository.DisplayUnavailableCancelled)

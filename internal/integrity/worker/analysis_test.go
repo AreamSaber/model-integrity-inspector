@@ -21,6 +21,11 @@ import (
 
 func signedAnalysisRun(t *testing.T, f runFixture) (*repository.Tenant, repository.RunRecord, *features.Builder, int) {
 	t.Helper()
+	return signedAnalysisRunMode(t, f, "")
+}
+
+func signedAnalysisRunMode(t *testing.T, f runFixture, mode string) (*repository.Tenant, repository.RunRecord, *features.Builder, int) {
+	t.Helper()
 	value := f.createTarget(t, "max_tokens")
 	s, err := f.service.Snapshot(f.ctx, f.orgID, value.ID)
 	if err != nil {
@@ -39,6 +44,7 @@ func signedAnalysisRun(t *testing.T, f runFixture) (*repository.Tenant, reposito
 		t.Fatal(err)
 	}
 	opts := generator.Options{OrganizationID: f.orgID, Target: domain.ExecutionTarget{ID: s.TargetID, Version: s.TargetVersion, SecretID: s.SecretID, SecretVersion: s.SecretVersion, Endpoint: s.Endpoint, Model: s.Model, Protocol: s.Protocol, MaxOutputParameter: "max_tokens", AuthType: s.AuthType, AuthHeaderName: s.AuthHeaderName, TimeoutSeconds: s.Options.TimeoutSeconds}, Package: "quick", Budget: domain.ExecutionBudget{MaxRequests: 20, MaxTokens: 50000, TimeoutSeconds: 900}, RuleVersion: scoring.Version, ScoringVersion: scoring.Version, ContextWindow: 128000, MaxOutputTokens: 4096, SupportsStream: true, Concurrency: 1, MaxRetries: 2}
+	opts.AnalysisSourceVersion = mode
 	manifest, err := compiler.Generate(opts)
 	if err != nil {
 		t.Fatal(err)
