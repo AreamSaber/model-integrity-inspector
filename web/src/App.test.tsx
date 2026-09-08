@@ -537,7 +537,7 @@ describe('real API interaction boundary', () => {
     await waitFor(() => expect(document.title).toBe('组织与角色 · Model Integrity Inspector'))
     await userEvent.setup().click(screen.getByRole('button', { name: '退出登录' }))
     await screen.findByRole('heading', { name: '登录工作空间' })
-    expect(document.title).toBe('登录 · Model Integrity Inspector')
+    await waitFor(() => expect(document.title).toBe('登录 · Model Integrity Inspector'))
     expect(window.location.hash).toBe('#/organizations')
   })
 
@@ -550,6 +550,7 @@ describe('real API interaction boundary', () => {
     window.history.replaceState(null, '', kind === 'forced-password' ? '/#/runs' : '/#/account')
     render(<App />)
     await screen.findByRole('button', { name: '退出所有会话' })
+    await waitFor(() => expect(document.title).toBe(`${kind === 'forced-password' ? '必须修改密码' : '账号安全'} · Model Integrity Inspector`))
     expect(calls.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0)
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'UNSAVED_PASSWORD_CANARY' } })
     fireEvent.click(screen.getByRole('button', { name: '退出所有会话' }))
@@ -568,7 +569,9 @@ describe('real API interaction boundary', () => {
     expect(mutations[0][0]).toBe('/api/v1/auth/logout-all')
     expect(mutations[0][1]?.body).toBe('{}')
     expect(new Headers(mutations[0][1]?.headers).has('X-Organization-ID')).toBe(false)
-    expect(document.title).toBe('登录 · Model Integrity Inspector')
+    // The heading confirms the DOM commit, not App's passive title effect.
+    // Keep the exact title requirement and the existing waitFor timeout.
+    await waitFor(() => expect(document.title).toBe('登录 · Model Integrity Inspector'))
   })
 
   it.each([['MI_SESSION_REQUIRED', 401], ['MI_CSRF_INVALID', 403]] as const)('clears the business tree on logout-all %s without a false success receipt', async (code, status) => {
