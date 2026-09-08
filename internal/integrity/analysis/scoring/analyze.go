@@ -243,7 +243,15 @@ func (e *Engine) confidence(input Input, support map[string]*familySupport, part
 		c.EvidenceQualityFactor = quality / float64(valid)
 		c.ApplicabilityFactor = applicable / float64(valid)
 	}
-	for family, clusters := range groups {
+	// Floating-point addition is order-sensitive. Keep identical observations
+	// byte-reproducible across raw/derived paths and independent process runs.
+	families := make([]string, 0, len(groups))
+	for family := range groups {
+		families = append(families, family)
+	}
+	slices.Sort(families)
+	for _, family := range families {
+		clusters := groups[family]
 		consistency := 0.0
 		if f := support[family]; f != nil && f.applicable > 0 {
 			fraction := ratio(f.positive, f.applicable)

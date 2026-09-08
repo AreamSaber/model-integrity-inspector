@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,6 +137,12 @@ func analyzerFixture(t *testing.T, mode string) (*features.Builder, features.Inp
 			if i%3 == 0 {
 				r.Refusal = true
 			}
+		case "refusal-uneven":
+			// Keep two fully replicated behavior families and precisely one
+			// differential nonce cluster. Real extraction then produces family
+			// repeatability terms 1, 1 and 1/3 without hand-filled features.
+			keep := signed.Family == "format" || signed.Family == "neutral" || (signed.Family == "differential" && signed.Language == "zh-CN" && signed.Repetition == 0)
+			r.Refusal = !keep
 		case "structure-limit":
 			if i == 0 {
 				r.Content = strings.Repeat("x", 65<<10)
@@ -177,7 +185,7 @@ func analyzerFixture(t *testing.T, mode string) (*features.Builder, features.Inp
 }
 
 func TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath(t *testing.T) {
-	for _, mode := range []string{"normal", "no-seed", "affix", "paired-cues", "missing-usage", "reasoning-unseparated", "reasoning-separated", "reported-model", "partial-stream", "protocol", "refusal", "structure-limit", "behavior-limit", "missing-response", "uncertain", "invalid", "no-final", "retry"} {
+	for _, mode := range []string{"normal", "no-seed", "affix", "paired-cues", "missing-usage", "reasoning-unseparated", "reasoning-separated", "reported-model", "partial-stream", "protocol", "refusal", "refusal-uneven", "structure-limit", "behavior-limit", "missing-response", "uncertain", "invalid", "no-final", "retry"} {
 		t.Run(mode, func(t *testing.T) {
 			builder, input, manifest := analyzerFixture(t, mode)
 			rawBatch, err := builder.Build(input)
@@ -248,12 +256,57 @@ func TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(left, right) {
-				t.Fatal("full analysis JSON differs between raw and authenticated derived paths")
+				t.Fatal("full analysis JSON differs between raw and authenticated derived paths: " + analysisDifference(left, right))
 			}
 			if mode == "normal" && (derivedDoc.Features.Included == 0 || derivedDoc.Tokens.ValidSamples == 0 || derivedDoc.Differences[0].CompletePairs == 0) {
 				t.Fatal("equivalence achieved by erasing actual observations")
 			}
 		})
+	}
+}
+
+func TestDerivedRefusalRawAnalyzerIsByteDeterministic(t *testing.T) {
+	builder, input, _ := analyzerFixture(t, "refusal-uneven")
+	batch, err := builder.Build(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := analyzer.Analyze(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clusters := map[string]map[string]bool{}
+	for _, sample := range first.Features.Samples {
+		if !sample.Included || sample.AuxiliaryOnly {
+			continue
+		}
+		if sample.Behavior == nil || sample.Behavior.Contract != "matches" {
+			t.Fatal("fixture requires actually measured matching contracts")
+		}
+		if clusters[sample.Family] == nil {
+			clusters[sample.Family] = map[string]bool{}
+		}
+		clusters[sample.Family][sample.ClusterHash] = true
+	}
+	if len(clusters) != 3 || len(clusters["format"]) < 3 || len(clusters["neutral"]) < 3 || len(clusters["differential"]) != 1 {
+		t.Fatalf("fixture cluster counts: families=%d format=%d neutral=%d differential=%d", len(clusters), len(clusters["format"]), len(clusters["neutral"]), len(clusters["differential"]))
+	}
+	expected, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 128 {
+		result, err := analyzer.Analyze(batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(expected, actual) {
+			t.Fatal("identical raw batch is nondeterministic: " + analysisDifference(expected, actual))
+		}
 	}
 }
 
@@ -334,7 +387,7 @@ func TestDerivedActualSecretPurposeCapabilityAndHistoricalVersions(t *testing.T)
 				t.Fatal(err)
 			}
 			if !bytes.Equal(expected, actual) {
-				t.Fatal("actual secret capability changes full analysis JSON")
+				t.Fatal("actual secret capability changes full analysis JSON: " + analysisDifference(expected, actual))
 			}
 		})
 	}
@@ -348,5 +401,127 @@ func TestDerivedActualSecretPurposeCapabilityAndHistoricalVersions(t *testing.T)
 		if batch, err := builder.BuildDerived(t.Context(), input, oldRecords, verifier); !errors.Is(err, features.ErrBinding) || batch != nil {
 			t.Fatal("wrong ring, missing historical purpose or raw master authenticated records", err)
 		}
+	}
+}
+
+// Diagnostics are limited to field names from the closed analysis DTO and
+// numeric/boolean/null differences. Never print documents, arbitrary strings,
+// hashes, responses, manifests, nonce or seed while investigating a mismatch.
+func analysisDifference(left, right []byte) string {
+	allowed := map[string]bool{}
+	var fields func(reflect.Type)
+	fields = func(typ reflect.Type) {
+		for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array {
+			typ = typ.Elem()
+		}
+		if typ.Kind() != reflect.Struct {
+			return
+		}
+		for i := 0; i < typ.NumField(); i++ {
+			field := typ.Field(i)
+			name := strings.Split(field.Tag.Get("json"), ",")[0]
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = field.Name
+			}
+			allowed[name] = true
+			fields(field.Type)
+		}
+	}
+	fields(reflect.TypeFor[analyzer.Document]())
+	var a, b any
+	ld, rd := json.NewDecoder(bytes.NewReader(left)), json.NewDecoder(bytes.NewReader(right))
+	ld.UseNumber()
+	rd.UseNumber()
+	if ld.Decode(&a) != nil || rd.Decode(&b) != nil {
+		return "invalid-analysis-json"
+	}
+	var difference func(any, any, string) string
+	difference = func(a, b any, path string) string {
+		if reflect.DeepEqual(a, b) {
+			return ""
+		}
+		switch av := a.(type) {
+		case map[string]any:
+			bv, ok := b.(map[string]any)
+			if !ok {
+				return path + " type-difference"
+			}
+			keys := []string{}
+			for key := range av {
+				keys = append(keys, key)
+			}
+			for key := range bv {
+				if _, ok := av[key]; !ok {
+					keys = append(keys, key)
+				}
+			}
+			slices.Sort(keys)
+			for _, key := range keys {
+				segment := "unrecognized-field"
+				if allowed[key] {
+					segment = key
+				}
+				leftValue, leftOK := av[key]
+				rightValue, rightOK := bv[key]
+				if leftOK != rightOK {
+					return path + "." + segment + " presence-difference"
+				}
+				if !allowed[key] && !reflect.DeepEqual(leftValue, rightValue) {
+					return path + "." + segment + " value-difference"
+				}
+				if result := difference(leftValue, rightValue, path+"."+segment); result != "" {
+					return result
+				}
+			}
+		case []any:
+			bv, ok := b.([]any)
+			if !ok {
+				return path + " type-difference"
+			}
+			if len(av) != len(bv) {
+				return fmt.Sprintf("%s length %d != %d", path, len(av), len(bv))
+			}
+			for i := range av {
+				if result := difference(av[i], bv[i], fmt.Sprintf("%s[%d]", path, i)); result != "" {
+					return result
+				}
+			}
+		case json.Number:
+			if bv, ok := b.(json.Number); ok && len(av) <= 32 && len(bv) <= 32 {
+				return fmt.Sprintf("%s numeric %s != %s", path, av, bv)
+			}
+		case bool:
+			if bv, ok := b.(bool); ok {
+				return fmt.Sprintf("%s boolean %t != %t", path, av, bv)
+			}
+		}
+		return path + " value-difference"
+	}
+	if result := difference(a, b, "$"); result != "" {
+		return result
+	}
+	return "canonical-byte-order-or-encoding-difference"
+}
+
+func TestDerivedAnalysisDifferenceDiagnosticsExcludeS2(t *testing.T) {
+	for _, tc := range []struct {
+		name, left, right, want string
+	}{
+		{"numeric-factor", `{"scores":{"Confidence":{"RepeatabilityFactor":0.6}}}`, `{"scores":{"Confidence":{"RepeatabilityFactor":0.5999999999999999}}}`, "$.scores.Confidence.RepeatabilityFactor numeric 0.6 != 0.5999999999999999"},
+		{"string-value", `{"manifest_hash":"private-canary-left"}`, `{"manifest_hash":"private-canary-right"}`, "$.manifest_hash value-difference"},
+		{"arbitrary-field-name", `{"private-canary-field":"private-canary-left"}`, `{"private-canary-field":"private-canary-right"}`, "$.unrecognized-field value-difference"},
+		{"unknown-numeric-seed", `{"seed":123456789}`, `{"seed":987654321}`, "$.unrecognized-field value-difference"},
+		{"array-length", `{"samples":[]}`, `{"samples":[{"sample_id":"private-canary"}]}`, "$.samples length 0 != 1"},
+		{"boolean", `{"samples":[{"included":true}]}`, `{"samples":[{"included":false}]}`, "$.samples[0].included boolean true != false"},
+		{"malformed", "private-canary-not-json", "{}", "invalid-analysis-json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := analysisDifference([]byte(tc.left), []byte(tc.right)); got != tc.want {
+				t.Fatal("safe diagnostic differs from closed expected result")
+			}
+		})
 	}
 }

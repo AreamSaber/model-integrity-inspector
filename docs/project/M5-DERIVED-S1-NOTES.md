@@ -60,3 +60,15 @@
 - 相关 `golangci-lint run ./internal/integrity/analysis/features/... ./internal/integrity/analysis/behavior/...`：0 issues。没有抑制规则或调低阈值；通过显式受界消费观测 slice 消除了 G602 提示。
 
 这些是纯层实测，不是 0 天已生效、实际数据库无正文、浏览器/完整报告发布或独立安全审核证据。下一集成单元必须由主任务把 purpose cap 与真实 Worker 结算、持久 S1、retention/cutoff 和分析读取装配起来，再跑真实 TLS + SQLite/PostgreSQL 的同 Run 0/30 天分析/报告等价以及无正文落库断言。当前对冻结原请求/Manifest 的 S2 保留不作缩减或“已匿名化”声明。
+
+## CI 偶发完整 JSON 不等：确定性修复（2026-09-08）
+
+远端提交 `e8a52a6` 的运行 `34179919964` 在 image job 的 `TestDerivedCompleteAnalyzerJSONEqualsRawResponsePath/refusal` 报完整 JSON 字节不等。此前本机三轮通过不足以排除数据相关偶发问题；也不能凭 Linux job 失败推断平台原因。
+
+先只在测试添加闭合 DTO 字段路径诊断，不输出任何完整 JSON、正文、Manifest、nonce、seed、哈希或任意字符串值。诊断只披露已知字段的数值/布尔差异或长度/类型/存在性；未知字段名及值也被隐藏。专门反例包含任意字段名、原文字符串及未知数值 seed，防止调试输出成为 S2 日志。
+
+保留原 `refusal` 模式和原生产实现，本地 100 轮通过后，1000 轮在 208.875s 中真实复现三次同一断言失败；首差均为 `$.scores.Confidence.RepeatabilityFactor`：`0.5999999999999999 != 0.6` 或 `0.5555555555555555 != 0.5555555555555556`。进一步从真实生成器/冻结计划/响应生成 `refusal-uneven` 场景，保留 format、neutral 的全部三个簇和 differential 的一个簇，其他真实响应标记 refusal；验证实际 Included 簇数和提取到的匹配合同，不手填分析特征。同一份 raw batch 重复 Analyze 在修复前即失败：`0.7777777777777778 != 0.7777777777777777`。这证实非派生 S1 测量丢失，而是评分器按无序 map 累加浮点数所致。
+
+最小生产修复仅在 `analysis/scoring/analyze.go` 对 family 名排序后按固定顺序求和；不改变公式、浮点精度、阈值、参数 artifact、golden 或 JSON 精度。测试继续要求完整 JSON 字节等价，增加第 19 个真实 `refusal-uneven` 场景和同一 raw batch 重复 128 次的确定性回归。
+
+修复后 features / behavior / tokenrisk / scoring / analyzer 三轮实际通过（30.408s / 0.480s / 1.702s / 0.834s / 0.587s）。原 refusal 模式 1000 轮通过（230.900s）；确定性与安全诊断三轮再通过（1.304s）；最终相关 features / behavior / scoring lint 为 0 issues，全仓 `go test ./... -run '^$' -count=1` 编译检查通过。没有实际在 Linux 运行这些本地复测；此处不是新远端 CI 已通过的声明。此修复单元仅修改评分器顺序、派生外部测试和本节记录，等待主任务提交复核。
