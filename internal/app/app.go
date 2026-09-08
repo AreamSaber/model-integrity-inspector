@@ -64,6 +64,13 @@ type outboundNetwork struct {
 }
 
 func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork) (*application, error) {
+	return prepareWithNetworkAndLogger(ctx, cfg, network, nil)
+}
+
+// The trusted startup logger receives only the Worker's existing fixed events.
+// Keeping this separate preserves dependency-injected callers which need no
+// diagnostics; neither operator configuration nor HTTP supplies a logger.
+func prepareWithNetworkAndLogger(ctx context.Context, cfg Config, network outboundNetwork, logger *slog.Logger) (*application, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -178,7 +185,7 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		if err != nil {
 			return nil, err
 		}
-		app.worker, err = worker.New(worker.Config{Store: store, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
+		app.worker, err = worker.New(worker.Config{Store: store, Logger: logger, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
 			if err := reconcileRuns(ctx, queue); err != nil {
 				return err
 			}
@@ -225,11 +232,19 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 		if err != nil {
 			return nil, err
 		}
+		_, displayOpener, err := key.NewDisplayCapabilities(nil)
+		if err != nil {
+			return nil, err
+		}
+		evidenceService, err := runservice.NewEvidenceService(store, displayOpener)
+		if err != nil {
+			return nil, err
+		}
 		systemStatus, err := app.systemStatus(service, cfg)
 		if err != nil {
 			return nil, err
 		}
-		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{SystemStatus: systemStatus, Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Frontend: webui.Handler()})
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{SystemStatus: systemStatus, Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Evidence: evidenceService, Frontend: webui.Handler()})
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +257,7 @@ func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork
 
 func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
 	startup, cancel := context.WithTimeout(ctx, 60*time.Second)
-	app, err := prepare(startup, cfg)
+	app, err := prepareWithNetworkAndLogger(startup, cfg, outboundNetwork{}, logger)
 	cancel()
 	if err != nil {
 		return err
@@ -273,12 +288,14 @@ func (a *application) serve(ctx context.Context, cfg Config, listener net.Listen
 	case <-ctx.Done():
 	case err := <-errCh:
 		if !errors.Is(err, http.ErrServerClosed) {
+			logApplicationFailure(ctx, logger, "listener_exit", err)
 			result = ErrStartup
 		}
-	case <-workerDone:
+	case err := <-workerDone:
 		workerStopped = true
 		if ctx.Err() == nil {
 			// A required consumer exiting is not a healthy server-only fallback.
+			logApplicationFailure(ctx, logger, "worker_exit", err)
 			result = ErrStartup
 		}
 	}
@@ -286,6 +303,7 @@ func (a *application) serve(ctx context.Context, cfg Config, listener net.Listen
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdown); err != nil {
+		logApplicationFailure(ctx, logger, "http_shutdown", err)
 		_ = server.Close()
 		result = ErrStartup
 	}
@@ -293,11 +311,63 @@ func (a *application) serve(ctx context.Context, cfg Config, listener net.Listen
 		select {
 		case err := <-workerDone:
 			if err != nil && !errors.Is(err, context.Canceled) {
+				logApplicationFailure(ctx, logger, "worker_shutdown", err)
 				result = ErrStartup
 			}
 		case <-shutdown.Done():
+			logApplicationFailure(ctx, logger, "worker_shutdown_deadline", shutdown.Err())
 			result = ErrStartup
 		}
 	}
 	return result
+}
+
+// Classification is observational only: it never changes the existing return,
+// cancellation, lease or shutdown semantics. Never format err, including for
+// the unknown branch: wrapped driver/listener errors may contain secrets.
+func applicationFailureClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, repository.ErrJobLeaseLost):
+		return "job_lease_lost"
+	case errors.Is(err, repository.ErrConsumerLost):
+		return "consumer_lost"
+	case errors.Is(err, repository.ErrConsumerActive):
+		return "consumer_active"
+	case errors.Is(err, worker.ErrHandlerUnresponsive):
+		return "handler_unresponsive"
+	case errors.Is(err, repository.ErrUnavailable):
+		return "database_unavailable"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, repository.ErrJobCancelled):
+		return "job_cancelled"
+	case errors.Is(err, repository.ErrJobInvalid):
+		return "job_invalid"
+	case errors.Is(err, worker.ErrAlreadyRunning):
+		return "worker_already_running"
+	case errors.Is(err, worker.ErrConfiguration), errors.Is(err, repository.ErrConfiguration):
+		return "configuration_invalid"
+	case errors.Is(err, worker.ErrHandlerFailed):
+		return "handler_failed"
+	case errors.Is(err, http.ErrServerClosed), errors.Is(err, net.ErrClosed):
+		return "listener_closed"
+	default:
+		return "unknown"
+	}
+}
+
+func logApplicationFailure(ctx context.Context, logger *slog.Logger, phase string, err error) {
+	if logger == nil {
+		return
+	}
+	switch phase {
+	case "listener_exit", "worker_exit", "http_shutdown", "worker_shutdown", "worker_shutdown_deadline":
+	default:
+		phase = "unknown"
+	}
+	logger.ErrorContext(ctx, "application component stopped", "phase", phase, "class", applicationFailureClass(err), "caller_done", ctx.Err() != nil)
 }

@@ -36,6 +36,7 @@ type ControlConfig struct {
 	SystemStatus          *identity.SystemStatusService
 	Baselines             *baseline.Service
 	Reports               *runservice.ReportService
+	Evidence              *runservice.EvidenceService
 	Runs                  *runservice.Service
 	Catalog               *catalog.Service
 	Identity              *identity.Service
@@ -57,6 +58,7 @@ type control struct {
 	setupHash     [32]byte
 	hasSetupToken bool
 	limiter       *loginLimiter
+	evidenceSlots chan struct{}
 }
 type requestIDKey struct{}
 
@@ -77,6 +79,7 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	}
 	c := &control{cfg: cfg, origin: u.Scheme + "://" + u.Host, secure: secure, hasSetupToken: cfg.SetupToken != "", setupHash: sha256.Sum256([]byte(cfg.SetupToken)), limiter: &loginLimiter{windows: map[string]loginWindow{}, now: time.Now}}
 	c.cfg.SetupToken = "" // Retain only the hash, never a bootstrap credential.
+	c.evidenceSlots = make(chan struct{}, 4)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -100,6 +103,9 @@ func NewControlHandler(cfg ControlConfig) (http.Handler, error) {
 	}
 	if cfg.Reports != nil {
 		c.registerReportRoutes(mux)
+	}
+	if cfg.Evidence != nil {
+		c.registerEvidenceDisplayRoutes(mux)
 	}
 	if cfg.Targets != nil {
 		c.registerTargetRoutes(mux)
@@ -143,6 +149,11 @@ func digest(value string) string {
 
 func (c *control) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isEvidenceDisplayRequest(r) {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+			r = r.WithContext(ctx)
+		}
 		isSystemStatus := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/api/v1/system/health"
 		if (r.Method == http.MethodGet && r.URL.Path == "/api/v1/overview") || isSystemStatus || (r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/logout-all") {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -164,6 +175,21 @@ func (c *control) middleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 		ctx = audit.WithActor(ctx, audit.Actor{ReasonCode: "http.request", IPSummary: digest(requestIP(r)), UserAgentSummary: digest(r.UserAgent())})
 		r = r.WithContext(ctx)
+		if isEvidenceDisplayRequest(r) {
+			deadline, _ := r.Context().Deadline()
+			if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				c.failure(w, r, 503, "MI_EVIDENCE_UNAVAILABLE")
+				return
+			}
+			select {
+			case c.evidenceSlots <- struct{}{}:
+				defer func() { <-c.evidenceSlots }()
+			default:
+				w.Header().Set("Retry-After", "2")
+				c.failure(w, r, 429, "MI_EVIDENCE_LIMIT")
+				return
+			}
+		}
 		if isSystemStatus {
 			if !c.systemStatusEntry(w, r) {
 				return

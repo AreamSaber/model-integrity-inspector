@@ -7722,6 +7722,509 @@
         "x-development-status": "implemented-database-backed"
       }
     },
+    "/runs/{id}/samples/{sampleId}/attempts/{attemptId}/evidence": {
+      "get": {
+        "operationId": "getRunAttemptEvidenceDisplay",
+        "summary": "Read an authenticated, credential-redacted response display",
+        "description": "GET only, for one explicitly selected terminal attempt of a published run at analysis revision 1. Requires run.read AND evidence.read AND evidence.body in the current organization. No request body, unknown or duplicate query parameters, HEAD, Range or conditional requests are supported. IDs must be canonical positive signed-int64 decimal strings. The response is the standard {request_id,data} envelope, emitted only through the private disclosure codec after display-purpose authentication and current authorization/retention/audit checks. It never decrypts raw analysis response evidence and is not a request-only reproduction endpoint. The total request lifetime, including authentication and output, is at most 10 seconds and cannot outlive the original session or request deadline. Authorization and retention are rechecked before output and each bounded write; bytes already sent cannot be recalled. Consumers must not persist/cache the body and must discard incomplete JSON.",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Organization-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Canonical positive signed-int64 decimal string; no sign, leading zeros or aliases."
+          },
+          {
+            "name": "sampleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Canonical positive signed-int64 decimal string; no sign, leading zeros or aliases."
+          },
+          {
+            "name": "attemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Canonical positive signed-int64 decimal string; no sign, leading zeros or aliases."
+          },
+          {
+            "name": "analysis_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "1"
+            },
+            "description": "Required exactly once as the literal 1; all other query keys are rejected."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized display projection from a published revision. Includes unavailable/null outcomes. Complete output is at most 8 MiB. If authorization, session, retention, deadline or transport checks fail after output begins, transmission stops without appending an error document; discard any incomplete JSON.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "request_id": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{32}$",
+                      "minLength": 32,
+                      "maxLength": 32
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EvidenceDisplayData"
+                    }
+                  },
+                  "required": [
+                    "request_id",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid canonical positive int64 ID, request body, transfer encoding, query or forbidden range/conditional header. Query must consist solely of one analysis_revision value equal to the literal string 1.",
+            "x-error-codes": [
+              "MI_INVALID_REQUEST"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A current authenticated session is required.",
+            "x-error-codes": [
+              "MI_SESSION_REQUIRED"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "All three current permissions are required in the selected organization; a mandatory password change also blocks disclosure.",
+            "x-error-codes": [
+              "MI_PERMISSION_DENIED",
+              "MI_PASSWORD_CHANGE_REQUIRED"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Published revision, run, logical sample or terminal attempt is absent from the authorized selection.",
+            "x-error-codes": [
+              "MI_NOT_FOUND"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "HEAD is explicitly rejected without disclosing a body. HTTP HEAD responses do not carry a response body.",
+            "x-error-codes": [
+              "MI_INVALID_REQUEST"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Initial system setup is required.",
+            "x-error-codes": [
+              "MI_SETUP_REQUIRED"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The bounded disclosure capacity is full; retry after 2 seconds.",
+            "x-error-codes": [
+              "MI_EVIDENCE_LIMIT"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "const": "2"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A sanitized internal middleware failure occurred before output started.",
+            "x-error-codes": [
+              "MI_SERVICE_UNAVAILABLE"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Display authentication, source consistency, grant, timeout or service failure before output started. No raw-response or request-only fallback.",
+            "x-error-codes": [
+              "MI_EVIDENCE_UNAVAILABLE",
+              "MI_SERVICE_UNAVAILABLE",
+              "MI_ANALYSIS_RESULT_INVALID"
+            ],
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": [
+          "run.read",
+          "evidence.read",
+          "evidence.body"
+        ],
+        "x-permission-mode": "all",
+        "x-development-status": "implemented-database-backed",
+        "x-query-unknown": "reject",
+        "x-query-duplicates": "reject",
+        "x-disallowed-methods": [
+          "HEAD"
+        ],
+        "x-disallowed-headers": [
+          "Range",
+          "If-Range",
+          "If-Match",
+          "If-None-Match",
+          "If-Modified-Since",
+          "If-Unmodified-Since"
+        ],
+        "x-max-response-bytes": 8388608,
+        "x-max-canonical-content-bytes": 4194304,
+        "x-request-deadline-ms": 10000,
+        "x-decryption-deadline-ms": 2000,
+        "x-write-deadline-ms": 2000,
+        "x-max-write-bytes": 65536,
+        "x-max-inflight": 4,
+        "x-private-disclosure-codec": true,
+        "x-source": "authenticated-display-only",
+        "x-request-only-reproduction": false
+      }
+    },
     "/runs/{id}/samples": {
       "get": {
         "operationId": "getRunSample",
@@ -14344,6 +14847,402 @@
           "CANCELLED"
         ]
       },
+      "EvidenceDisplayData": {
+        "description": "The only implemented response-body disclosure projection. Unavailable is a successful, explicitly reasoned null projection, not a request-only reproduction response.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/EvidenceDisplayAvailable"
+          },
+          {
+            "$ref": "#/components/schemas/EvidenceDisplayUnavailable"
+          }
+        ]
+      },
+      "EvidenceDisplayAvailable": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "mii.evidence-display-output.v1"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "sample_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "attempt_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "analysis_revision": {
+            "type": "integer",
+            "const": 1
+          },
+          "is_final": {
+            "type": "boolean",
+            "description": "Whether this terminal attempt is the sample's current final attempt; a published run may also expose a selected non-final terminal attempt."
+          },
+          "status": {
+            "type": "string",
+            "const": "available"
+          },
+          "payload_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "SHA-256 of the authenticated canonical display document, not the source hash, raw response hash or whole HTTP envelope hash."
+          },
+          "content": {
+            "$ref": "#/components/schemas/EvidenceDisplayContent"
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "sample_id",
+          "attempt_id",
+          "analysis_revision",
+          "is_final",
+          "status",
+          "payload_hash",
+          "content"
+        ]
+      },
+      "EvidenceDisplayUnavailable": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "mii.evidence-display-output.v1"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "sample_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "attempt_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "analysis_revision": {
+            "type": "integer",
+            "const": 1
+          },
+          "is_final": {
+            "type": "boolean",
+            "description": "Whether this terminal attempt is the sample's current final attempt; a published run may also expose a selected non-final terminal attempt."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unavailable_policy_zero",
+              "unavailable_not_retained",
+              "unavailable_not_captured",
+              "unavailable_uncertain",
+              "unavailable_expired",
+              "unavailable_legacy_unverified",
+              "unavailable_redaction_policy",
+              "unavailable_safety_limit",
+              "unavailable_source_invalid",
+              "unavailable_cancelled",
+              "unavailable_capture",
+              "unavailable_seal"
+            ]
+          },
+          "payload_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "Optional digest of a previously captured display document. Its presence does not imply retained or available plaintext."
+          },
+          "content": {
+            "type": "null",
+            "description": "No display document is disclosed; never an empty fabricated response."
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "sample_id",
+          "attempt_id",
+          "analysis_revision",
+          "is_final",
+          "status",
+          "content"
+        ]
+      },
+      "EvidenceDisplayContent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "policy": {
+            "type": "string",
+            "const": "display-redaction-v1"
+          },
+          "source_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "Domain-separated digest binding the checked original request wire hash and normalized response before display redaction; not an analysis payload or HTTP response hash."
+          },
+          "request_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "SHA-256 of the verified original request wire JSON, before display redaction."
+          },
+          "template_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "SHA-256 of the UTF-8 bytes of request_json."
+          },
+          "request_json": {
+            "type": "string",
+            "maxLength": 1048576,
+            "x-max-utf8-bytes": 1048576,
+            "contentMediaType": "application/json",
+            "description": "Credential-redacted request JSON encoded as a STRING, not a JSON object. Numeric wire values, including signed int64 seed, are preserved without a floating-point round trip. Parse with lossless integer handling. UTF-8 size is at most 1 MiB."
+          },
+          "request_changed": {
+            "type": "boolean",
+            "description": "True exactly when request_hash differs from template_hash."
+          },
+          "response": {
+            "$ref": "#/components/schemas/EvidenceDisplayResponse"
+          },
+          "metadata_omitted": {
+            "type": "boolean",
+            "const": true,
+            "description": "Provider request IDs, headers, arbitrary parser warnings and other omitted upstream metadata are not disclosed."
+          }
+        },
+        "required": [
+          "version",
+          "policy",
+          "source_hash",
+          "request_hash",
+          "template_hash",
+          "request_json",
+          "request_changed",
+          "response",
+          "metadata_omitted"
+        ],
+        "x-max-canonical-utf8-bytes": 4194304,
+        "description": "Strict version-1 canonical authenticated display-purpose document, produced from the actual captured request and response inside the trusted Worker credential scope. Only the private disclosure codec can emit it after current authorization, retention and audit checks; ordinary sensitive wrappers cannot serialize. Raw analysis evidence is never a fallback."
+      },
+      "EvidenceDisplayResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 1048576,
+            "x-max-utf8-bytes": 1048576
+          },
+          "model_reported": {
+            "type": "string",
+            "maxLength": 2048,
+            "x-max-utf8-bytes": 2048
+          },
+          "http_status": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "const": 0
+              },
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              }
+            ],
+            "description": "0 means no observed HTTP status."
+          },
+          "finish_reason": {
+            "type": "string",
+            "enum": [
+              "",
+              "stop",
+              "length",
+              "content_filter",
+              "tool_calls",
+              "function_call",
+              "unknown"
+            ]
+          },
+          "parse_status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "invalid",
+              "partial",
+              "unobserved"
+            ]
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reasoning_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
+          },
+          "first_token_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 86400000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if unobserved; otherwise no greater than duration_ms."
+          },
+          "stream_terminated": {
+            "type": "boolean"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "$ref": "#/components/schemas/EvidenceDisplayStreamEvent"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null or an ordered bounded event summary; sequence is strictly increasing and arrival_ms is nondecreasing. Gaps are represented by event_summary_partial, not fabricated events."
+          },
+          "event_summary_partial": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content",
+          "model_reported",
+          "http_status",
+          "finish_reason",
+          "parse_status",
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "reasoning_tokens",
+          "duration_ms",
+          "first_token_ms",
+          "stream_terminated",
+          "events",
+          "event_summary_partial"
+        ]
+      },
+      "EvidenceDisplayStreamEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "done",
+              "error",
+              "malformed",
+              "usage",
+              "empty_delta",
+              "role",
+              "content_delta",
+              "finish"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "arrival_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000,
+            "description": "No greater than the response duration_ms; nondecreasing in this summary."
+          },
+          "interval_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000,
+            "description": "No greater than the response duration_ms."
+          }
+        },
+        "required": [
+          "sequence",
+          "type",
+          "bytes",
+          "arrival_ms",
+          "interval_ms"
+        ]
+      },
       "ErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
@@ -14374,6 +15273,8 @@
                   "MI_INSUFFICIENT_SAMPLES",
                   "MI_ANALYSIS_FAILED",
                   "MI_ANALYSIS_RESULT_INVALID",
+                  "MI_EVIDENCE_LIMIT",
+                  "MI_EVIDENCE_UNAVAILABLE",
                   "MI_OVERVIEW_BUSY",
                   "MI_OVERVIEW_LIMIT",
                   "MI_OVERVIEW_TIMEOUT",

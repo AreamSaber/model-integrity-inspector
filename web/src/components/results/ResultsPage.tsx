@@ -9,6 +9,7 @@ import { useFailure } from '../management/shared'
 import { BehaviorResult, Findings, Limitations, measured, OverviewResult, Samples, TokenResult } from './ResultViews'
 import { ReviewPanel } from './ReviewPanel'
 import { ReportsPanel } from './ReportsPanel'
+import { EvidenceDisplayPanel } from './EvidenceDisplayPanel'
 
 type Tab = 'overview' | 'token' | 'behavior' | 'evidence' | 'review' | 'reports'
 type Data = { result: AnalysisResult; samples?: ReadPage<Sample>; findings?: ReadPage<Finding> }
@@ -77,19 +78,21 @@ function ResultsScope({ runID, ...context }: ReadContext & { runID: string }) {
     {permissions?.includes('run.read') && !permissions.includes('evidence.read') && <p className="field-help">当前仅有任务读取权限。Token、行为统计和 S1 样本需要额外 evidence.read 权限。</p>}
     {data && <>{tab === 'overview' ? <OverviewResult result={data.result} /> : tab === 'token' && data.result.token_analysis ? <TokenResult data={data.result.token_analysis} samples={data.samples?.items ?? []} /> : tab === 'behavior' && data.result.behavior_analysis ? <BehaviorResult data={data.result.behavior_analysis} /> : tab === 'evidence' && data.findings ? <><Findings items={data.findings.items} /><PageButtons label="发现" cursors={findingCursors} next={data.findings.next_cursor} onChange={(next) => { reset(); setFindingCursors(next) }} /></> : null}
       {data.samples && <><Samples items={data.samples.items} onSelect={setSampleID} /><PageButtons label="样本" cursors={cursors} next={data.samples.next_cursor} onChange={(next) => { reset(); setCursors(next) }} /></>}
-      {sampleID && <SampleInspect key={`${context.organizationID}-${runID}-${sampleID}`} {...context} runID={runID} sampleID={sampleID} onClose={() => setSampleID(null)} onDenied={denied} />}
+      {sampleID && <SampleInspect key={`${context.organizationID}-${runID}-${sampleID}`} {...context} runID={runID} sampleID={sampleID} analysisRevision={data.result.analysis_revision} bodyAllowed={permissions?.includes('evidence.body') === true} onClose={() => setSampleID(null)} onDenied={denied} />}
       {tab === 'review' && <ReviewPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
       {tab === 'reports' && <ReportsPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
     </>}
-    <p className="field-help">原始请求、响应、随机变量和凭证不在本页读取范围。有完整导出权限时，可在报告页显式生成脱敏 JSON/HTML 文件；原文导出、修订比较和重新分析尚未接入本页。</p>
+    <p className="field-help">摘要默认不读取请求或响应正文。有 evidence.body、run.read、evidence.read 权限时，可在样本 Attempt 中显式展开受控脱敏副本；凭证始终不可回显。有完整导出权限时，可在报告页显式生成脱敏 S1 JSON/HTML 文件，正文不会混入报告。原文下载和请求复现尚未接入本页。</p>
   </section>
 }
 function PageButtons({ label, cursors, next, onChange }: { label: string; cursors: string[]; next: string | null; onChange: (value: string[]) => void }) {
   return <div className="pagination"><button disabled={cursors.length === 1} onClick={() => onChange(cursors.slice(0, -1))}>{label}上一页</button><span>{label}第 {cursors.length} 页</span><button disabled={!next || cursors.length >= 1000 || cursors.includes(next)} onClick={() => { if (next) onChange([...cursors, next]) }}>{label}下一页</button></div>
 }
-function SampleInspect({ runID, sampleID, onClose, onDenied, ...context }: ReadContext & { runID: string; sampleID: string; onClose: () => void; onDenied: (failure: unknown) => void }) {
+function SampleInspect({ runID, sampleID, analysisRevision, bodyAllowed, onClose, onDenied, ...context }: ReadContext & { runID: string; sampleID: string; analysisRevision: number; bodyAllowed: boolean; onClose: () => void; onDenied: (failure: unknown) => void }) {
   const onFailure = useFailure(context)
   const [data, setData] = useState<SampleDetail | null>(null), [error, setError] = useState<unknown>(null)
+  const [bodyAttemptID, setBodyAttemptID] = useState<string | null>(null)
+  const bodyAttempt = data?.attempts.find((attempt) => attempt.id === bodyAttemptID) ?? data?.attempts.find((attempt) => attempt.id === data.sample.final_attempt_id) ?? data?.attempts[0]
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [])
   useEffect(() => {
@@ -101,5 +104,5 @@ function SampleInspect({ runID, sampleID, onClose, onDenied, ...context }: ReadC
     })
     return () => controller.abort()
   }, [context.organizationID, runID, sampleID, onFailure, onDenied])
-  return <section className="result-card" aria-labelledby="sample-detail-title"><div className="section-heading"><h4 ref={heading} tabIndex={-1} id="sample-detail-title">样本 {sampleID} · 尝试记录</h4><button onClick={onClose}>关闭样本详情</button></div><ErrorNotice error={error} id="sample-read-error" />{!data && !error && <Loading>正在读取已脱敏的 S1 尝试元数据…</Loading>}{data && <><p>最终 Attempt：{data.sample.final_attempt_id ?? '尚无'} · 正文状态：已隐藏</p><p className="result-hash">响应摘要：{data.sample.response_hash ?? '未提供'}</p><div className="table-scroll"><table><caption className="sr-only">样本各次尝试，不包含原文</caption><thead><tr><th>Attempt</th><th>有效性 / HTTP</th><th>已记录 Token</th><th>耗时与时间</th></tr></thead><tbody>{data.attempts.map((a) => <tr key={a.id}><th scope="row">{a.id}<span className="cell-detail">第 {a.attempt_no} 次{a.id === data.sample.final_attempt_id ? ' · 最终选择' : ' · 不作为独立样本'}</span></th><td>{a.validity} · {a.http_status ?? '未测'}<span className="cell-detail">{a.error_code ?? '无错误分类'}</span></td><td>输入 {measured(a.prompt_tokens, 0)} / 输出 {measured(a.completion_tokens, 0)} / 总计 {measured(a.total_tokens, 0)}</td><td>{measured(a.duration_ms, 0)} ms<span className="cell-detail">{a.started_at ? new Date(a.started_at).toLocaleString() : '未开始'} → {a.finished_at ? new Date(a.finished_at).toLocaleString() : '未结束'}</span></td></tr>)}</tbody></table></div><Limitations codes={data.sample.limitations} /></>}</section>
+  return <section className="result-card" aria-labelledby="sample-detail-title"><div className="section-heading"><h4 ref={heading} tabIndex={-1} id="sample-detail-title">样本 {sampleID} · 尝试记录</h4><button onClick={onClose}>关闭样本详情</button></div><ErrorNotice error={error} id="sample-read-error" />{!data && !error && <Loading>正在读取已脱敏的 S1 尝试元数据…</Loading>}{data && <><p>最终 Attempt：{data.sample.final_attempt_id ?? '尚无'} · 正文状态：已隐藏（摘要默认不加载正文）</p><p className="result-hash">响应摘要：{data.sample.response_hash ?? '未提供'}</p><div className="table-scroll"><table><caption className="sr-only">样本各次尝试，不包含原文</caption><thead><tr><th>Attempt</th><th>有效性 / HTTP</th><th>已记录 Token</th><th>耗时与时间</th></tr></thead><tbody>{data.attempts.map((a) => <tr key={a.id}><th scope="row">{a.id}<span className="cell-detail">第 {a.attempt_no} 次{a.id === data.sample.final_attempt_id ? ' · 最终选择' : ' · 不作为独立样本'}</span></th><td>{a.validity} · {a.http_status ?? '未测'}<span className="cell-detail">{a.error_code ?? '无错误分类'}</span></td><td>输入 {measured(a.prompt_tokens, 0)} / 输出 {measured(a.completion_tokens, 0)} / 总计 {measured(a.total_tokens, 0)}</td><td>{measured(a.duration_ms, 0)} ms<span className="cell-detail">{a.started_at ? new Date(a.started_at).toLocaleString() : '未开始'} → {a.finished_at ? new Date(a.finished_at).toLocaleString() : '未结束'}</span></td></tr>)}</tbody></table></div><Limitations codes={data.sample.limitations} />{bodyAllowed ? bodyAttempt && <><label htmlFor="body-attempt-selection">选择要查看正文的 Attempt</label><select id="body-attempt-selection" value={bodyAttempt.id} onChange={(event) => setBodyAttemptID(event.target.value)}>{data.attempts.map((attempt) => <option key={attempt.id} value={attempt.id}>Attempt {attempt.id}{attempt.id === data.sample.final_attempt_id ? '（最终选择）' : '（非最终）'}</option>)}</select><EvidenceDisplayPanel {...context} runID={runID} sampleID={sampleID} attemptID={bodyAttempt.id} analysisRevision={analysisRevision} isFinal={bodyAttempt.id === data.sample.final_attempt_id} onDenied={onDenied} /></> : <p className="field-help">查看脱敏正文还需要 evidence.body 权限；evidence.read 只允许读取当前摘要。</p>}</>}</section>
 }

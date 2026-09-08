@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,11 +120,14 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 	}
 	res, err := p.client.Do(req)
 	if err != nil {
-		t.Fatal("app HTTP request failed")
+		t.Fatalf("app HTTP request failed (class=%s, request_context=%s)", pipelineHTTPErrorClass(err), applicationFailureClass(req.Context().Err()))
 	}
 	defer func() { _ = res.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(res.Body, 5<<20))
-	if err != nil || len(data) >= 5<<20 {
+	if err != nil {
+		t.Fatalf("app HTTP response read failed (class=%s, request_context=%s)", pipelineHTTPErrorClass(err), applicationFailureClass(req.Context().Err()))
+	}
+	if len(data) >= 5<<20 {
 		t.Fatal("invalid app response size")
 	}
 	var envelope struct {
@@ -134,7 +138,7 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 		t.Fatal("invalid app response envelope")
 	}
 	if res.StatusCode != status {
-		t.Fatalf("app %s %s: status %d, code %s (wanted %d)", method, path, res.StatusCode, envelope.Error.Code, status)
+		t.Fatalf("app HTTP status mismatch: received %d (wanted %d)", res.StatusCode, status)
 	}
 	for _, forbidden := range []string{pipelineKey, `"api_key"`, `"ciphertext"`, `"request_plan"`, `"snapshot_json"`, `"nonce"`, `"messages"`} {
 		if bytes.Contains(data, []byte(forbidden)) {
@@ -145,6 +149,78 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 		t.Fatal("invalid app response data")
 	}
 	return append([]byte(nil), envelope.Data...)
+}
+
+// Never inspect or print error text, URL, operation address or response bytes.
+// Network operation labels are a closed projection of net.OpError, not Op's
+// original contents. Timeout and request-context classification remain separate.
+func pipelineHTTPErrorClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return "unexpected_eof"
+	case errors.Is(err, io.EOF):
+		return "eof"
+	case errors.Is(err, net.ErrClosed):
+		return "connection_closed"
+	}
+	// url.Error/OpError can report Timeout=false when an intermediate wrapper
+	// hides a deeper timeout. Inspect the bounded ordinary unwrap chain too.
+	current := err
+	for depth := 0; current != nil && depth < 32; depth++ {
+		var networkError net.Error
+		if errors.As(current, &networkError) && networkError.Timeout() {
+			return "timeout"
+		}
+		current = errors.Unwrap(current)
+	}
+	var operation *net.OpError
+	if errors.As(err, &operation) {
+		switch operation.Op {
+		case "dial":
+			return "network_dial"
+		case "read":
+			return "network_read"
+		case "write":
+			return "network_write"
+		default:
+			return "network_other"
+		}
+	}
+	return "unknown"
+}
+
+// A bounded test-only sink avoids t.Log calls from background goroutines after
+// cleanup. Its only producer is the same trusted logger wired into app/Worker;
+// the buffer is printed only when this fixture fails, after shutdown is awaited.
+type pipelineDiagnosticBuffer struct {
+	mu        sync.Mutex
+	data      bytes.Buffer
+	truncated bool
+}
+
+func (b *pipelineDiagnosticBuffer) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := len(data)
+	remaining := (32 << 10) - b.data.Len()
+	if len(data) > remaining {
+		b.truncated = true
+		data = data[:remaining]
+	}
+	_, _ = b.data.Write(data)
+	return n, nil
+}
+
+func (b *pipelineDiagnosticBuffer) snapshot() (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String(), b.truncated
 }
 
 func TestApplicationActualTLSFromInitializationThroughPublishedEvidence(t *testing.T) {
@@ -180,15 +256,23 @@ func testApplicationActualPipeline(t *testing.T, retentionDays int) {
 			}
 			t.Cleanup(func() { _ = listener.Close() })
 			cfg.PublicOrigin = "http://" + listener.Addr().String()
-			app, err := prepareWithNetwork(t.Context(), cfg, network)
+			diagnostics := &pipelineDiagnosticBuffer{}
+			logger := slog.New(slog.NewJSONHandler(diagnostics, nil))
+			app, err := prepareWithNetworkAndLogger(t.Context(), cfg, network, logger)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = app.close() })
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
-			go func() { done <- app.serve(ctx, cfg, listener, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
+			go func() { done <- app.serve(ctx, cfg, listener, logger) }()
 			t.Cleanup(func() {
+				defer func() {
+					if t.Failed() {
+						text, truncated := diagnostics.snapshot()
+						t.Logf("bounded application diagnostics (truncated=%t):\n%s", truncated, text)
+					}
+				}()
 				cancel()
 				select {
 				case err := <-done:
@@ -326,33 +410,38 @@ func testApplicationActualPipeline(t *testing.T, retentionDays int) {
 				t.Fatal("repeated detection did not execute exactly the new bounded TLS plan")
 			}
 			verifyPipelineDerivedStorage(t, bodyDB, http.orgID, retentionDays, record.Planned+9)
+			exercisePipelineDisplay(t, cfg, app.store, bodyDB, &http, originalID, retentionDays)
 			if err := app.store.VerifyAllAudit(t.Context(), true); err != nil {
 				t.Fatal(fmt.Errorf("actual pipeline audit invalid: %w", err))
 			}
-			if os.Getenv("MII_TEST_BROWSER_HOLD") == driver && retentionDays == 30 {
-				// Opt-in test-only inspection of the real embedded frontend. The
-				// private fixture and TLS mock remain alive for at most five minutes;
-				// a marker in this test-owned temp directory ends the hold early.
-				stopPath := filepath.Join(t.TempDir(), "browser.stop")
-				t.Log("BROWSER_SMOKE_URL", http.endpoint)
-				t.Log("BROWSER_SMOKE_STOP", stopPath)
-				deadline := time.NewTimer(5 * time.Minute)
-				defer deadline.Stop()
-				tick := time.NewTicker(250 * time.Millisecond)
-				defer tick.Stop()
-				for {
-					select {
-					case <-t.Context().Done():
-						return
-					case <-deadline.C:
-						return
-					case <-tick.C:
-						if _, err := os.Stat(stopPath); err == nil {
-							return
-						}
-					}
-				}
-			}
 		})
+	}
+}
+
+// Keep the browser checkpoint before the subsequent real disable/re-enable
+// retention assertions. All assertions still execute when inspection ends.
+func holdPipelineBrowser(t *testing.T, cfg Config, p *pipelineHTTP, retentionDays int) {
+	t.Helper()
+	if os.Getenv("MII_TEST_BROWSER_HOLD") != cfg.DatabaseDriver || retentionDays != 30 {
+		return
+	}
+	stopPath := filepath.Join(t.TempDir(), "browser.stop")
+	t.Log("BROWSER_SMOKE_URL", p.endpoint)
+	t.Log("BROWSER_SMOKE_STOP", stopPath)
+	deadline := time.NewTimer(5 * time.Minute)
+	defer deadline.Stop()
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-t.Context().Done():
+			return
+		case <-deadline.C:
+			return
+		case <-tick.C:
+			if _, err := os.Stat(stopPath); err == nil {
+				return
+			}
+		}
 	}
 }
