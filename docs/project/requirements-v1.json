@@ -151,10 +151,18 @@
         "M7-01"
       ],
       "test_case": "REQ-SYS-008",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/privatefile/file.go",
+        "internal/integrity/privatefile/file_windows.go",
+        "internal/integrity/privatefile/file_linux.go"
+      ],
+      "tests": [
+        "internal/integrity/privatefile/file_test.go",
+        "internal/integrity/privatefile/file_windows_test.go",
+        "internal/integrity/privatefile/file_linux_test.go"
+      ],
+      "notes": "仅生产流式私有文件底座已实现：64KiB增量IO/hash、原子不覆盖发布、ACL/路径/取消与发布后失败收据；Windows三轮通过并修复父目录FILE_DELETE_CHILD漏检P2，Linux原生执行待CI。尚未接入维护门禁、双库快照、认证归档、完整恢复校验、CLI或系统内UI，不能当作备份恢复交付。",
       "goal_included": true
     },
     {
