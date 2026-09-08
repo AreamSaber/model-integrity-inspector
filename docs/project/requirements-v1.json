@@ -155,14 +155,25 @@
       "code": [
         "internal/integrity/privatefile/file.go",
         "internal/integrity/privatefile/file_windows.go",
-        "internal/integrity/privatefile/file_linux.go"
+        "internal/integrity/privatefile/file_linux.go",
+        "internal/integrity/secret/backup.go",
+        "internal/integrity/secret/keyring_files.go",
+        "internal/integrity/backupmanifest/manifest.go",
+        "internal/integrity/backupmanifest/preflight.go",
+        "internal/integrity/backupmanifest/entries.go"
       ],
       "tests": [
         "internal/integrity/privatefile/file_test.go",
         "internal/integrity/privatefile/file_windows_test.go",
-        "internal/integrity/privatefile/file_linux_test.go"
+        "internal/integrity/privatefile/file_linux_test.go",
+        "internal/integrity/privatefile/backup_integration_test.go",
+        "internal/integrity/secret/backup_test.go",
+        "internal/integrity/secret/backup_fuzz_test.go",
+        "internal/app/keyring_pipeline_test.go",
+        "internal/integrity/backupmanifest/manifest_test.go",
+        "internal/integrity/backupmanifest/integration_test.go"
       ],
-      "notes": "仅生产流式私有文件底座已实现：64KiB增量IO/hash、原子不覆盖发布、ACL/路径/取消与发布后失败收据；Windows三轮通过并修复父目录FILE_DELETE_CHILD漏检P2，Linux原生执行待CI。尚未接入维护门禁、双库快照、认证归档、完整恢复校验、CLI或系统内UI，不能当作备份恢复交付。",
+      "notes": "生产私有文件、分块认证归档、显式历史key加载/实际双库审计启动、canonical manifest及准确entry清单已实现专项验证；Windows真实crypto/file组合及fuzz通过，manifest预解码限额有真实红绿。各提交Linux/CI证据见开发台账，不用旧CI追认新代码。维护门禁仍在收口；真实双库快照、完整inventory/报告/规则文件、配置模板、系统内备份、隔离恢复/全链校验、CLI/UI及演练未完成。纯组件不等于SYS-008验收或正式批准。",
       "goal_included": true
     },
     {
