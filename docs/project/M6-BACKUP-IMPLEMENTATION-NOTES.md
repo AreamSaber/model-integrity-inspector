@@ -166,3 +166,19 @@ manifest 至少绑定：格式版本、backup id、创建/快照时间、数据�
 - 本轮已完整读取该包全部生产文件、测试和 README，取消、限额、吞错、路径/句柄、发布后错误 receipt 与 staging 清理未再确认其他 P1/P2。Linux 文件只做源代码审查，未执行 Linux 测试；不能将已有 cross-compile 或 Windows 通过改写为 Linux 原生证据，也不是正式 OPS/SEC 审核批准。
 
 后续仍需 root 代码复核、真实 Linux CI、维护门禁、双库快照/认证归档/manifest/恢复隔离与校验、CLI/HTTP/UI 和真实端到端恢复演练。组件详细契约见 `internal/integrity/privatefile/README.md`。本 agent 未 Git 提交或推送。
+
+### Windows CI 临时目录短名别名：测试夹具修复（2026-09-08）
+
+主任务提供 CI `34181012515` 的症状：Windows privatefile 多项正常 WriteNew 在 `0.00s` 返回 `MI_PRIVATE_FILE_UNSAFE`，同次 Linux package/image 已成功。这里没有把 `ErrUnsafe` 误判成另一个分类 `ErrFilesystem`，也没有放宽生产 NTFS、ACL 或路径别名策略。
+
+先在本地新增真实 Windows 回归 `TestWindowsTempDirectoryShortBaseUsesCanonicalFixture`：对测试自建长目录执行 `GetShortPathName`，实际观察 `short_alias_allocated=true`；设置 TMP/TEMP 为该短基路径，并清空 GOTMPDIR 防止绕开本场景；独立 child 首次调用 `privateDir`/`TempDir`。原 fixture 实测红：`canonical_match matched=false`，普通写 `stage=write_new unsafe=true`，用例耗时 `0.00s`，命令 exit 1 / 包耗时 `0.259s`。测试输出只有闭集阶段和布尔值，不包含用户目录、原路径或凭证。
+
+修复仅涉及 Windows 测试：`newTestDirectory` 把**自己本次 `t.TempDir()` 创建的目录**交给 test-only `canonicalTestDirectory`。后者用实际无删除共享的目录句柄获取 `canonicalName`，验证目录/非 reparse 属性，再独立打开规范长名称，比较 VolumeSerialNumber 与 FileIndexHigh/Low 确認同一目录后返回。它不接受或修复生产调用者输入，没有修改任何 production 文件、CI 配置或 Git 状态。
+
+回归同时验证：正常规范长路径写/读成功；同一目录下直接使用原短基路径的 Read/WriteNew 均 `ErrUnsafe`，未新增成品；原有文件级 8.3 别名拒绝和 junction/ACL/no-replace 反例保留。卷未分配短名时记录 `short_alias_allocated=false` 并继续规范夹具检查，不冒称该次已执行真实 8.3 拒绝；本地三轮均实际分配了短名。
+
+- `go test ./internal/integrity/privatefile -count=3 -v -cover`：Windows 全包三轮 **1.004s PASS**，**81.3%**，含真实 32 MiB 流、并发 no-replace、取消/回执、ACL/delete-child、junction、原短文件名反例和新增短 TMP/TEMP 基路径反例。
+- `golangci-lint run ./internal/integrity/privatefile/...`：**0 issues**。
+- 本地已复现同症状并证明夹具修复有效，**不等于已证明上述远端 CI 的唯一根因**；需主任务提交后由下一 Windows CI 确認是否还有其他问题。本单元不修改 Linux 代码，不把本地 Windows 结果当作新的 Linux 执行证据，也不是完整备份恢复验收。
+
+本轮冻结文件：`internal/integrity/privatefile/file_windows_test.go`、新增 `tempdir_windows_test.go`、该包 README、本文档；管理自然到期修复的三个文件继续保持冻结。未 Git 提交或推送。

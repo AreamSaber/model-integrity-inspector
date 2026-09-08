@@ -75,6 +75,20 @@ the existing input unchanged. This case failed against the original rights mask
 and passed after including directory child-deletion authority in that mask.
 This is component evidence, not large-database capacity or disaster-recovery proof.
 
+Windows runners can supply an 8.3 alias in TMP/TEMP. The Windows test fixture
+canonicalizes only its own freshly created `t.TempDir` using its actual handle,
+then independently opens the canonical name and verifies the same volume/file
+identity before returning it. This is test setup, not production path repair.
+A real `GetShortPathName` regression sets TMP/TEMP to an allocated short base and
+uses a child test's first TempDir: normal canonical fixture read/write must work,
+while direct short-alias read/write must still fail without publishing a file.
+If the volume allocates no short alias, the test records that boolean; canonical
+fixture checks still run, but that run is not 8.3 rejection evidence. Locally this
+reproduced immediate `MI_PRIVATE_FILE_UNSAFE` before the fixture fix. Matching a
+remote CI symptom does not establish its unique cause; the next Windows CI run
+must confirm whether any other failure remains. Diagnostic messages use fixed
+stage labels and booleans, not temporary/user paths or credentials.
+
 Linux tests additionally exercise actual symlinks/FIFO, directory rename/replacement,
 input mutation, staging replacement and post-publication directory sync failure.
 Tests never skip for an unsafe filesystem. Docker build layers may use overlay;

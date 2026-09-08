@@ -17,7 +17,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func newTestDirectory(t *testing.T) string { return t.TempDir() }
+func newTestDirectory(t *testing.T) string {
+	t.Helper()
+	// TMP/TEMP can contain an 8.3 base on Windows runners. Canonicalize only
+	// this test-owned directory; production input aliases remain forbidden.
+	return canonicalTestDirectory(t, t.TempDir())
+}
 
 func protectTestDirectory(path string) error {
 	sid, err := currentSID()
