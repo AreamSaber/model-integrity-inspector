@@ -90,13 +90,20 @@ func validView(v responseView) bool {
 }
 
 func validateSource(source Source) error {
-	if len(source.Snapshot.Payload) == 0 || len(source.Snapshot.Payload) > MaxTextBytes || source.Snapshot.PayloadBytes != len(source.Snapshot.Payload) || !validHash(source.Snapshot.RequestHash) || digest(source.Snapshot.Payload) != source.Snapshot.RequestHash {
+	if err := validateRequestSource(source.Request, source.Snapshot); err != nil {
+		return err
+	}
+	return validateResponseSource(source.Response)
+}
+
+func validateRequestSource(request domain.NormalizedRequest, snapshot domain.RequestSnapshot) error {
+	if len(snapshot.Payload) == 0 || len(snapshot.Payload) > MaxTextBytes || snapshot.PayloadBytes != len(snapshot.Payload) || !validHash(snapshot.RequestHash) || digest(snapshot.Payload) != snapshot.RequestHash {
 		return ErrInvalid
 	}
-	if len(source.Request.Messages) > 256 || len(source.Request.Stop) > 4 || len(source.Request.ExtraAllowedParams) > 2 {
+	if len(request.Messages) > 256 || len(request.Stop) > 4 || len(request.ExtraAllowedParams) > 2 {
 		return ErrLimit
 	}
-	for name, value := range source.Request.ExtraAllowedParams {
+	for name, value := range request.ExtraAllowedParams {
 		if name != "frequency_penalty" && name != "presence_penalty" {
 			return ErrInvalid
 		}
@@ -106,11 +113,11 @@ func validateSource(source Source) error {
 			return ErrLimit
 		}
 	}
-	if len(source.Request.Model) > 128 {
+	if len(request.Model) > 128 {
 		return ErrLimit
 	}
-	requestBound := 2048 + quotedBytes(source.Request.Model)
-	for _, message := range source.Request.Messages {
+	requestBound := 2048 + quotedBytes(request.Model)
+	for _, message := range request.Messages {
 		if len(message.Role) > 16 || len(message.Content) > MaxTextBytes || !utf8.ValidString(message.Content) {
 			return ErrLimit
 		}
@@ -119,7 +126,7 @@ func validateSource(source Source) error {
 			return ErrLimit
 		}
 	}
-	for _, stop := range source.Request.Stop {
+	for _, stop := range request.Stop {
 		if len(stop) > 256 || !utf8.ValidString(stop) {
 			return ErrLimit
 		}
@@ -128,7 +135,10 @@ func validateSource(source Source) error {
 	if requestBound > MaxTextBytes {
 		return ErrLimit
 	}
-	r := source.Response
+	return nil
+}
+
+func validateResponseSource(r domain.NormalizedResponse) error {
 	if len(r.Content) > MaxTextBytes || !utf8.ValidString(r.Content) || len(r.ModelReported) > 128 || len(r.ProviderRequestID) > 128 || len(r.ContentType) > 512 || len(r.FinishReason) > 128 || len(r.ParseStatus) > 32 || len(r.EndCause) > 128 || len(r.HeaderSummary) > 32 || len(r.ParseWarnings) > 64 || len(r.Events) > MaxEvents || r.ResponseHash != "" && !validHash(r.ResponseHash) {
 		return ErrLimit
 	}
@@ -158,19 +168,19 @@ func validateSource(source Source) error {
 	return nil
 }
 
-func requestForDisplay(ctx context.Context, source Source, replacer *strings.Replacer) (string, error) {
+func requestForDisplay(ctx context.Context, input domain.NormalizedRequest, original domain.RequestSnapshot, replacer *strings.Replacer) (string, error) {
 	// Reuse the public deterministic wire builder with a permanently non-network
 	// Doer and fixed non-routable name; never use the historical/live endpoint.
-	adapter, err := openaichat.New(openaichat.Config{Endpoint: "https://analysis.invalid/v1", MaxOutputParameter: source.Snapshot.MaxOutputParameter, Doer: noNetwork{}})
+	adapter, err := openaichat.New(openaichat.Config{Endpoint: "https://analysis.invalid/v1", MaxOutputParameter: original.MaxOutputParameter, Doer: noNetwork{}})
 	if err != nil {
 		return "", ErrInvalid
 	}
-	request, snapshot, err := adapter.BuildRequest(ctx, source.Request)
+	request, snapshot, err := adapter.BuildRequest(ctx, input)
 	if err != nil {
 		return "", ErrInvalid
 	}
 	defer func() { _ = request.Body.Close(); clear(snapshot.Payload) }()
-	if snapshot.RequestHash != source.Snapshot.RequestHash || !bytes.Equal(snapshot.Payload, source.Snapshot.Payload) || snapshot.Model != source.Snapshot.Model || snapshot.Stream != source.Snapshot.Stream || snapshot.MaxOutputTokens != source.Snapshot.MaxOutputTokens || snapshot.MaxOutputParameter != source.Snapshot.MaxOutputParameter {
+	if snapshot.RequestHash != original.RequestHash || !bytes.Equal(snapshot.Payload, original.Payload) || snapshot.Model != original.Model || snapshot.Stream != original.Stream || snapshot.MaxOutputTokens != original.MaxOutputTokens || snapshot.MaxOutputParameter != original.MaxOutputParameter {
 		return "", ErrInvalid
 	}
 	// The original canonical request was verified above. Preserve numeric wire
@@ -179,7 +189,7 @@ func requestForDisplay(ctx context.Context, source Source, replacer *strings.Rep
 	if json.Unmarshal(snapshot.Payload, &fields) != nil {
 		return "", ErrInvalid
 	}
-	model, err := redactText(ctx, replacer, source.Request.Model)
+	model, err := redactText(ctx, replacer, input.Model)
 	if err != nil {
 		return "", err
 	}
@@ -187,9 +197,9 @@ func requestForDisplay(ctx context.Context, source Source, replacer *strings.Rep
 	if err != nil {
 		return "", ErrInvalid
 	}
-	messages := make([]domain.NormalizedMessage, len(source.Request.Messages))
+	messages := make([]domain.NormalizedMessage, len(input.Messages))
 	messageBound := 2
-	for i, message := range source.Request.Messages {
+	for i, message := range input.Messages {
 		value, e := redactText(ctx, replacer, message.Content)
 		if e != nil {
 			return "", e
@@ -204,9 +214,9 @@ func requestForDisplay(ctx context.Context, source Source, replacer *strings.Rep
 	if err != nil {
 		return "", ErrInvalid
 	}
-	if len(source.Request.Stop) > 0 {
-		stops := make([]string, len(source.Request.Stop))
-		for i, value := range source.Request.Stop {
+	if len(input.Stop) > 0 {
+		stops := make([]string, len(input.Stop))
+		for i, value := range input.Stop {
 			stops[i], err = redactText(ctx, replacer, value)
 			if err != nil {
 				return "", err
@@ -248,7 +258,7 @@ func Prepare(ctx context.Context, source Source, key []byte, headers map[string]
 	if err != nil {
 		return nil, err
 	}
-	requestJSON, err := requestForDisplay(ctx, source, replacer)
+	requestJSON, err := requestForDisplay(ctx, source.Request, source.Snapshot, replacer)
 	if err != nil {
 		return nil, err
 	}

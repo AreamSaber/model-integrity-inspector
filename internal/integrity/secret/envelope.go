@@ -50,7 +50,7 @@ func (Record) String() string               { return "[encrypted secret record]"
 func (r Record) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, r.String()) }
 func (Record) MarshalJSON() ([]byte, error) { return nil, ErrSensitive }
 
-type keySet struct{ wrap, fingerprint, audit, cursor, probe, evidence, baseline, display, derivedSource []byte }
+type keySet struct{ wrap, fingerprint, audit, cursor, probe, evidence, baseline, display, derivedSource, requestReproduction []byte }
 
 // KeyRing holds derived purpose-separated keys, never the caller's master-key
 // buffers. It is immutable after construction and safe for concurrent use.
@@ -120,7 +120,11 @@ func NewKeyRing(active string, masters map[string][]byte) (*KeyRing, error) {
 		if err != nil {
 			return nil, ErrUnavailable
 		}
-		k.keys[version] = keySet{wrap: wrap, fingerprint: fingerprint, audit: audit, cursor: cursor, probe: probe, evidence: evidence, baseline: baseline, display: display, derivedSource: derivedSource}
+		requestReproduction, err := derive("request-reproduction")
+		if err != nil {
+			return nil, ErrUnavailable
+		}
+		k.keys[version] = keySet{wrap: wrap, fingerprint: fingerprint, audit: audit, cursor: cursor, probe: probe, evidence: evidence, baseline: baseline, display: display, derivedSource: derivedSource, requestReproduction: requestReproduction}
 	}
 	return k, nil
 }
