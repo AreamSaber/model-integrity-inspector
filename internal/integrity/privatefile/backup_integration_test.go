@@ -1,6 +1,6 @@
 //go:build windows || linux
 
-package privatefile
+package privatefile_test
 
 import (
 	"bytes"
@@ -16,13 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/integrity/privatefile"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 )
 
 // These tests compose public crypto/file capabilities only. They are not a
 // production snapshot/restore coordinator and never execute a database image.
-// Staying in this package also serializes its large tmpfs fixtures with the
-// existing privatefile tests; two independent packages could exhaust 64 MiB shm.
+// The external test package avoids a secret -> repository -> privatefile test
+// import cycle. Go links it into the SAME privatefile test binary, preserving
+// serial execution with the other large fixtures (no t.Parallel).
 func integrationBackupKeys(t testing.TB, value byte) (*secret.BackupSealer, *secret.BackupOpener) {
 	t.Helper()
 	master := bytes.Repeat([]byte{value}, 32)
@@ -45,9 +47,9 @@ func integrationCryptoLimits(size int64) secret.BackupLimits {
 	return secret.BackupLimits{MaxBytes: size, MaxEntries: 1, Timeout: time.Minute}
 }
 
-func integrationSeal(ctx context.Context, s *secret.BackupSealer, scope secret.BackupScope, limits secret.BackupLimits, path string, fileLimit int64, produce func(context.Context, io.Writer) error) (Receipt, secret.BackupReceipt, error) {
+func integrationSeal(ctx context.Context, s *secret.BackupSealer, scope secret.BackupScope, limits secret.BackupLimits, path string, fileLimit int64, produce func(context.Context, io.Writer) error) (privatefile.Receipt, secret.BackupReceipt, error) {
 	var sealed secret.BackupReceipt
-	file, err := WriteNew(ctx, path, testLimits(fileLimit), func(ctx context.Context, w io.Writer) error {
+	file, err := privatefile.WriteNew(ctx, path, privatefile.BackupIntegrationTestLimits(fileLimit), func(ctx context.Context, w io.Writer) error {
 		var err error
 		sealed, err = s.Seal(ctx, scope, limits, w, func(_ context.Context, archive *secret.BackupArchiveWriter) error {
 			return archive.WriteEntry(secret.BackupEntry{Kind: "database", ID: "database-snapshot"}, produce)
@@ -58,21 +60,21 @@ func integrationSeal(ctx context.Context, s *secret.BackupSealer, scope secret.B
 }
 
 type integrationOpened struct {
-	plain, cipher Receipt
+	plain, cipher privatefile.Receipt
 	archive       secret.BackupReceipt
 	sourceErr     error
 }
 
 // The plaintext writer owns the outer staging boundary. The trusted callback
-// MUST propagate Open and Read errors; privatefile cannot detect a caller that
+// MUST propagate Open and privatefile.Read errors; privatefile cannot detect a caller that
 // deliberately ignores authentication failure. Even a complete Open receipt is
-// insufficient until the enclosing Read finishes its native identity checks.
+// insufficient until the enclosing privatefile.Read finishes its native identity checks.
 func integrationOpen(ctx context.Context, o *secret.BackupOpener, scope secret.BackupScope, limits secret.BackupLimits, cipherPath, plainPath string, inputLimit, outputLimit int64, consume func(context.Context, io.Reader, io.Writer) error, checkpoint func(string)) (integrationOpened, error) {
 	var result integrationOpened
 	var err error
-	result.plain, err = WriteNew(ctx, plainPath, testLimits(outputLimit), func(ctx context.Context, w io.Writer) error {
+	result.plain, err = privatefile.WriteNew(ctx, plainPath, privatefile.BackupIntegrationTestLimits(outputLimit), func(ctx context.Context, w io.Writer) error {
 		var readErr error
-		result.cipher, readErr = Read(ctx, cipherPath, testLimits(inputLimit), func(ctx context.Context, r io.Reader) error {
+		result.cipher, readErr = privatefile.Read(ctx, cipherPath, privatefile.BackupIntegrationTestLimits(inputLimit), func(ctx context.Context, r io.Reader) error {
 			var openErr error
 			result.archive, openErr = o.Open(ctx, scope, limits, r, func(ctx context.Context, entry secret.BackupEntry, r io.Reader) error {
 				if entry.Kind != "database" || entry.ID != "database-snapshot" {
@@ -130,7 +132,7 @@ func (r *integrationPatternReader) Read(p []byte) (int, error) {
 }
 
 func TestBackupPrivateFileLargeAuthenticatedPublication(t *testing.T) {
-	dir := privateDir(t)
+	dir := privatefile.BackupIntegrationTestDir(t)
 	cipherPath, plainPath := filepath.Join(dir, "encrypted.backup"), filepath.Join(dir, "restored-synthetic.data")
 	const size = int64(25<<20) + 17 // >24 MiB, but two files still fit a 64 MiB tmpfs.
 	const cipherLimit = size + (1 << 20)
@@ -175,12 +177,12 @@ func TestBackupPrivateFileLargeAuthenticatedPublication(t *testing.T) {
 		t.Fatal("complete authentication did not gate private plaintext publication", err)
 	}
 	verified := sha256.New()
-	plain, err := Read(t.Context(), plainPath, testLimits(size), func(_ context.Context, r io.Reader) error { _, err := io.Copy(verified, r); return err })
+	plain, err := privatefile.Read(t.Context(), plainPath, privatefile.BackupIntegrationTestLimits(size), func(_ context.Context, r io.Reader) error { _, err := io.Copy(verified, r); return err })
 	runtime.ReadMemStats(&after)
 	if err != nil || plain.Size != size || plain.SHA256 != opened.plain.SHA256 || hex.EncodeToString(verified.Sum(nil)) != opened.plain.SHA256 || after.TotalAlloc-before.TotalAlloc > 12<<20 {
 		t.Fatal("published plaintext changed or streaming allocated the complete archive", err)
 	}
-	assertEntries(t, dir, 2)
+	privatefile.BackupIntegrationTestEntries(t, dir, 2)
 }
 
 func integrationSmallArchive(t *testing.T, dir string) (*secret.BackupSealer, *secret.BackupOpener, secret.BackupScope, []byte) {
@@ -188,10 +190,10 @@ func integrationSmallArchive(t *testing.T, dir string) (*secret.BackupSealer, *s
 	s, o := integrationBackupKeys(t, 0x37)
 	scope := integrationBackupScope()
 	path := filepath.Join(dir, "source.backup")
-	if _, _, err := integrationSeal(t.Context(), s, scope, integrationCryptoLimits(257), path, 4096, testProduce(bytes.Repeat([]byte{0x39}, 257))); err != nil {
+	if _, _, err := integrationSeal(t.Context(), s, scope, integrationCryptoLimits(257), path, 4096, privatefile.BackupIntegrationTestProduce(bytes.Repeat([]byte{0x39}, 257))); err != nil {
 		t.Fatal("write small authenticated private archive", err)
 	}
-	encoded, err := readTestFile(t.Context(), path, 4096)
+	encoded, err := privatefile.BackupIntegrationTestRead(t.Context(), path, 4096)
 	if err != nil {
 		t.Fatal("read small encrypted fixture", err)
 	}
@@ -201,7 +203,7 @@ func integrationSmallArchive(t *testing.T, dir string) (*secret.BackupSealer, *s
 func TestBackupPrivateFileAuthenticationFailuresNeverPublish(t *testing.T) {
 	for _, mode := range []string{"trailing", "truncated_final", "truncated_data_swallowed", "wrong_key", "wrong_scope", "swallowed_output_limit", "swallowed_cancel", "cancel_after_crypto", "cancel_after_source"} {
 		t.Run(mode, func(t *testing.T) {
-			dir := privateDir(t)
+			dir := privatefile.BackupIntegrationTestDir(t)
 			_, o, scope, encoded := integrationSmallArchive(t, dir)
 			input, output := filepath.Join(dir, "input.backup"), filepath.Join(dir, "never-visible.data")
 			ctx, cancel := context.WithCancel(t.Context())
@@ -225,7 +227,7 @@ func TestBackupPrivateFileAuthenticationFailuresNeverPublish(t *testing.T) {
 			case "swallowed_cancel":
 				swallow, cancelDuring = true, true
 			}
-			if err := writeTestFile(t.Context(), input, encoded, 4096); err != nil {
+			if err := privatefile.BackupIntegrationTestWrite(t.Context(), input, encoded, 4096); err != nil {
 				t.Fatal("write deliberately invalid encrypted fixture", err)
 			}
 			consumerCalls := 0
@@ -266,16 +268,16 @@ func TestBackupPrivateFileAuthenticationFailuresNeverPublish(t *testing.T) {
 			if mode == "cancel_after_source" && result.cipher.Size != int64(len(encoded)) {
 				t.Fatal("post-native-read cancellation did not reach intended barrier")
 			}
-			if mode == "swallowed_output_limit" && (result.archive.Entries != 1 || !errors.Is(err, ErrLimit)) {
+			if mode == "swallowed_output_limit" && (result.archive.Entries != 1 || !errors.Is(err, privatefile.ErrLimit)) {
 				t.Fatal("swallowed staging error did not survive successful full authentication", err)
 			}
-			assertEntries(t, dir, 2) // Input files remain; no abandoned plaintext staging.
+			privatefile.BackupIntegrationTestEntries(t, dir, 2) // Input files remain; no abandoned plaintext staging.
 		})
 	}
 }
 
 func TestBackupPrivateFileSourceRecheckFailureAfterAuthentication(t *testing.T) {
-	dir := privateDir(t)
+	dir := privatefile.BackupIntegrationTestDir(t)
 	_, o, scope, encoded := integrationSmallArchive(t, dir)
 	input, output := filepath.Join(dir, "source.backup"), filepath.Join(dir, "never-visible.data")
 	before, err := os.Stat(input)
@@ -284,7 +286,7 @@ func TestBackupPrivateFileSourceRecheckFailureAfterAuthentication(t *testing.T) 
 	}
 	// No context is canceled and the output directory/ACL stays unchanged. This
 	// real metadata mutation occurs only AFTER authenticated Final and EOF, but
-	// before Read's native final Stat. It cannot be mistaken for outer WriteNew
+	// before privatefile.Read's native final Stat. It cannot be mistaken for outer privatefile.WriteNew
 	// cancellation or authentication failure and needs no production hook.
 	cryptoComplete, sourceComplete := false, false
 	var consumed int64
@@ -311,7 +313,7 @@ func TestBackupPrivateFileSourceRecheckFailureAfterAuthentication(t *testing.T) 
 	if !cryptoComplete || sourceComplete || consumed != 257 || t.Context().Err() != nil {
 		t.Fatal("source recheck failure did not reach the intended non-cancellation barrier")
 	}
-	if !errors.Is(result.sourceErr, ErrUnsafe) || !errors.Is(err, ErrCallback) || result.cipher != (Receipt{}) || result.plain.Published {
+	if !errors.Is(result.sourceErr, privatefile.ErrUnsafe) || !errors.Is(err, privatefile.ErrCallback) || result.cipher != (privatefile.Receipt{}) || result.plain.Published {
 		t.Fatal("native source recheck failure was ignored after successful authentication", err)
 	}
 	want := sha256.Sum256(encoded)
@@ -319,65 +321,65 @@ func TestBackupPrivateFileSourceRecheckFailureAfterAuthentication(t *testing.T) 
 		t.Fatal("native rejection happened before full archive authentication")
 	}
 	integrationMissing(t, output)
-	unchanged, err := readTestFile(t.Context(), input, 4096)
+	unchanged, err := privatefile.BackupIntegrationTestRead(t.Context(), input, 4096)
 	if err != nil || !bytes.Equal(unchanged, encoded) {
 		t.Fatal("metadata-only rejection changed encrypted source bytes", err)
 	}
-	assertEntries(t, dir, 1)
+	privatefile.BackupIntegrationTestEntries(t, dir, 1)
 }
 
 func TestBackupPrivateFileNoReplacePreservesCipherAndPlaintext(t *testing.T) {
-	dir := privateDir(t)
+	dir := privatefile.BackupIntegrationTestDir(t)
 	s, o, scope, encoded := integrationSmallArchive(t, dir)
 	cipherPath, plainPath := filepath.Join(dir, "source.backup"), filepath.Join(dir, "existing.data")
-	file, _, err := integrationSeal(t.Context(), s, scope, integrationCryptoLimits(10), cipherPath, 4096, testProduce([]byte("different")))
-	if !errors.Is(err, ErrExists) || file.Published {
+	file, _, err := integrationSeal(t.Context(), s, scope, integrationCryptoLimits(10), cipherPath, 4096, privatefile.BackupIntegrationTestProduce([]byte("different")))
+	if !errors.Is(err, privatefile.ErrExists) || file.Published {
 		t.Fatal("existing encrypted destination replaced", err)
 	}
-	after, err := readTestFile(t.Context(), cipherPath, 4096)
+	after, err := privatefile.BackupIntegrationTestRead(t.Context(), cipherPath, 4096)
 	if err != nil || !bytes.Equal(after, encoded) {
 		t.Fatal("failed encrypted publication changed original", err)
 	}
 	original := []byte("existing-synthetic-plaintext-canary")
-	if err := writeTestFile(t.Context(), plainPath, original, 4096); err != nil {
+	if err := privatefile.BackupIntegrationTestWrite(t.Context(), plainPath, original, 4096); err != nil {
 		t.Fatal("write existing private target", err)
 	}
 	result, err := integrationOpen(t.Context(), o, scope, integrationCryptoLimits(257), cipherPath, plainPath, 4096, 4096, integrationCopy, nil)
-	if !errors.Is(err, ErrExists) || result.plain.Published || result.archive.Entries != 1 {
+	if !errors.Is(err, privatefile.ErrExists) || result.plain.Published || result.archive.Entries != 1 {
 		t.Fatal("complete authenticated plaintext replaced existing target", err)
 	}
-	after, err = readTestFile(t.Context(), plainPath, 4096)
+	after, err = privatefile.BackupIntegrationTestRead(t.Context(), plainPath, 4096)
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatal("failed plaintext publication changed original", err)
 	}
-	assertEntries(t, dir, 2)
+	privatefile.BackupIntegrationTestEntries(t, dir, 2)
 }
 
 func TestBackupPrivateFilePlaintextAndCiphertextLimitsAreDistinct(t *testing.T) {
-	dir := privateDir(t)
+	dir := privatefile.BackupIntegrationTestDir(t)
 	s, _ := integrationBackupKeys(t, 0x37)
 	scope, limits := integrationBackupScope(), integrationCryptoLimits(1024)
-	if MaxBytes != 1<<40 || secret.BackupMaxBytes != 1<<40 {
+	if privatefile.MaxBytes != 1<<40 || secret.BackupMaxBytes != 1<<40 {
 		t.Fatal("review hard-limit changes before changing integration expectations")
 	}
 	tooSmall := filepath.Join(dir, "cipher-budget-too-small.backup")
-	file, sealed, err := integrationSeal(t.Context(), s, scope, limits, tooSmall, 1024, testProduce(make([]byte, 1024)))
-	if !errors.Is(err, ErrLimit) || file.Published || sealed != (secret.BackupReceipt{}) {
+	file, sealed, err := integrationSeal(t.Context(), s, scope, limits, tooSmall, 1024, privatefile.BackupIntegrationTestProduce(make([]byte, 1024)))
+	if !errors.Is(err, privatefile.ErrLimit) || file.Published || sealed != (secret.BackupReceipt{}) {
 		t.Fatal("plaintext bytes incorrectly treated as sufficient ciphertext budget", err)
 	}
 	integrationMissing(t, tooSmall)
 	path := filepath.Join(dir, "adequate-cipher-budget.backup")
-	file, sealed, err = integrationSeal(t.Context(), s, scope, limits, path, 4096, testProduce(make([]byte, 1024)))
+	file, sealed, err = integrationSeal(t.Context(), s, scope, limits, path, 4096, privatefile.BackupIntegrationTestProduce(make([]byte, 1024)))
 	if err != nil || !file.Published || sealed.PlaintextBytes != 1024 || file.Size <= 1024 || sealed.ArchiveBytes != file.Size || sealed.ArchiveSHA256 != file.SHA256 {
 		t.Fatal("separate explicit ciphertext budget rejected", err)
 	}
 	called := false
-	if file, err := WriteNew(t.Context(), filepath.Join(dir, "beyond-file-cap"), testLimits(MaxBytes+1), func(context.Context, io.Writer) error { called = true; return nil }); !errors.Is(err, ErrLimit) || file.Published || called {
+	if file, err := privatefile.WriteNew(t.Context(), filepath.Join(dir, "beyond-file-cap"), privatefile.BackupIntegrationTestLimits(privatefile.MaxBytes+1), func(context.Context, io.Writer) error { called = true; return nil }); !errors.Is(err, privatefile.ErrLimit) || file.Published || called {
 		t.Fatal("file hard ceiling bypassed")
 	}
 	limits.MaxBytes = secret.BackupMaxBytes + 1
-	if file, sealed, err := integrationSeal(t.Context(), s, scope, limits, filepath.Join(dir, "beyond-crypto-cap"), 4096, testProduce([]byte("x"))); err == nil || file.Published || sealed != (secret.BackupReceipt{}) {
+	if file, sealed, err := integrationSeal(t.Context(), s, scope, limits, filepath.Join(dir, "beyond-crypto-cap"), 4096, privatefile.BackupIntegrationTestProduce([]byte("x"))); err == nil || file.Published || sealed != (secret.BackupReceipt{}) {
 		t.Fatal("crypto plaintext hard ceiling bypassed")
 	}
-	assertEntries(t, dir, 1)
+	privatefile.BackupIntegrationTestEntries(t, dir, 1)
 }

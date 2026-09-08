@@ -2,6 +2,8 @@
 
 更新：2026-09-08。状态：新增真实组件集成测试与有界解析 fuzz 已完成 Windows 验证，供主任务最终复核；**没有新增备份/恢复业务协调器，也不是数据库恢复验收或正式批准**。
 
+最新测试边界修正：新增仓储 SQLite snapshot 对 privatefile 的生产依赖后，原同包集成测试形成 `privatefile(test) -> secret -> repository -> privatefile` 循环，真实 compile-only 返回 setup failed。已将本文件对应集成测试改为 `privatefile_test` 外部测试包，以仅 `_test.go` 中的 fixture bridge 复用原平台安全夹具。Go 仍将它与内部测试链接为同一个测试二进制；所有案例/断言及不调用 `t.Parallel` 的串行语义保留，生产导出和依赖不变。转换期间两处机械限定符编译错误已修正；最终完整 Windows privatefile 三轮3.592s PASS、lint0。下文“同包”是原实现历史，现按此说明解释。这不解决新 repository 包和 privatefile 包在64MiB tmpfs的跨包并发资源问题；其测试资源协调单独处理，不能说已有同包串行覆盖新快照包。
+
 本单元只新增：
 
 - `internal/integrity/privatefile/backup_integration_test.go`
