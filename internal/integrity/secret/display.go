@@ -70,14 +70,15 @@ func (DisplayOpener) MarshalJSON() ([]byte, error) { return nil, evidencedisplay
 func (v DisplayOpener) LogValue() slog.Value       { return slog.StringValue(v.String()) }
 
 // NewDisplayCapabilities is for trusted startup composition. A nil clock uses
-// time.Now; tests may supply a fixed clock. HTTP must never provide this clock
-// or receive the KeyRing. Opening authenticates bytes, not repository authority.
+// the platform display clock; tests may supply a fixed clock. HTTP must never
+// provide this clock or receive the KeyRing. Opening authenticates bytes, not
+// repository authority.
 func (k *KeyRing) NewDisplayCapabilities(now func() time.Time) (*DisplaySealer, *DisplayOpener, error) {
 	if k == nil || !versionPattern.MatchString(k.active) {
 		return nil, nil, ErrDisplayUnavailable
 	}
 	if now == nil {
-		now = time.Now
+		now = displayNow
 	}
 	active, ok := k.keys[k.active]
 	if !ok || len(active.display) != 32 {
