@@ -4,15 +4,16 @@ import "time"
 
 // Persistence models are not HTTP DTOs. Credential material is excluded from JSON.
 type Organization struct {
-	ID                        int64
-	Name                      string
-	Status                    string
-	Timezone                  string
-	FullResponseRetentionDays int    `gorm:"default:30"`
-	Version                   int    `gorm:"default:1"`
-	QuotaJSON                 string `gorm:"column:quota_json" json:"-"`
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
+	ID                              int64
+	Name                            string
+	Status                          string
+	Timezone                        string
+	FullResponseRetentionDays       int    `gorm:"default:30"`
+	ResponseEvidenceNotBeforeMicros int64  `json:"-"`
+	Version                         int    `gorm:"default:1"`
+	QuotaJSON                       string `gorm:"column:quota_json" json:"-"`
+	CreatedAt                       time.Time
+	UpdatedAt                       time.Time
 }
 
 type User struct {

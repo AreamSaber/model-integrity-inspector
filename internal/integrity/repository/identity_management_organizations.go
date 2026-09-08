@@ -138,14 +138,20 @@ func (s *Store) ManageUpdateOrganization(ctx context.Context, auth ManagementAut
 		return result, ErrConfiguration
 	}
 	err := s.managementTransaction(ctx, auth, 0, "system.organizations", true, func(tx *gorm.DB, _ User) error {
-		org, err := loadOrganizationSummary(tx, orgID)
+		// Follow management mutex/user/session -> organization -> audit order.
+		// The same row lock is the future Worker/analysis retention boundary.
+		org, err := loadResponseRetentionOrganization(tx, s.driver, orgID, true)
 		if err != nil {
 			return err
 		}
 		if org.Version != input.ExpectedVersion {
 			return ErrConflict
 		}
-		updates := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC().Truncate(time.Microsecond)}
+		now, err := queueTime(tx, s.driver)
+		if err != nil {
+			return err
+		}
+		updates := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": now}
 		if input.Name != nil {
 			updates["name"] = strings.TrimSpace(*input.Name)
 		}
@@ -156,10 +162,19 @@ func (s *Store) ManageUpdateOrganization(ctx context.Context, auth ManagementAut
 			updates["status"] = *input.Status
 		}
 		if input.FullResponseRetentionDays != nil {
+			cutoff, err := advanceResponseRetention(org, *input.FullResponseRetentionDays, now)
+			if err != nil {
+				return err
+			}
 			updates["full_response_retention_days"] = *input.FullResponseRetentionDays
+			updates["response_evidence_not_before_micros"] = cutoff
 		}
-		if err := tx.Model(&Organization{}).Where("id=? AND version=?", orgID, input.ExpectedVersion).Updates(updates).Error; err != nil {
-			return err
+		updated := tx.Model(&Organization{}).Where("id=? AND version=? AND full_response_retention_days=? AND response_evidence_not_before_micros=?", orgID, input.ExpectedVersion, org.FullResponseRetentionDays, org.ResponseEvidenceNotBeforeMicros).Updates(updates)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return ErrConflict
 		}
 		if err := s.auditManagement(ctx, tx, []int64{orgID}, auditObject("system.organization_update", "organization", orgID)); err != nil {
 			return err
