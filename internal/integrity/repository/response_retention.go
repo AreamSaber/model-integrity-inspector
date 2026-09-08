@@ -55,7 +55,11 @@ func loadResponseRetentionOrganization(db *gorm.DB, driver string, orgID int64, 
 	}
 	query := db.Model(&Organization{}).Select("id, status, full_response_retention_days, response_evidence_not_before_micros, version").Where("id = ?", orgID)
 	if lock && driver == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		// Policy changes never update the organization key. NO KEY UPDATE still
+		// serializes them, but admits FK KEY SHARE checks from an audit INSERT.
+		// Anonymous audit already owns its chain head without the management
+		// mutex; FOR UPDATE here would create org -> head -> org deadlocks.
+		query = query.Clauses(clause.Locking{Strength: "NO KEY UPDATE"})
 	}
 	if err := query.Take(&row).Error; err != nil {
 		return row, persistenceError(err)
@@ -101,7 +105,8 @@ func (t *Tenant) GetResponseRetentionPolicy() (ResponseRetentionPolicy, error) {
 // organization policy, THEN execution mutex/sample/run/target, THEN audit heads.
 // In particular LoadRunAnalysis must call this BEFORE lockRun, not after it.
 // Never acquire a policy lock while holding an audit head or in reverse run->org
-// order. SQLite's BEGIN IMMEDIATE serializes writers instead of row locks.
+// order. PostgreSQL policy locks are NO KEY UPDATE, compatible with the audit
+// INSERT's organization FK KEY SHARE. SQLite BEGIN IMMEDIATE serializes writers.
 func (tx *TenantTransaction) LockResponseRetentionPolicy() (ResponseRetentionPolicy, error) {
 	if tx == nil || tx.store == nil {
 		return ResponseRetentionPolicy{}, ErrConfiguration

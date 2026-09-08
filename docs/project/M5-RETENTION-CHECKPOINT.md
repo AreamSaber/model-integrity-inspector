@@ -19,7 +19,9 @@
 
 ## 强制锁顺序
 
-PostgreSQL 管理更新：既有 management advisory mutex → actor user → session → organization policy row → audit heads（既有组织升序）。
+PostgreSQL 管理更新：既有 management advisory mutex → actor user → session → organization policy row（`FOR NO KEY UPDATE`）→ audit heads（既有组织升序）。
+
+policy 只更新非键字段，`NO KEY UPDATE` 仍串行化保留设置与最终 policy 读取，同时兼容审计 INSERT 隐含的组织外键 `KEY SHARE`。不能改回 `FOR UPDATE`：匿名登录失败审计不持 management mutex，已经持有 audit head 后会进行该外键检查，过强的组织锁可形成 org → audit head → org 循环。
 
 将来的 Worker 最终结算：既有 Job row → **organization policy row** → execution mutex → sample/run/target → audit heads。分析 `LoadRunAnalysis` 必须在 `lockRun` **之前**获取 policy/org；不能先沿现有路径锁 run、然后反向锁 org。任何路径都不允许持有 audit head 后回头取得 policy，跨组织场景需按组织 ID 升序一次性取得锁。
 
@@ -56,3 +58,19 @@ SQLite 保持 Store 既有短 `BEGIN IMMEDIATE` 写事务策略；准备读取�
 - `docs/project/M5-RETENTION-CHECKPOINT.md`
 
 root 后续需同步迁移契约计数/最新名称，并单独完成所有消费路径的锁顺序与留存策略接线。本批没有 Git 提交，也没有正式批准任何里程碑。
+
+## 2026-09-08：匿名审计外键锁 P2 修复
+
+底座已由 root 复核并提交 `f03a320`。后续独立复核发现，组织 policy 的 `FOR UPDATE` 与真实匿名审计 INSERT 的组织外键 `FOR KEY SHARE` 不兼容；management 全局互斥锁覆盖不了匿名失败审计。因此临时暂停 migration18，优先完成本修复。
+
+本修复仅修改 `response_retention.go`、新增 `response_retention_lock_test.go` 并更新本 checkpoint；不改 identity_management.go、不改既有迁移，也不增加死锁重试。
+
+真实 PostgreSQL 红/绿证据：
+
+- 新测试 `TestResponseRetentionAnonymousAuditForeignKeyDoesNotDeadlock` 直接调用 `RecordAnonymousLoginFailure` 与 `ManageUpdateOrganization`。仅用测试 ORM 观察 gate 暂停匿名 INSERT，不替换业务 SQL；先确认匿名路径已持 audit head，再确认设置路径已持 policy lock，并用 `pg_blocking_pids` 实证设置等待匿名事务，最后放行真实审计 INSERT。
+- 修复前同一测试实际失败（1.651s）：匿名路径 `DATABASE_UNAVAILABLE`，底层固定 SQLSTATE `40P01`；设置路径完成。证实是死锁，不是猜测时序或普通超时。
+- 将 policy 行锁改为 `FOR NO KEY UPDATE` 后，同一测试连续 10 轮通过（9.188s）。两入口均成功且未重试；days/cutoff/version 恰更新一次，恰追加两条对应审计，全链认证通过。该 PostgreSQL 专属测试明确跳过 SQLite，不把跳过写成双库死锁验证。
+- 扩大回归 `go test ./internal/integrity/repository -run '^(TestResponseRetention|TestManagementAuditFailureRollsBackAllMutationKinds|TestAuditConcurrentAppendAcrossConnections|TestUnknownLoginAuditedWithoutSubmittedIdentity)' -count=3`：SQLite/PostgreSQL 实际通过，34.686s。包含既有“policy 锁阻止另一设置事务、允许非写快照”测试，确保较弱锁没有取消设置互斥。
+- 最终 `golangci-lint run ./internal/integrity/repository/...`：`0 issues.`。首次 lint 因并行实例占锁未执行；待其退出后正常重跑通过，没有强制并行或清理他人的锁。
+
+锁修复已独立冻结，等待 root 集成。尚未接线的 0 天正文处理边界不因本修复改变；migration18 尚未实施。

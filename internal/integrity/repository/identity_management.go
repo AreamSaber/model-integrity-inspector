@@ -137,7 +137,18 @@ func (s *Store) managementTransaction(ctx context.Context, auth ManagementAuthor
 				return ErrManagementPermission
 			}
 		}
-		return fn(tx, user)
+		if err := fn(tx, user); err != nil {
+			return err
+		}
+		// Later organization/audit locks can outlive the authority validated
+		// above. Recheck its original natural expiry immediately before commit,
+		// so all mutation and audit SQL rolls back together. Do not reload and
+		// reject a revocation intentionally performed by this valid callback, or
+		// let an in-transaction extension replace the original authority window.
+		if !session.ExpiresAt.After(time.Now()) {
+			return ErrManagementSession
+		}
+		return nil
 	}))
 }
 
