@@ -54,6 +54,21 @@ function Assert-MIIReplayNetnsResult {
     foreach ($count in $stageCounts.Values) { if ($count -ne 1) { throw 'MI_REPLAY_NETNS_PROOF_STAGE_MISSING' } }
 }
 
+function Get-MIIReplayNetnsProbeDiagnostics {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Lines)
+    # Only these literal classifications may leave the private subprocess output.
+    # An unknown errno is OTHER; arbitrary error text, addresses and paths never
+    # become a diagnostic label. None of these labels counts as a proof stage.
+    $labels = @(
+        foreach ($value in @('IPV4','IPV6','UNKNOWN')) { 'MI_REPLAY_NETNS_DIAG_FAMILY_' + $value }
+        foreach ($value in @('ADDRESS','SOCKET','CONNECT','POLL','GETSOCKOPT','SO_ERROR','CLOSE','CONTEXT','UNKNOWN')) { 'MI_REPLAY_NETNS_DIAG_STAGE_' + $value }
+        foreach ($value in @('NONE','ENETUNREACH','EHOSTUNREACH','EAFNOSUPPORT','ECONNREFUSED','EINPROGRESS','EPERM','EACCES','EADDRNOTAVAIL','ETIMEDOUT','EINTR','EINVAL','EBADF','CANCELED','DEADLINE','OTHER')) { 'MI_REPLAY_NETNS_DIAG_ERRNO_' + $value }
+    )
+    foreach ($label in $labels) {
+        if (@($Lines | Where-Object { $_ -cmatch ('(?<![A-Z0-9_])' + [regex]::Escape($label) + '(?![A-Z0-9_])') }).Count -gt 0) { $label }
+    }
+}
+
 function Test-MIIReplayNetnsPolicy {
     $package = 'model-integrity-inspector.local/mii/tests/replay/cmd/replay'
     $test = 'TestOfflineReplayNetworkNamespace'
@@ -93,6 +108,17 @@ function Test-MIIReplayNetnsPolicy {
         catch { $rejected = $true }
         if (-not $rejected) { throw 'MI_REPLAY_NETNS_POLICY_REGRESSION' }
     }
+    $diagnostics = @(Get-MIIReplayNetnsProbeDiagnostics -Lines @(
+        'private-canary /private/path MI_REPLAY_NETNS_DIAG_FAMILY_IPV6 MI_REPLAY_NETNS_DIAG_STAGE_CONNECT MI_REPLAY_NETNS_DIAG_ERRNO_ENETUNREACH',
+        'MI_REPLAY_NETNS_DIAG_ERRNO_ENETUNREACH_PRIVATE MI_REPLAY_NETNS_DIAG_STAGE_UNTRUSTED MI_REPLAY_NETNS_DIAG_ERRNO_PRIVATE',
+        'MI_REPLAY_NETNS_DIAG_ERRNO_ENETUNREACH'
+    ))
+    if (($diagnostics -join ' ') -cne 'MI_REPLAY_NETNS_DIAG_FAMILY_IPV6 MI_REPLAY_NETNS_DIAG_STAGE_CONNECT MI_REPLAY_NETNS_DIAG_ERRNO_ENETUNREACH') {
+        throw 'MI_REPLAY_NETNS_POLICY_REGRESSION'
+    }
+    if (@(Get-MIIReplayNetnsProbeDiagnostics -Lines @('MI_REPLAY_NETNS_DIAG_FAMILY_IPV4_PRIVATE','private-canary')).Count -ne 0) {
+        throw 'MI_REPLAY_NETNS_POLICY_REGRESSION'
+    }
 }
 
 Test-MIIReplayNetnsPolicy
@@ -128,12 +154,13 @@ try {
         'FAILED_PARENT_IDENTITY','FAILED_CONNECTED_BASELINE','FAILED_BASELINE_READ','FAILED_CHILD_CONFIG','FAILED_EXECUTABLE','FAILED_REQUIRED_TOOL',
         'FAILED_ISOLATED_PROCESS','FAILED_STAGE_MISSING','FAILED_CHILD_NOT_RUN','FAILED_PARENT_NAMESPACE_CHANGED','FAILED_PARENT_COMPARE',
         'FAILED_GO_TOOLCHAIN','FAILED_FILE_TEST_BUILD','FAILED_NAMESPACE','FAILED_CONTROL_LISTENER','FAILED_CONTROL_CLEANUP','FAILED_CONTROL_UNREACHABLE','FAILED_CONTROL_PAYLOAD',
-        'FAILED_IDENTITY','FAILED_CAPABILITIES','FAILED_INHERITED_SOCKET','FAILED_INTERFACE','FAILED_ROUTE','FAILED_NETWORK_NOT_BLOCKED','FAILED_REPLAY',
+        'FAILED_IDENTITY','FAILED_CAPABILITIES','FAILED_INHERITED_SOCKET','FAILED_INTERFACE','FAILED_ROUTE','FAILED_NETWORK_NOT_BLOCKED','FAILED_PROBE_POLICY','FAILED_REPLAY',
         'FAILED_OUTPUT_COMPARE','FAILED_NEGATIVE','FAILED_CANCEL','FAILED_ATOMIC_TESTS','FAILED_FILE_OWNER')
     foreach ($stage in $stages) {
         $label = 'MI_REPLAY_NETNS_' + $stage
         if (@($lines | Where-Object { $_ -cmatch [regex]::Escape($label) }).Count -gt 0) { Write-Output $label }
     }
+    Get-MIIReplayNetnsProbeDiagnostics -Lines $lines
     Assert-MIIReplayNetnsResult -ExitCode $code -Lines $lines
     Write-Output 'MI_REPLAY_NETNS_OS_VALIDATED_DEVELOPMENT_ONLY'
 } finally {

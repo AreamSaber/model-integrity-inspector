@@ -1588,10 +1588,13 @@
         "tests/replay/diagnostics_test.go",
         "tests/replay/capturefixture/pipeline_test.go",
         "tests/replay/capturefixture/timing_test.go",
+        "tests/replay/capturefixture/export_test.go",
+        "tests/replay/capturefixture/export_guard_test.go",
         "tests/replay/cmd/replay/main_test.go",
+        "tests/replay/cmd/replay/netns_linux_test.go",
         "tests/replay/localfile/file_test.go"
       ],
-      "notes": "B1核心、实际Worker/TLS最终提交后的双库捕获和私有本地文件CLI已验证：原发布/replay逐字节一致，失败提交不得封存，真实PG预约锁等待复现并修正不同计时起点的错误校验。79afdec真实源仍只在内存，0266102 CLI使用独立合成源；两者文件导出接线、OS级禁网、隔离验收集、准确率与发布准入均未完成，不以开发签名替代正式QA回执。",
+      "notes": "B1核心和实际Worker/TLS最终提交后的双库捕获→私有文件→真实独立CLI已验证：预测及原发布逐字节一致，未提交/回滚/取消/decoded canary失败不导出；独立ManifestSigner，不导出应用master或捕获私钥。每文件原子，不冒称四文件事务；更换key与已有输出精确拒绝。Linux synthetic netns强制CI已有机制，但da6db58实际检查失败，数字socket/闭集诊断修订仍待Ubuntu重跑；实际源禁网组合、隔离验收集、准确率与发布准入尚未完成，开发签名不是QA回执。",
       "goal_included": true
     },
     {

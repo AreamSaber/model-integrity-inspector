@@ -33,6 +33,7 @@ import (
 	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 	"model-integrity-inspector.local/mii/internal/integrity/worker"
 	"model-integrity-inspector.local/mii/tests/replay"
+	"model-integrity-inspector.local/mii/tests/replay/localfile"
 )
 
 type loopbackResolver struct{}
@@ -79,6 +80,9 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 		t.Fatal(err)
 	}
 	ring, err := secret.NewKeyRing("dev-capture", map[string][]byte{"dev-capture": master})
+	// Retain only this test's known canaries for finite export leakage checks.
+	// The application master itself is never an exportable ManifestSigner.
+	forbidden := secretCanaries(master)
 	clear(master)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +156,13 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiler, err := generator.New(artifact, artifactHash, tokens, ring)
+	manifestSigner, err := localfile.NewManifestSigner()
+	if err != nil {
+		t.Fatal("independent development manifest signer unavailable")
+	}
+	// Cleanup runs after stopWorker, which is registered below (LIFO).
+	t.Cleanup(manifestSigner.Destroy)
+	compiler, err := generator.New(artifact, artifactHash, tokens, manifestSigner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +191,11 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 		t.Fatal(err)
 	}
 	defer clear(captureKey)
+	forbidden = append(forbidden, secretCanaries(captureKey)...)
+	forbidden = append(forbidden, secretCanaries(captureKey.Seed())...)
+	forbidden = append(forbidden, credential, password)
+	exporter := settledExporter{store: store, tenant: tenant, signer: manifestSigner, key: captureKey, forbidden: forbidden}
+	exportDir := capturePrivateDir(t)
 	caseID := randomHex(t, 16)
 	pending := make(chan replay.CaptureDraft, 1)
 	release := make(chan struct{})
@@ -258,6 +273,23 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 			}
 		})
 	}
+	joinFailedCompletion := func() {
+		stopOnce.Do(func() {
+			// An intentionally failed completion must exit with its sanitized
+			// storage error while the parent is STILL LIVE. Canceling immediately
+			// after rollbackReached races Runner's return-time cancellation
+			// normalization, incorrectly demanding graceful nil from a failure.
+			defer cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, repository.ErrUnavailable) {
+					t.Error("injected completion failure did not stop Worker with its closed storage error")
+				}
+			case <-time.After(7 * time.Second):
+				t.Error("failed completion Worker exit deadline")
+			}
+		})
+	}
 	t.Cleanup(stopWorker)
 	poll(t, func() bool { return runner.Ready() })
 	pc, err := targets.EnqueuePrecheck(ctx, orgID, targetRecord.ID, targetRecord.Version, "development-precheck")
@@ -295,6 +327,9 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 	if err != nil {
 		t.Fatal(err)
 	}
+	if manifest.KeyVersion != localfile.ManifestKeyVersion || manifest.KeyVersion == ring.ActiveVersion() {
+		t.Fatal("actual Run did not freeze the independent development Manifest signer")
+	}
 	recorder.prepare(t, manifest, plan, tokens)
 	run, err := service.Confirm(ctx, orgID, quote.ID, quote.ManifestHash)
 	if err != nil {
@@ -315,6 +350,10 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 	if encoded, _, err := sealSettled(ctx, tenant, draft, captureKey); err == nil || len(encoded) != 0 {
 		t.Fatal("uncommitted analysis yielded a sealed capture")
 	}
+	if _, _, err := exporter.write(ctx, exportDir, draft); err == nil {
+		t.Fatal("uncommitted analysis exported files")
+	}
+	assertNoExport(t, exportDir)
 	if _, err := tenant.GetPublishedAnalysis(run.ID, 1); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatal("analysis published outside actual completion")
 	}
@@ -325,13 +364,17 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 		case <-time.After(10 * time.Second):
 			t.Fatal("actual publication rollback path not reached")
 		}
-		stopWorker()
+		joinFailedCompletion()
 		if _, err := tenant.GetPublishedAnalysis(run.ID, 1); !errors.Is(err, repository.ErrNotFound) {
 			t.Fatal("rolled-back analysis remained published")
 		}
 		if encoded, _, err := sealSettled(ctx, tenant, draft, captureKey); err == nil || len(encoded) != 0 {
 			t.Fatal("failed completion produced sealed capture bytes")
 		}
+		if _, _, err := exporter.write(ctx, exportDir, draft); err == nil {
+			t.Fatal("rolled-back publication exported files")
+		}
+		assertNoExport(t, exportDir)
 		if err := store.VerifyAllAudit(t.Context(), true); err != nil {
 			t.Fatal("rollback broke actual audit chain")
 		}
@@ -347,7 +390,11 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 		}
 		return value.FinishedAt != nil
 	})
-	encoded, original, err := sealSettled(ctx, tenant, draft, captureKey)
+	// Stop the controller before exporting. Publication/settlement remain in the
+	// database, but no Worker can race signer destruction or make another call.
+	stopWorker()
+	assertRejectedExports(t, ctx, exportDir, exporter, draft)
+	encoded, original, err := exporter.write(ctx, exportDir, draft)
 	if err != nil {
 		t.Fatal("seal committed capture:", err)
 	}
@@ -395,6 +442,10 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 	if err != nil {
 		t.Fatal(err)
 	}
+	publication, err := tenant.GetPublishedAnalysis(run.ID, 1)
+	if err != nil || !bytes.Equal([]byte(publication.ConclusionJSON), originalBytes) {
+		t.Fatal("comparison source differs from exact immutable publication bytes")
+	}
 	replayedBytes, err := json.Marshal(prediction.Analysis)
 	if err != nil {
 		t.Fatal(err)
@@ -407,6 +458,7 @@ func captureActual(t *testing.T, driver string, omitDone, failCommit, delayReser
 	if !bytes.Equal(x, y) {
 		t.Fatal("actual capture replay not deterministic")
 	}
+	assertActualCLIExport(t, exportDir, x, originalBytes)
 	for _, sample := range manifest.Samples {
 		if bytes.Contains(x, []byte(sample.Variables.Nonce)) {
 			t.Fatal("captured nonce leaked into S1 prediction")

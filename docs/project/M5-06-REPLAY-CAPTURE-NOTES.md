@@ -203,3 +203,26 @@ B1 完成最多意味着：两个真实受控 TLS 开发捕获，实际最终 At
 包装脚本仅在这一步禁用 Go proxy/sumdb，并拒绝隐式 GOFLAGS/child-mode 覆盖。它检查实际 `go test -json` 的精确 test run + test pass + package pass、禁止 skip/fail、要求 8 个闭集 proof stage 各出现一次；零测试、名字或 tag 配错、仅输出“成功”字符串不被接受。脚本内策略回归会在每次实际运行前执行；`-PolicyOnly` 只允许本地验证 framing，输出明确 `NOT_OS_EVIDENCE`，workflow 契约禁止将它替换真实步骤。公开日志仅输出闭集 S1 阶段码，不上传 S2 capture 或开发 key。
 
 机制依据为上游 [network_namespaces(7)](https://man7.org/linux/man-pages/man7/network_namespaces.7.html)、[unshare(1)](https://man7.org/linux/man-pages/man1/unshare.1.html) 与 [setpriv(1)](https://man7.org/linux/man-pages/man1/setpriv.1.html)。实现交付时本机只有 Windows，Linux namespace **尚未实际执行**；交叉编译/lint/策略测试不等于 OS 验证完成，必须由本提交后实际 Ubuntu CI 结果补足。即使 CI 通过，本子单元也只证明合成开发回放在该隔离环境下工作，不是生产导出、真实官方渠道、独立校准、QA 准入或规则发布能力；真实 Worker export 另行接入。
+
+### B1-4 数字 socket 诊断 checkpoint（2026-09-07）
+
+`da6db58` 的 CI `34111776546` 已通过身份、拓扑与父回环负控制，随后报 `FAILED_NETWORK_NOT_BLOCKED`，没有到达 `IP_EGRESS_BLOCKED`；旧日志没有 family/stage/errno，不能据此确定唯一根因。核对固定 Go 1.26.7 源码：`net/lookup.go` 的数字 literal 直接解析为地址；`net/ipsock_posix.go` 对显式 `tcp6` 直接选择 AF_INET6。此处没有调用 IPv6 capability probe 的证据，不能把失败归因为本地 IPv6 探测或 `no suitable address`。
+
+测试改为直接构造固定数字 `SockaddrInet4/6`，以 `SOCK_NONBLOCK|SOCK_CLOEXEC` 调用 Linux socket/connect，不经过 DNS 或 Go 地址选择。连接立即失败时只接受 CONNECT 阶段的 ENETUNREACH/EHOSTUNREACH；只有 IPv4 父回环控制还接受 ECONNREFUSED，只有 IPv6 SOCKET 阶段接受 EAFNOSUPPORT。EINPROGRESS 本身不算断网，必须在原 500ms context 内经一次有界 poll 读取 SO_ERROR 并满足同一连接拒绝闭集。成功连接、SO_ERROR=0、超时/取消、EINTR、EACCES/EPERM、地址错误、poll/getsockopt/close 错误和未知 errno 全部失败，不重试或扩大允许错误。父回环 positive-before / negative-inside / positive-after、IPv4 与 IPv6 两项验证和 8 个 proof stage 保持不变。
+
+新增失败诊断仅输出固定 `DIAG_FAMILY_*` / `DIAG_STAGE_*` / `DIAG_ERRNO_*` 标签；未知值映射 UNKNOWN/OTHER，子进程原始错误、路径和地址不会转发到公开日志。PowerShell 包装器另以闭集过滤这些标签，诊断不计入成功 proof。父测试实际执行前还运行无 socket syscall 的纯 seam 回归：数字地址范围、拒绝错误分类、nonblocking/CLOEXEC 参数、直接/异步成功拒绝、poll/getsockopt/close 失败、取消、关闭次数与不泄漏原错误；这些是策略回归，不是 OS 禁网证据。
+
+本机 Windows 验证：Linux amd64 tagged test 交叉编译通过；同 tag 的 golangci-lint 为 0 issues；包装器 `-PolicyOnly` 与 PowerShell AST 解析通过；普通 Windows CLI 包测试通过。没有在本机执行 Linux tagged 回归或 namespace。此 checkpoint 仍须下一次真实 Ubuntu CI 确认，不能据交叉编译或纯策略通过宣布 B1-4 已完成或旧失败根因已修复。
+
+## 14. B1-5 真实受控捕获的私有文件导出与独立 CLI
+
+本单元只改 `tests/replay/capturefixture/**` 的 `_test.go` 控制端与相关说明，不增加生产入口、公开测试来源 capability、Worker/repository/HTTP 旁路或新的 CLI 参数。
+
+1. compiler 改接本次 `localfile.NewManifestSigner()` 新生成的独立 ProbeMAC 开发 key；实际冻结 Manifest 验证其版本为 `dev-replay-manifest-v1`，而不是 AES/Audit KeyRing 版本。应用 master 与捕获 Ed25519 私钥均不写文件。独立 Manifest key 只可通过现有明确开发用途 serializer 写到专用私有 trust 文件。
+2. 私有 `settledExporter.write` 自己调用 `sealSettled`，读取真实已提交 Run、最终 Attempt、revision 1 publication、零 outstanding reservation，再验证实际审计链。不是先导出后检查，也不接 caller 的 `settled=true` 或任意算法结果 JSON。
+3. 写入前扫描 decoded Manifest/wire/body/header 和将要导出的 trust/rule 文档。已知 canary 包含本次应用 master、上游口令、登录口令、捕获签名私钥及常见 raw/hex/base64 表示；Manifest key 必须只存在于专用文件、不得进入 capture、公钥文档或规则。扫描具有有限已知模式，不声称任意编码/未知密钥 DLP。
+4. `WriteNew` 在本次私有目录依次提交公钥、Manifest key、固定规则、最后 capture；各文件采用原生句柄验证与原子 no-replace，并非四文件集合的原子事务。校验、取消、未提交或回滚失败时目录无文件；若已通过校验且后续某次文件提交失败，可能保留前面完整的私有输入，不能称自动事务回滚。只由本次 `TempDir` 生命周期清理，无宽泛删除或输入上传。
+5. 停止真实 Worker、关闭实际 TLS server 后启动新构建的 CLI，以四文件作为输入；编译禁用 Go proxy/sumdb，CLI 子进程使用最小环境，不继承 DSN、GitHub 或应用配置。完整 prediction 与内存回放逐字一致，Analysis 与数据库 immutable publication 逐字一致。两种真实 TLS 开发场景均覆盖 SQLite/PostgreSQL；PG reservation-delay 原计时回归保留。更换独立 Manifest key 必须失败且不生成输出，重复 CLI 不覆盖已存在结果。
+6. 未完成 publication、实际 publication/audit 事务回滚、取消、decoded body canary 的回归均调用同一导出入口并断言无文件。强制 completion 失败的测试保持 parent context 存活，确定等待 Runner 返回闭集 `ErrUnavailable` 后才清理；不能竞速 cancel 并要求被有意终止的 Worker 一律 graceful nil，正常场景仍要求 nil。nonce/S2 不进入 prediction，local tokenizer 仍真实重新计数，partial SSE 特征继续与实际 parser 一致；不为某类场景调整风险阈值。
+
+真实源 CLI 与 §13 的 synthetic namespace 演练是两项不同证据：本单元关闭 TLS 不等于在 OS 禁网 namespace 跑真实源。文件目前只存在于私有临时测试目录；不提供生产导出、不上传输入、不反推标签、不生成校准/QA metric receipt，也不把 development C/D 升级为正式 A/B 或宣称 M5-06 已完成。
