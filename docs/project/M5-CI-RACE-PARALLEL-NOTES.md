@@ -62,3 +62,11 @@ CI 的 quality 使用 `Core`；新增 `worker-race` 六片 matrix 和 `identity-
 ## 5. 待验边界
 
 新并行 workflow 尚未在远端运行，不能由离线策略通过推导原生 race 成功或任务一定在时限内完成。推送后必须检查 Core、全部六个 Worker 分片、全部原 repository 分片、显式 PostgreSQL identity/API 及最终聚合门禁的真实终态和耗时；任何失败仍需保留日志独立定位。历史 Windows 打包辅助连接问题由独立单元记录，本单元不证明其原 CI 根因。
+
+## 6. 首次真实并行CI与跨契约修正
+
+该单元已提交推送 `2ca76f3`。真实CI34189727828已终态failure：六个repository race分片、六个Worker race分片、显式PostgreSQL identity/API及dependency-scan全部成功；quality、image、Windows/Linux package失败，required正确失败。不能把局部race成功改写为全CI通过。
+
+独立读取上述四个失败job的实际日志，均定位到 `TestReplayNamespaceWorkflowIsMandatory`（原replay_netns_test.go:52）。遗留Go契约仍要求旧的 `-Group Other` 和五项 `needs`，而新的workflow已是 `Core` 与七项依赖。quality在build.ps1:21、两种package在package.ps1:46、image在Docker构建阶段的 `go test ./...` 因同契约失败停止；没有证据表明当次实际网络隔离测试执行失败，后续未执行步骤不得算成功。此前只复跑了PowerShell策略而遗漏这条交叉Go契约，是本次收口遗漏。
+
+root在当前源码复现专项红测0.094s；修正精确Core/七项依赖，并把required结果绑定和只接受success的循环限定在真实required job内。新增遗漏Worker/identity依赖、硬编码成功、忽略各自结果及忽略失败的反例；所有mutation还必须真实改变当前workflow，防止旧替换目标无效却冒充负例。原netns步骤、5分钟时限、Linux宿主、不可跳过/PolicyOnly与Docker源码边界保持不变。修正后完整contracts三轮PASS0.547s，contracts/secret/app组合lint0。修正后的新远端CI仍待独立验证。
