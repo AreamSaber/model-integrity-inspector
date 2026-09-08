@@ -146,6 +146,10 @@ func (e *Engine) AnalyzeBatch(samples []Sample) (Batch, error) {
 	if err != nil {
 		return Batch{}, err
 	}
+	return analyzeItems(items), nil
+}
+
+func analyzeItems(items []batchItem) Batch {
 	out := Batch{Version: Version, RuleStatus: "development_uncalibrated", Samples: make([]Features, 0, len(items)), Auxiliary: []Features{}, Patterns: []Pattern{}}
 	type patternKey struct {
 		kind EvidenceKind
@@ -222,5 +226,5 @@ func (e *Engine) AnalyzeBatch(samples []Sample) (Batch, error) {
 		})
 		out.Patterns = append(out.Patterns, pattern)
 	}
-	return out, nil
+	return out
 }

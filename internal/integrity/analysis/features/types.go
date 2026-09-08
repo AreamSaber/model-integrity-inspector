@@ -188,6 +188,8 @@ type Batch struct {
 	features                    Result
 	tokens                      tokenrisk.Input
 	behavior                    []behavior.Sample
+	derivedBehavior             []*behavior.Derived
+	useDerivedBehavior          bool
 	engine                      *behavior.Engine
 	templateHash, tokenizerHash string
 }
@@ -257,11 +259,17 @@ func (i OpaqueBehaviorInput) AnalyzeBatch() (behavior.Batch, error) {
 	if i.batch == nil || i.active == nil || !i.active.Load() {
 		return behavior.Batch{}, ErrConfiguration
 	}
+	if i.batch.useDerivedBehavior {
+		return i.batch.engine.AnalyzeDerivedBatch(i.batch.behavior, i.batch.derivedBehavior)
+	}
 	return i.batch.engine.AnalyzeBatch(i.batch.behavior)
 }
 func (i OpaqueBehaviorInput) PairedDifference(metric behavior.Metric) (behavior.Difference, error) {
 	if i.batch == nil || i.active == nil || !i.active.Load() {
 		return behavior.Difference{}, ErrConfiguration
+	}
+	if i.batch.useDerivedBehavior {
+		return i.batch.engine.PairedDerivedDifference(i.batch.behavior, i.batch.derivedBehavior, metric)
 	}
 	return i.batch.engine.PairedDifference(i.batch.behavior, metric)
 }

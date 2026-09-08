@@ -72,6 +72,10 @@ func (e *Engine) PairedDifference(samples []Sample, metric Metric) (Difference, 
 	if err != nil {
 		return Difference{}, err
 	}
+	return pairedItems(items, metric), nil
+}
+
+func pairedItems(items []batchItem, metric Metric) Difference {
 	out := Difference{Version: Version, RuleStatus: "development_uncalibrated", Metric: metric, State: PairInsufficient, Test: "exact_paired_binomial_discordance", Multiplicity: "uncorrected_exploratory_no_fdr_claim", Exclusions: []PairExclusion{}, Pairs: []PairEvidence{}, Alternatives: []string{"paired_conditions_require_immutable_plan_binding", "pairs_must_be_independent_experimental_units", "public_development_templates_not_independent_content_safety_approval", "no_causal_or_injection_conclusion"}}
 	groups := map[string][]batchItem{}
 	for _, item := range items {
@@ -164,7 +168,7 @@ func (e *Engine) PairedDifference(samples []Sample, metric Metric) (Difference, 
 	if out.CompletePairs < MinimumDescriptivePairs {
 		out.Alternatives = append(out.Alternatives, "small_sample_low_power")
 	}
-	return out, nil
+	return out
 }
 
 func comparable(a, b batchItem) bool {

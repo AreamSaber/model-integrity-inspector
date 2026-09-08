@@ -336,6 +336,7 @@ func TestDisplayPurposeGoldenPreservesEveryPreviousKeyAndMAC(t *testing.T) {
 		{"response-evidence", keys.evidence, "d5bda113511799d8880e8f0b5f81710c68c0bff501b9ae8c94bd90436c3b5cff", "218add7680194cfa857df6e6382c0142d607c9f2796ee817f48d4f160b8453bf"},
 		{"baseline-approval", keys.baseline, "501ed9c664aece159f570567926eaa9d7d809b9330c9e8d99ff2c774f5e8edfa", "7e48ba87c1982460e1904a4beb5134fe2cecf17a6ff2e47750f16d8e97737012"},
 		{"evidence-display", keys.display, "b0019d0619f558aab57fdfb34a1bbea883eb314ae253d8cb530f4009520687bf", "414d5cea96a530e93e6050cb7a30d1f0fdf307473e2e18029c1e95f1e59b0dcb"},
+		{"derived-s1-authentication", keys.derivedSource, "0e4cd005fec43175bc8d846fcdaf7a9cb4f294d483dcb2542abe7d54eccf11e1", "d8cfce8dc0d5434be0ef8873178fac39021837d4868dbcd78c09f4b9c4171a19"},
 	} {
 		t.Run(item.name, func(t *testing.T) {
 			if hex.EncodeToString(item.actual) != item.keyHex {
@@ -348,6 +349,9 @@ func TestDisplayPurposeGoldenPreservesEveryPreviousKeyAndMAC(t *testing.T) {
 			}
 			if item.name != "evidence-display" && bytes.Equal(item.actual, keys.display) {
 				t.Fatal("display key reused another purpose")
+			}
+			if item.name != "derived-s1-authentication" && bytes.Equal(item.actual, keys.derivedSource) {
+				t.Fatal("derived source key reused another purpose")
 			}
 		})
 	}

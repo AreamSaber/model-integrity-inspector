@@ -143,19 +143,7 @@ func (b *Builder) Build(input Input) (*Batch, error) {
 		if behaviorSample != nil {
 			batch.behavior = append(batch.behavior, *behaviorSample)
 		}
-		if feature.Included {
-			batch.features.Included++
-		} else {
-			batch.features.Excluded++
-		}
-		if !feature.Included && !feature.AuxiliaryOnly {
-			batch.features.Partial = true
-		}
-		for _, limitation := range feature.Limitations {
-			if !slices.Contains(batch.features.Limitations, limitation) {
-				batch.features.Limitations = append(batch.features.Limitations, limitation)
-			}
-		}
+		batch.includeFeature(feature)
 	}
 	batch.tokens.Partial = batch.features.Partial
 	return batch, nil

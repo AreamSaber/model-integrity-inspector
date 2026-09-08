@@ -14,7 +14,14 @@ import (
 // tokenrisk's real compiler/secret tests reach repository; a reverse production
 // import creates a test-only cycle even when selected repository tests pass.
 func TestRepositoryDoesNotImportAnalysisRuntime(t *testing.T) {
-	root := "../../internal/integrity/repository"
+	for _, layer := range []string{"repository", "secret"} {
+		t.Run(layer, func(t *testing.T) { assertNoAnalysisRuntimeImports(t, layer) })
+	}
+}
+
+func assertNoAnalysisRuntimeImports(t *testing.T, layer string) {
+	t.Helper()
+	root := filepath.Join("../../internal/integrity", layer)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		t.Fatal(err)
@@ -38,12 +45,12 @@ func TestRepositoryDoesNotImportAnalysisRuntime(t *testing.T) {
 			const prefix = "model-integrity-inspector.local/mii/internal/integrity/"
 			for _, forbidden := range []string{"analysis", "analyzer", "bundle"} {
 				if path == prefix+forbidden || strings.HasPrefix(path, prefix+forbidden+"/") {
-					t.Errorf("persistence imported a higher-level analysis runtime: %s -> %s", name, path)
+					t.Errorf("%s imported a higher-level analysis runtime: %s -> %s", layer, name, path)
 				}
 			}
 		}
 	}
 	if checked == 0 {
-		t.Fatal("repository boundary check did not inspect production source")
+		t.Fatal("layer boundary check did not inspect production source")
 	}
 }
