@@ -166,7 +166,8 @@ func postgresSnapshotError(ctx context.Context, err error) error {
 	if ctx != nil && ctx.Err() != nil {
 		return errPostgresSnapshotCanceled
 	}
-	for _, known := range []error{errPostgresSnapshotClosed, errPostgresSnapshotCanceled} {
+	for _, known := range []error{errPostgresSnapshotClosed, errPostgresSnapshotCanceled,
+		errSnapshotAuditNotInitialized, errSnapshotAuditLimit, errSnapshotAuditSegments} {
 		if errors.Is(err, known) {
 			return known
 		}
