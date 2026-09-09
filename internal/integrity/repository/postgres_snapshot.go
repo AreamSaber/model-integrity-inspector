@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"model-integrity-inspector.local/mii/internal/integrity/pgbackup"
 )
 
 var (
@@ -163,11 +165,21 @@ func validPostgresSnapshotID(id string) bool {
 }
 
 func postgresSnapshotError(ctx context.Context, err error) error {
+	// Cleanup uncertainty is stronger than ordinary cancellation: callers must
+	// not mistake an unconfirmed server session for a successfully stopped dump.
+	// Preserve only these exact closed sentinels, never their private wrappers.
+	for _, known := range []error{errPostgresDumpIdentity, errPostgresDumpCleanup, errPostgresDumpUnseen} {
+		if errors.Is(err, known) {
+			return known
+		}
+	}
 	if ctx != nil && ctx.Err() != nil {
 		return errPostgresSnapshotCanceled
 	}
 	for _, known := range []error{errPostgresSnapshotClosed, errPostgresSnapshotCanceled,
-		errSnapshotAuditNotInitialized, errSnapshotAuditLimit, errSnapshotAuditSegments} {
+		errSnapshotAuditNotInitialized, errSnapshotAuditLimit, errSnapshotAuditSegments,
+		pgbackup.ErrConfiguration, pgbackup.ErrCanceled, pgbackup.ErrProcess,
+		pgbackup.ErrOutput, pgbackup.ErrLimit, pgbackup.ErrVersion} {
 		if errors.Is(err, known) {
 			return known
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 const netnsWorkflowStep = "      - name: Offline replay OS network isolation\n        timeout-minutes: 5\n        shell: pwsh\n        run: ./scripts/test-replay-netns.ps1\n"
-const netnsRequiredJobs = "needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]"
+const netnsRequiredJobs = "needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]"
 
 func validNetnsWorkflow(workflow string) bool {
 	workflow = strings.ReplaceAll(workflow, "\r\n", "\n")
@@ -49,7 +49,8 @@ func validNetnsWorkflow(workflow string) bool {
 		"          QUALITY: ${{ needs.quality.result }}\n", "          REPOSITORY_RACE: ${{ needs.repository-race.result }}\n",
 		"          WORKER_RACE: ${{ needs.worker-race.result }}\n", "          IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}\n",
 		"          DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}\n", "          PACKAGE: ${{ needs.package.result }}\n", "          IMAGE: ${{ needs.image.result }}\n",
-		"          for result in \"$QUALITY\" \"$REPOSITORY_RACE\" \"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\" \"$DEPENDENCY_SCAN\" \"$PACKAGE\" \"$IMAGE\"; do\n            test \"$result\" = \"success\" || exit 1\n          done\n",
+		"          PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}\n",
+		"          for result in \"$QUALITY\" \"$REPOSITORY_RACE\" \"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\" \"$DEPENDENCY_SCAN\" \"$PACKAGE\" \"$IMAGE\" \"$PG_BACKUP_NATIVE\"; do\n            test \"$result\" = \"success\" || exit 1\n          done\n",
 	} {
 		if strings.Count(gate[0][1], required) != 1 {
 			return false
@@ -68,22 +69,25 @@ func TestReplayNamespaceWorkflowIsMandatory(t *testing.T) {
 		t.Fatal("network namespace verification must be an unconditional quality step")
 	}
 	for name, changed := range map[string]string{
-		"removed":                  strings.Replace(workflow, netnsWorkflowStep, "", 1),
-		"skipped":                  strings.Replace(workflow, "        timeout-minutes: 5\n", "        if: false\n        timeout-minutes: 5\n", 1),
-		"ignored-failure":          strings.Replace(workflow, "        timeout-minutes: 5\n", "        continue-on-error: true\n        timeout-minutes: 5\n", 1),
-		"policy-only":              strings.Replace(workflow, "run: ./scripts/test-replay-netns.ps1\n", "run: ./scripts/test-replay-netns.ps1 -PolicyOnly\n", 1),
-		"wrong-job":                strings.Replace(workflow, "  quality:\n", "  disconnected-quality:\n", 1),
-		"non-linux":                strings.Replace(workflow, "    runs-on: ubuntu-24.04\n", "    runs-on: windows-2025\n", 1),
-		"gate-omits-quality":       strings.Replace(workflow, netnsRequiredJobs, "needs: [repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]", 1),
-		"gate-omits-worker":        strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image]", 1),
-		"gate-omits-identity":      strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, worker-race, dependency-scan, package, image]", 1),
-		"old-sequential-group":     strings.Replace(workflow, "run: ./scripts/test-race.ps1 -Group Core", "run: ./scripts/test-race.ps1 -Group Other", 1),
-		"worker-literal-success":   strings.Replace(workflow, "WORKER_RACE: ${{ needs.worker-race.result }}", "WORKER_RACE: success", 1),
-		"identity-literal-success": strings.Replace(workflow, "IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}", "IDENTITY_POSTGRES_RACE: success", 1),
-		"ignore-worker-result":     strings.Replace(workflow, "\"$REPOSITORY_RACE\" \"$WORKER_RACE\"", "\"$REPOSITORY_RACE\"", 1),
-		"ignore-identity-result":   strings.Replace(workflow, "\"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\"", "\"$WORKER_RACE\"", 1),
-		"ignore-gate-failure":      strings.Replace(workflow, "test \"$result\" = \"success\" || exit 1", "test \"$result\" = \"success\" || exit 0", 1),
-		"duplicate-quality":        strings.Replace(workflow, "  quality:\n", "  quality:\n  quality:\n", 1),
+		"removed":                   strings.Replace(workflow, netnsWorkflowStep, "", 1),
+		"skipped":                   strings.Replace(workflow, "        timeout-minutes: 5\n", "        if: false\n        timeout-minutes: 5\n", 1),
+		"ignored-failure":           strings.Replace(workflow, "        timeout-minutes: 5\n", "        continue-on-error: true\n        timeout-minutes: 5\n", 1),
+		"policy-only":               strings.Replace(workflow, "run: ./scripts/test-replay-netns.ps1\n", "run: ./scripts/test-replay-netns.ps1 -PolicyOnly\n", 1),
+		"wrong-job":                 strings.Replace(workflow, "  quality:\n", "  disconnected-quality:\n", 1),
+		"non-linux":                 strings.Replace(workflow, "    runs-on: ubuntu-24.04\n", "    runs-on: windows-2025\n", 1),
+		"gate-omits-quality":        strings.Replace(workflow, netnsRequiredJobs, "needs: [repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]", 1),
+		"gate-omits-worker":         strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]", 1),
+		"gate-omits-identity":       strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, worker-race, dependency-scan, package, image, pg-backup-native]", 1),
+		"gate-omits-pg-backup":      strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]", 1),
+		"old-sequential-group":      strings.Replace(workflow, "run: ./scripts/test-race.ps1 -Group Core", "run: ./scripts/test-race.ps1 -Group Other", 1),
+		"worker-literal-success":    strings.Replace(workflow, "WORKER_RACE: ${{ needs.worker-race.result }}", "WORKER_RACE: success", 1),
+		"identity-literal-success":  strings.Replace(workflow, "IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}", "IDENTITY_POSTGRES_RACE: success", 1),
+		"pg-backup-literal-success": strings.Replace(workflow, "PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}", "PG_BACKUP_NATIVE: success", 1),
+		"ignore-pg-backup-result":   strings.Replace(workflow, "\"$IMAGE\" \"$PG_BACKUP_NATIVE\"", "\"$IMAGE\"", 1),
+		"ignore-worker-result":      strings.Replace(workflow, "\"$REPOSITORY_RACE\" \"$WORKER_RACE\"", "\"$REPOSITORY_RACE\"", 1),
+		"ignore-identity-result":    strings.Replace(workflow, "\"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\"", "\"$WORKER_RACE\"", 1),
+		"ignore-gate-failure":       strings.Replace(workflow, "test \"$result\" = \"success\" || exit 1", "test \"$result\" = \"success\" || exit 0", 1),
+		"duplicate-quality":         strings.Replace(workflow, "  quality:\n", "  quality:\n  quality:\n", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if changed == workflow {

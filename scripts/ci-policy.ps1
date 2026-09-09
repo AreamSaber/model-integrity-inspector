@@ -163,7 +163,7 @@ function Assert-MIICIVersions {
     foreach ($pin in @(
         @{ Action = 'aquasecurity/trivy-action'; Input = 'version'; Version = 'v0.74.0'; Count = 2 },
         @{ Action = 'anchore/sbom-action'; Input = 'syft-version'; Version = 'v1.51.1'; Count = 2 },
-        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 6 },
+        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 7 },
         @{ Action = 'actions/setup-node'; Input = 'node-version'; Version = '${{ env.NODE_VERSION }}'; Count = 3 }
     )) {
         $matches = @($actions | Where-Object { $_.Action -ceq $pin.Action })
@@ -207,6 +207,7 @@ function Get-MIIExplicitWorkflowJob {
 
 function Assert-MIIRaceWorkflow {
     param([Parameter(Mandatory)][string]$Workflow)
+    Assert-MIIPGBackupWorkflow -Workflow $Workflow
     $quality = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'quality'
     $repository = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'repository-race'
     $worker = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'worker-race'
@@ -230,13 +231,87 @@ function Assert-MIIRaceWorkflow {
     }
     if ($required -cnotmatch '(?m)^    name: m0-04-required\s*$' -or
         $required -cnotmatch '(?m)^    if: always\(\)\s*$' -or
-        $required -cnotmatch '(?m)^    needs: \[quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
+        $required -cnotmatch '(?m)^    needs: \[quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
     foreach ($binding in @(
         'QUALITY: ${{ needs.quality.result }}', 'REPOSITORY_RACE: ${{ needs.repository-race.result }}',
         'WORKER_RACE: ${{ needs.worker-race.result }}', 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}',
-        'DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}', 'PACKAGE: ${{ needs.package.result }}', 'IMAGE: ${{ needs.image.result }}'
+        'DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}', 'PACKAGE: ${{ needs.package.result }}', 'IMAGE: ${{ needs.image.result }}',
+        'PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}'
     )) {
         if ([regex]::Matches($required, ('(?m)^          ' + [regex]::Escape($binding) + '\s*$')).Count -ne 1) { throw 'Every required job result must be bound exactly once.' }
     }
-    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$REPOSITORY_RACE" "\$WORKER_RACE" "\$IDENTITY_POSTGRES_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
+    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$REPOSITORY_RACE" "\$WORKER_RACE" "\$IDENTITY_POSTGRES_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE" "\$PG_BACKUP_NATIVE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
+}
+
+function Assert-MIIPGBackupWorkflow {
+    param([Parameter(Mandatory)][string]$Workflow)
+    $job = (Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'pg-backup-native') -replace '\r\n', "`n"
+    if ($job -match '(?m)^\s*(if|continue-on-error|ports|volumes):' -or
+        [regex]::Matches($job, '(?m)^    name: pg-backup-native$').Count -ne 1 -or
+        [regex]::Matches($job, '(?m)^    runs-on: ubuntu-24\.04$').Count -ne 1 -or
+        [regex]::Matches($job, '(?m)^    timeout-minutes: 25$').Count -ne 1) {
+        throw 'Required PG backup CI must remain unconditional, isolated, native Linux and bounded to 25 minutes.'
+    }
+    $image = 'postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af'
+    if ($job -cnotmatch ('(?m)^    container:\n      image: ' + [regex]::Escape($image) + '\n      options: --init$') -or
+        $job -cnotmatch ('(?m)^    services:\n      postgres:\n        image: ' + [regex]::Escape($image) + '$') -or
+        [regex]::Matches($job, '(?m)^      - name:').Count -ne 4 -or
+        [regex]::Matches($job, '(?m)^      - ').Count -ne 4) {
+        throw 'Required PG backup CI needs the pinned tool container with init, its own same-version service and exactly four explicit steps.'
+    }
+    foreach ($line in @(
+        '          POSTGRES_DB: mii_ci', '          POSTGRES_USER: mii_test_owner',
+        '          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}',
+        '          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"',
+        '          --health-interval 5s', '          --health-timeout 5s', '          --health-retries 10',
+        '        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0',
+        '          go-version: ${{ env.GO_VERSION }}', '          cache: false'
+    )) {
+        if ([regex]::Matches($job, ('(?m)^' + [regex]::Escape($line) + '$')).Count -ne 1) {
+            throw 'Required PG backup CI service/actions must retain exact pinned inputs.'
+        }
+    }
+    $install = @'
+    steps:
+      - name: Install container CI dependencies
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates curl git gzip tar
+      - name: Checkout
+'@
+    if (-not $job.Contains($install.Replace("`r`n", "`n"))) { throw 'Required PG backup CI dependencies must be installed only inside the container before checkout.' }
+    # Compare the actual executable step, not a version literal/comment in some
+    # other job. No skipped step, shell wrapper, extra command or GOFLAGS escape
+    # can retain a decoy command and satisfy this deliberately explicit policy.
+    $expected = @'
+      - name: Native PostgreSQL backup and TLS regression
+        env:
+          MII_TEST_PG_DUMP: /usr/lib/postgresql/18/bin/pg_dump
+          MII_TEST_PG_RESTORE: /usr/lib/postgresql/18/bin/pg_restore
+          PGPASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          PGCONNECT_TIMEOUT: 10
+        shell: bash
+        run: |
+          test "$(go env GOVERSION)" = "go1.26.7"
+          test "$(go env GOOS)" = "linux"
+          test -z "$(go env GOFLAGS)"
+          test -x "$MII_TEST_PG_DUMP" && test -x "$MII_TEST_PG_RESTORE"
+          case "$("$MII_TEST_PG_DUMP" --version)" in
+            'pg_dump (PostgreSQL) 18.6'|'pg_dump (PostgreSQL) 18.6 ('*) ;;
+            *) echo "PG_BACKUP_DUMP_VERSION_MISMATCH" >&2; exit 1 ;;
+          esac
+          case "$("$MII_TEST_PG_RESTORE" --version)" in
+            'pg_restore (PostgreSQL) 18.6'|'pg_restore (PostgreSQL) 18.6 ('*) ;;
+            *) echo "PG_BACKUP_RESTORE_VERSION_MISMATCH" >&2; exit 1 ;;
+          esac
+          export MII_TEST_PG_BACKUP_DSN="postgres://mii_test_owner:${PGPASSWORD}@postgres:5432/mii_ci?sslmode=disable"
+          test "$(/usr/lib/postgresql/18/bin/psql -X -w -h postgres -p 5432 -U mii_test_owner -d mii_ci -Atc "SELECT current_setting('server_version_num')='180006' AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolcreatedb)" 2>/dev/null)" = "t"
+          go test -p 1 -tags pgbackup_integration ./internal/integrity/pgbackup ./internal/integrity/repository -run '^(TestPostgresDump|TestPGBackupTLS|TestNativeProcess)' -count=1 -timeout=10m
+'@
+    $steps = [regex]::Matches($job, '(?ms)^      - name: Native PostgreSQL backup and TLS regression\n.*?(?=^      - name:|\z)')
+    if ($steps.Count -ne 1 -or $steps[0].Value.TrimEnd() -cne $expected.Replace("`r`n", "`n").TrimEnd()) {
+        throw 'Required PG backup CI must run its complete pinned native version/permission checks and tagged two-package regression exactly.'
+    }
 }

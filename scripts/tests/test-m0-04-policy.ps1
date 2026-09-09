@@ -17,9 +17,12 @@ function Test-MIIPolicyCase {
 $sources = Get-MIICIVersionSources -WorkspaceRoot $workspaceRoot
 Test-MIIPolicyCase 'actual repository tool sources' { Assert-MIICIVersions -Sources $sources }
 foreach ($case in @(
-    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, worker-race, identity-postgres-race, dependency-scan, package, image]' },
-    @{ Name = 'missing required Worker matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image]' },
-    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]'; New = 'needs: [quality, repository-race, worker-race, dependency-scan, package, image]' },
+    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]'; New = 'needs: [quality, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]' },
+    @{ Name = 'missing required Worker matrix dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]'; New = 'needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]' },
+    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]'; New = 'needs: [quality, repository-race, worker-race, dependency-scan, package, image, pg-backup-native]' },
+    @{ Name = 'missing required native PG backup dependency'; Old = ', image, pg-backup-native]'; New = ', image]' },
+    @{ Name = 'native PG backup result replaced by literal success'; Old = 'PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}'; New = 'PG_BACKUP_NATIVE: success' },
+    @{ Name = 'required gate ignores native PG backup result'; Old = '"$IMAGE" "$PG_BACKUP_NATIVE"; do'; New = '"$IMAGE"; do' },
     @{ Name = 'one missing race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
     @{ Name = 'duplicate race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
     @{ Name = 'race matrix cancels siblings on failure'; Old = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: false"; New = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: true" },
@@ -46,6 +49,52 @@ foreach ($case in @(
     $changedWorkflow = $workflow.Remove($offset, $old.Length).Insert($offset, ($case.New -replace '\r\n', "`n"))
     Test-MIIPolicyCase $case.Name -MustFail -ErrorPattern 'race|Race|Required|required|six|six|success|CI' {
         Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+    }
+}
+
+# Scope each native-tool mutation to this exact job. An unchanged pinned
+# PostgreSQL service/version elsewhere in the workflow cannot satisfy it.
+foreach ($mutation in @(
+    @{ Name = 'native backup job missing'; Old = '    name: pg-backup-native'; New = '    name: disconnected-pg-backup' },
+    @{ Name = 'native backup job skipped'; Old = '    runs-on: ubuntu-24.04'; New = "    runs-on: ubuntu-24.04`n    if: false" },
+    @{ Name = 'native backup job wrong OS'; Old = '    runs-on: ubuntu-24.04'; New = '    runs-on: windows-2025' },
+    @{ Name = 'native backup timeout raised'; Old = '    timeout-minutes: 25'; New = '    timeout-minutes: 30' },
+    @{ Name = 'tool image not pinned'; Old = 'postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af'; New = 'postgres:18.6-bookworm' },
+    @{ Name = 'container init omitted'; Old = '      options: --init'; New = '      options: --cpus 1' },
+    @{ Name = 'service omitted'; Old = '    services:'; New = '    services-disabled:' },
+    @{ Name = 'service exposes host port'; Old = '        options: >-'; New = "        ports: [5432:5432]`n        options: >-" },
+    @{ Name = 'service health command changed'; Old = '--health-cmd "pg_isready -U mii_test_owner -d mii_ci"'; New = '--health-cmd "true"' },
+    @{ Name = 'container dependency setup omitted'; Old = '          apt-get update'; New = '          echo omitted' },
+    @{ Name = 'unpinned checkout action'; Old = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'; New = 'actions/checkout@main' },
+    @{ Name = 'unpinned setup-go action'; Old = 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'; New = 'actions/setup-go@main' },
+    @{ Name = 'native test skipped'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - name: Native PostgreSQL backup and TLS regression`n        if: false" },
+    @{ Name = 'native test failure ignored'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - name: Native PostgreSQL backup and TLS regression`n        continue-on-error: true" },
+    @{ Name = 'extra unnamed step'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - run: echo extra`n      - name: Native PostgreSQL backup and TLS regression" },
+    @{ Name = 'dump path is relative'; Old = 'MII_TEST_PG_DUMP: /usr/lib/postgresql/18/bin/pg_dump'; New = 'MII_TEST_PG_DUMP: pg_dump' },
+    @{ Name = 'restore path is relative'; Old = 'MII_TEST_PG_RESTORE: /usr/lib/postgresql/18/bin/pg_restore'; New = 'MII_TEST_PG_RESTORE: pg_restore' },
+    @{ Name = 'native tool version changed'; Old = 'pg_dump (PostgreSQL) 18.6'; New = 'pg_dump (PostgreSQL) 18.7' },
+    @{ Name = 'service version assertion bypassed'; Old = "current_setting('server_version_num')='180006'"; New = 'true' },
+    @{ Name = 'CREATEDB assertion bypassed'; Old = 'rolname=current_user AND rolcreatedb'; New = 'rolname=current_user' },
+    @{ Name = 'uses host loopback instead of service'; Old = '@postgres:5432/mii_ci?sslmode=disable'; New = '@127.0.0.1:5432/mii_ci?sslmode=disable' },
+    @{ Name = 'prints full DSN'; Old = '          go test -p 1 -tags pgbackup_integration'; New = "          echo `"`$MII_TEST_POSTGRES_DSN`"`n          go test -p 1 -tags pgbackup_integration" },
+    @{ Name = 'implicit GOFLAGS allowed'; Old = '          test -z "$(go env GOFLAGS)"'; New = '          echo flags unchecked' },
+    @{ Name = 'integration build tag omitted'; Old = '-tags pgbackup_integration'; New = '-tags unrelated' },
+    @{ Name = 'repository integration omitted'; Old = './internal/integrity/pgbackup ./internal/integrity/repository'; New = './internal/integrity/pgbackup' },
+    @{ Name = 'TLS integration omitted'; Old = './internal/integrity/pgbackup ./internal/integrity/repository'; New = './internal/integrity/repository' },
+    @{ Name = 'TLS test family filtered out'; Old = 'TestPostgresDump|TestPGBackupTLS|TestNativeProcess'; New = 'TestPostgresDump|TestNativeProcess' },
+    @{ Name = 'native process family filtered out'; Old = 'TestPostgresDump|TestPGBackupTLS|TestNativeProcess'; New = 'TestPostgresDump|TestPGBackupTLS' },
+    @{ Name = 'native package parallelism changed'; Old = 'go test -p 1'; New = 'go test -p 2' },
+    @{ Name = 'cached test result allowed'; Old = '-count=1 -timeout=10m'; New = '-timeout=10m' },
+    @{ Name = 'native test timeout raised'; Old = '-count=1 -timeout=10m'; New = '-count=1 -timeout=20m' },
+    @{ Name = 'native failure swallowed'; Old = '-count=1 -timeout=10m'; New = '-count=1 -timeout=10m || true' }
+)) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name 'pg-backup-native'
+    $offset = $body.IndexOf($mutation.Old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Native PG CI mutation target missing: $($mutation.Name)" }
+    $changedBody = $body.Remove($offset, $mutation.Old.Length).Insert($offset, $mutation.New)
+    Test-MIIPolicyCase $mutation.Name -MustFail -ErrorPattern 'Required PG backup CI' {
+        Assert-MIIPGBackupWorkflow -Workflow $workflow.Replace($body, $changedBody)
     }
 }
 
