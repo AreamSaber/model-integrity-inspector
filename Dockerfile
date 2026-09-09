@@ -23,6 +23,7 @@ COPY docs/ ./docs/
 COPY *.md ./
 COPY Dockerfile ./
 COPY scripts/package.ps1 ./scripts/package.ps1
+COPY scripts/read-contract-schemas.go ./scripts/read-contract-schemas.go
 COPY scripts/test-replay-netns.ps1 ./scripts/test-replay-netns.ps1
 COPY .github/workflows/ci.yml ./.github/workflows/ci.yml
 COPY .dockerignore ./.dockerignore
