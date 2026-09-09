@@ -166,6 +166,8 @@
         "internal/integrity/repository/system_maintenance_records.go",
         "internal/integrity/repository/audit.go",
         "internal/integrity/repository/audit_bounds.go",
+        "internal/integrity/repository/audit_snapshot.go",
+        "internal/integrity/repository/postgres_snapshot.go",
         "internal/integrity/repository/sqlite_snapshot.go",
         "internal/integrity/secret/backup.go",
         "internal/integrity/secret/keyring_files.go",
@@ -188,6 +190,9 @@
         "internal/integrity/repository/system_maintenance_lock_test.go",
         "internal/integrity/repository/system_maintenance_binding_test.go",
         "internal/integrity/repository/audit_bounds_test.go",
+        "internal/integrity/repository/audit_snapshot_test.go",
+        "internal/integrity/repository/audit_snapshot_fixture_test.go",
+        "internal/integrity/repository/postgres_snapshot_test.go",
         "internal/integrity/repository/sqlite_snapshot_test.go",
         "internal/integrity/repository/sqlite_snapshot_finalize_test.go",
         "internal/integrity/repository/sqlite_snapshot_windows_test.go",
@@ -201,7 +206,7 @@
         "internal/integrity/backupmanifest/integration_test.go",
         "internal/integrity/backupmanifest/stream_test.go"
       ],
-      "notes": "生产私有文件、分块认证归档、历史key、canonical manifest/VerifyStream已实现专项验证。SQLite专用工作区具备完整祖先权限/主文件身份、sidecar预算、封口及受限清理；Windows实际SQLite/native和完整privatefile三轮3.359s通过，Linux仅lint/crossbuild。migration21持久维护门禁、sysadmin会话/审计来源/租约fence、并发入场、SQLite有界取消与初始化隔离已实现；限定repository全包413.096s加单独自然lease双库120.865s、修正故障注入后的完整Worker双库155.026s和实际app正常/隔离重启三轮10.050s通过。各提交CI见台账，不用旧CI追认新代码。真实双库快照、完整inventory/报告/规则文件、配置模板、系统内备份、隔离恢复/全链校验、CLI/UI及演练未完成。纯组件和合成隔离中间态不等于SYS-008验收或正式批准。",
+      "notes": "生产私有文件、分块认证归档、历史key、canonical manifest/VerifyStream、SQLite专有工作区/online backup及migration21维护门禁已实现专项验证；3ffad26的CI34204020837已全部success。新增同一只读事务整链审计与PostgreSQL RR/RO导出快照生命周期已真实双库组合三轮53.693s通过，含第二页篡改、另连接追加不漂移、实际独立导入、拒写后提交失败、运行中取消及能力失效；不以旧CI追认新增代码。PG实际pg_dump、同快照完整inventory/报告/规则文件、配置模板、系统内备份、隔离恢复/全链校验、CLI/UI及演练仍未完成。具体提交、扩大回归和剩余范围见持续台账与M6专属记录；内部组件、SQL共享快照及合成隔离中间态不等于SYS-008验收或正式批准。",
       "goal_included": true
     },
     {

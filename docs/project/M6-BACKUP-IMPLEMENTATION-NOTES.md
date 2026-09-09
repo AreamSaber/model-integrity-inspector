@@ -1,6 +1,6 @@
 # M6-05 / SYS-008 备份恢复实施边界与切片
 
-更新：2026-09-08。当前状态：生产私有文件、认证归档、历史主密钥加载和流式 manifest、专用 SQLite staging、持久化维护门禁已提交。真实SQLite online backup内部helper已实现，包含源真实只读、有限Step、唯一Commit/checked Close和目的RW校验CHECK后独立RO复验；专项三轮5.012s、完整repository双库单轮548.761s（无排除）、完整Worker双库176.908s及API/app通过，具体见专属snapshot/audit记录。Git/CI身份以台账为准，不能把旧fb223e8全绿追认为新代码通过；新CI34202061195的Windows夹具权限与前端标题断言失败仍需修正。PostgreSQL快照、同一快照完整inventory、系统内备份/完整恢复及演练尚未完成，正式审核待统一进行。第2、8、9节保留历史调查/组件快照，不能用当时“未实现”覆盖新进展，也不能用组件通过代替整体验收。本记录不改变原始需求、验收条件或已有批准记录。
+更新：2026-09-09。当前状态：生产私有文件、认证归档、历史主密钥加载和流式 manifest、专用 SQLite staging、持久化维护门禁及真实SQLite online backup已提交；上一CI的Windows夹具与前端标题测试问题已修复，3ffad26 / CI34204020837现已全部success。新增同一只读事务整链审计及PostgreSQL RR/RO导出快照内部单元已实现，真实双库组合三轮53.693s、仓储vet/lint0通过，具体见M6-AUDIT-SNAPSHOT-NOTES.md、M6-POSTGRES-SNAPSHOT-NOTES.md。Git/新CI以台账和实际外部状态为准，不用前一CI追认新增代码。PG实际pg_dump、同快照完整inventory、文件归档、系统内备份/完整恢复及演练尚未完成，正式审核待统一进行。第2、8、9节保留历史调查/组件快照，不能用当时“未实现”覆盖新进展，也不能用组件通过代替整体验收。本记录不改变原始需求、验收条件或已有批准记录。
 
 ## 1. 原始范围与不可缩减条件
 
