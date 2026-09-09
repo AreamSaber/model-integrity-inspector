@@ -42,7 +42,7 @@ function RunHistoryScope(context: ReadContext & { resultsOnly?: boolean }) {
   function reset() { setLoading(true); setResult(null); setError(null) }
   return <section className="panel" aria-labelledby="history-title">
     <div className="section-heading"><h2 id="history-title">{context.resultsOnly ? '历史检测与已有结果' : '检测任务历史'}</h2><div className="form-actions"><a href="#/compare">输入两个任务进行对比 →</a><a href="#/trends">按目标读取趋势 →</a><a href="#/targets">从目标创建检测 →</a></div></div>
-    {context.resultsOnly && <p className="notice warning">此处读取已有分析修订；结果页已支持显式生成和下载脱敏 S1 JSON/HTML 报告。正式审核尚未完成，报告不代表软件获批。</p>}
+    {context.resultsOnly && <p className="notice warning">此处读取已有分析修订；有完整导出权限时，结果页已支持显式生成和下载脱敏 S1 JSON/HTML/CSV 报告。PDF 导出与报告内人工复核快照尚未实现。正式审核尚未完成，报告不代表软件获批。</p>}
     <p className="muted">服务端组织范围分页，按创建时间由近到远。搜索、模型和渠道筛选使用当前目标档案，不能当作历史快照；已删除目标的任务仍保留目标 ID。</p>
     <form className="history-filters" aria-label="筛选检测历史" onSubmit={search}>
       <label>搜索目标或模型<input name="q" type="search" maxLength={128} /></label>

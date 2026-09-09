@@ -33,8 +33,13 @@ type Reference struct {
 }
 
 func (s *Store) String() string { return "[confined report storage]" }
+
+func validArtifactFormat(format string) bool {
+	return format == "json" || format == "html" || format == "csv"
+}
+
 func (r Reference) Name() string {
-	if r.OrganizationID <= 0 || len(r.Hash) != 64 || !digestPattern.MatchString(r.Hash) || r.Format != "json" && r.Format != "html" || r.Size < 1 || r.Size > MaxBytes {
+	if r.OrganizationID <= 0 || len(r.Hash) != 64 || !digestPattern.MatchString(r.Hash) || !validArtifactFormat(r.Format) || r.Size < 1 || r.Size > MaxBytes {
 		return ""
 	}
 	return "org-" + strconv.FormatInt(r.OrganizationID, 10) + "-" + r.Hash + "." + r.Format
@@ -114,7 +119,7 @@ func hashBytes(data []byte) string { h := sha256.Sum256(data); return hex.Encode
 // Temp cleanup concerns only the exact random file this invocation created.
 // Crash or DB rollback can leave inaccessible orphans; no directory-wide delete.
 func (s *Store) Put(ctx context.Context, org int64, format string, data []byte) (Reference, error) {
-	if org <= 0 || format != "json" && format != "html" || len(data) < 1 || len(data) > MaxBytes {
+	if org <= 0 || !validArtifactFormat(format) || len(data) < 1 || len(data) > MaxBytes {
 		return Reference{}, ErrUnsafe
 	}
 	if err := s.ready(ctx); err != nil {

@@ -61,8 +61,13 @@ type reportReceipt struct {
 func (reportReceipt) TableName() string { return "integrity_report_receipts" }
 
 func reportDigest(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
+
+func validReportFormat(format string) bool {
+	return format == "json" || format == "html" || format == "csv"
+}
+
 func validReportInput(in ReportInput) bool {
-	if in.RunID <= 0 || in.AnalysisRevision != 1 || !slices.Contains([]string{"json", "html"}, in.Format) || len(in.IdempotencyKey) < 16 || len(in.IdempotencyKey) > 128 {
+	if in.RunID <= 0 || in.AnalysisRevision != 1 || !validReportFormat(in.Format) || len(in.IdempotencyKey) < 16 || len(in.IdempotencyKey) > 128 {
 		return false
 	}
 	for _, r := range in.IdempotencyKey {
@@ -92,7 +97,7 @@ func reportMetadataColumns(tx *gorm.DB) string {
 	return columns
 }
 func validReportRecord(r ReportRecord, org int64) bool {
-	if r.ID <= 0 || r.OrganizationID != org || r.RunID <= 0 || r.AnalysisRevision != 1 || r.Revision < 1 || r.Revision > 2147483647 || r.CreatedBy == nil || *r.CreatedBy <= 0 || r.JobID == nil || *r.JobID <= 0 || r.CreatedAt.IsZero() || r.SchemaVersion != reportSchema || !slices.Contains([]string{"json", "html"}, r.FormatName) || !slices.Contains([]string{"queued", "generating", "ready", "failed", "expired"}, r.Status) {
+	if r.ID <= 0 || r.OrganizationID != org || r.RunID <= 0 || r.AnalysisRevision != 1 || r.Revision < 1 || r.Revision > 2147483647 || r.CreatedBy == nil || *r.CreatedBy <= 0 || r.JobID == nil || *r.JobID <= 0 || r.CreatedAt.IsZero() || r.SchemaVersion != reportSchema || !validReportFormat(r.FormatName) || !slices.Contains([]string{"queued", "generating", "ready", "failed", "expired"}, r.Status) {
 		return false
 	}
 	if r.SourceHash != nil && !executionHash.MatchString(*r.SourceHash) || r.ErrorCode != nil && *r.ErrorCode != "MI_REPORT_GENERATION_FAILED" {
@@ -107,7 +112,7 @@ func validReportRecord(r ReportRecord, org int64) bool {
 // ReportObjectName accepts only closed database-derived identifiers. Storage
 // independently validates the entire generated name and never accepts paths.
 func ReportObjectName(org int64, fileHash, format string) string {
-	if org <= 0 || !executionHash.MatchString(fileHash) || !slices.Contains([]string{"json", "html"}, format) {
+	if org <= 0 || !executionHash.MatchString(fileHash) || !validReportFormat(format) {
 		return ""
 	}
 	return "org-" + strconv.FormatInt(org, 10) + "-" + fileHash + "." + format

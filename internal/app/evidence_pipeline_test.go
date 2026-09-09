@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -134,7 +135,7 @@ func exercisePipelineDisplay(t *testing.T, cfg Config, store *repository.Store, 
 	}
 	exercisePipelineDisplayService(t, cfg, store, db, p, repository.DisplaySelection{RunID: runNumber, SampleID: sampleNumber, AttemptID: attemptNumber, AnalysisRevision: 1})
 	holdPipelineBrowser(t, cfg, p, days)
-	retentionSnapshot := capturePipelineRetention(t, db, p, runID, days)
+	retentionSnapshot := capturePipelineRetention(t, db, p, runID, days, os.Getenv("MII_TEST_BROWSER_HOLD") == cfg.DatabaseDriver)
 	if days > 0 {
 		// Disable through the actual management API. Old ciphertext may still be
 		// physically present; it must not be returned or revived on extension.

@@ -82,7 +82,7 @@ function ResultsScope({ runID, ...context }: ReadContext & { runID: string }) {
       {tab === 'review' && <ReviewPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
       {tab === 'reports' && <ReportsPanel {...context} runID={runID} analysisRevision={data.result.analysis_revision} onDenied={denied} />}
     </>}
-    <p className="field-help">摘要默认不读取请求或响应正文。有 evidence.body、run.read、evidence.read 权限时，可在样本 Attempt 中显式展开受控脱敏副本；凭证始终不可回显。有完整导出权限时，可在报告页显式生成脱敏 S1 JSON/HTML 文件，正文不会混入报告。原文下载和请求复现尚未接入本页。</p>
+    <p className="field-help">摘要默认不读取请求或响应正文。有 evidence.body、run.read、evidence.read 权限时，可在样本 Attempt 中显式展开受控脱敏副本；凭证始终不可回显。有完整导出权限时，可在报告页显式生成脱敏 S1 JSON/HTML/CSV 文件，正文不会混入报告。PDF 导出与报告内人工复核快照尚未实现。原文下载和请求复现尚未接入本页。</p>
   </section>
 }
 function PageButtons({ label, cursors, next, onChange }: { label: string; cursors: string[]; next: string | null; onChange: (value: string[]) => void }) {

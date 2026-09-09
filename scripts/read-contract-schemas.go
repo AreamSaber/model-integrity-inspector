@@ -233,7 +233,7 @@ func main() {
 	}
 	props = properties("Report")
 	props["status"] = schema{"type": "string", "enum": []string{"queued", "generating", "ready", "failed", "expired"}}
-	props["format"] = schema{"type": "string", "enum": []string{"json", "html"}}
+	props["format"] = schema{"type": "string", "enum": []string{"json", "html", "csv"}}
 	props["file_size"] = schema{"type": "integer", "minimum": 1, "maximum": report.MaxOutputBytes}
 	props["revision"] = schema{"type": "integer", "minimum": 1, "maximum": 2147483647}
 	for _, name := range []string{"Report", "ReportDocument", "ReportDocumentContent"} {

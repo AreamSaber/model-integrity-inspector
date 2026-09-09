@@ -1,7 +1,7 @@
 import { ApiError, request } from './api'
 import { closed, decimalID, integer, isoDate, readPage, readScope, safeText, type ReadPage } from './runs-history-api'
 
-export const reportFormats = ['json', 'html'] as const
+export const reportFormats = ['json', 'html', 'csv'] as const
 export type ReportFormat = typeof reportFormats[number]
 export type ReportStatus = 'queued' | 'generating' | 'ready' | 'failed' | 'expired'
 export const reportStatusLabels: Record<ReportStatus, string> = { queued: '已排队', generating: '正在生成', ready: '可下载', failed: '生成失败', expired: '已过期' }

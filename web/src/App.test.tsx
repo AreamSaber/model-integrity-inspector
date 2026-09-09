@@ -194,7 +194,8 @@ describe('real API interaction boundary', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '结果与报告' })
     await screen.findByText(/没有符合条件的检测任务/)
-    expect(screen.getByText(/已支持显式生成和下载脱敏 S1 JSON\/HTML 报告。正式审核尚未完成/)).toBeTruthy()
+    expect(screen.getByText(/已支持显式生成和下载脱敏 S1 JSON\/HTML\/CSV 报告/)).toBeTruthy()
+    expect(screen.getByText(/PDF 导出与报告内人工复核快照尚未实现。正式审核尚未完成，报告不代表软件获批/)).toBeTruthy()
     expect(calls).toHaveBeenCalledTimes(3)
     const read = calls.mock.calls.find(([url]) => String(url).startsWith('/api/v1/runs?'))![1]!
     expect(read.method).toBe('GET')

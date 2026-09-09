@@ -10,7 +10,7 @@ SYSTEM ACLs only. Unix requires current-user/root ownership, no group/other
 permissions, and no executable artifact. Existing container paths must satisfy
 these requirements; this package never repairs global ACLs.
 
-`Put` accepts organization ID, closed format (`json`/`html`) and at most 16 MiB.
+`Put` accepts organization ID, closed format (`json`/`html`/`csv`) and at most 16 MiB.
 It stages a restricted file, syncs its bytes and publishes a content-addressed
 hard link without overwriting an existing file. `Read` derives the name from the
 typed reference, opens without following links, checks actual handle rights,
@@ -38,7 +38,7 @@ after file Sync. Missing/corrupt files do not remove the published Run result.
 The current report schema explicitly has `review_state: not_included` and null
 review: it does not claim the Run has never been reviewed. Adding a frozen human
 review snapshot requires a new report schema/revision, not rewriting an artifact.
-Content hash excludes the content_hash field; final JSON and HTML each have an
+Content hash excludes the content_hash field; final JSON, HTML and CSV each have an
 independent file hash. See the report kernel README for canonicalization rules.
 
 Tests cover real files, current Windows ACLs, junction traversal, hard links,

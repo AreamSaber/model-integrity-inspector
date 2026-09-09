@@ -1,5 +1,5 @@
 import { ApiError, object } from './api'
-import { report, reportMaximumBytes, type Report } from './reports-api'
+import { report, reportMaximumBytes, type Report, type ReportFormat } from './reports-api'
 import { readScope } from './runs-history-api'
 
 export interface ReportFile { blob: Blob; filename: string }
@@ -60,6 +60,14 @@ function lengthHeader(response: Response, maximum: number, required: boolean) {
   return Number(header)
 }
 function jsonType(value: string) { return /^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/i.test(value) }
+function reportMIME(format: ReportFormat): string {
+  switch (format) {
+    case 'json': return 'application/json'
+    case 'html': return 'text/html'
+    case 'csv': return 'text/csv'
+    default: throw new ApiError('MI_INVALID_REQUEST')
+  }
+}
 
 // Returns a verified file, never a URL to navigate/iframe and never parsed HTML.
 // Caller must refresh current permissions before calling and discard this Blob
@@ -68,12 +76,13 @@ export async function downloadReport(orgID: string, value: Report, userSignal?: 
   const headers = readScope(orgID)
   if (!report(value) || value.status !== 'ready') throw new ApiError('MI_INVALID_REQUEST')
   const expected = Object.freeze({ ...value })
+  const mime = reportMIME(expected.format)
   const timeout = new AbortController(), timer = setTimeout(() => timeout.abort(), timeoutMS)
   const signal = userSignal ? AbortSignal.any([userSignal, timeout.signal]) : timeout.signal
   let response: Response | undefined
   try {
     check(signal)
-    response = await abortable<Response>(fetch(`/api/v1/reports/${expected.id}/download`, { method: 'GET', credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { ...headers, Accept: expected.format === 'json' ? 'application/json' : 'text/html' }, signal }).then((result) => { response = result; if (signal.aborted) { cancelBody(result.body); throw cancelled() }; return result }), signal)
+    response = await abortable<Response>(fetch(`/api/v1/reports/${expected.id}/download`, { method: 'GET', credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { ...headers, Accept: mime }, signal }).then((result) => { response = result; if (signal.aborted) { cancelBody(result.body); throw cancelled() }; return result }), signal)
     // Status alone is sufficient to withdraw UI authority. A malformed, huge,
     // wrong-type or stalled denial body cannot preserve an authenticated view.
     if (response.status === 401 || response.status === 403) throw new ApiError('MI_SESSION_REQUIRED', response.status)
@@ -89,7 +98,7 @@ export async function downloadReport(orgID: string, value: Report, userSignal?: 
       const code = object(body) && object(body.error) && typeof body.error.code === 'string' && codes.includes(body.error.code) ? body.error.code : 'MI_SERVICE_UNAVAILABLE'
       throw new ApiError(code, response.status)
     }
-    const mime = expected.format === 'json' ? 'application/json' : 'text/html', filename = `report-${expected.id}-r${expected.revision}.${expected.format}`
+    const filename = `report-${expected.id}-r${expected.revision}.${expected.format}`
     if (response.status !== 200 || response.redirected || response.headers.get('Content-Type')?.toLowerCase() !== `${mime}; charset=utf-8` || response.headers.get('Content-Disposition') !== `attachment; filename="${filename}"` || response.headers.get('X-Content-Type-Options') !== 'nosniff' || response.headers.get('Content-Security-Policy') !== downloadCSP || response.headers.get('X-Report-Content-Hash') !== expected.content_hash || response.headers.get('X-Report-File-Hash') !== expected.file_hash || lengthHeader(response, reportMaximumBytes, true) !== expected.file_size) throw new ApiError('MI_INVALID_RESPONSE')
     const bytes = await readBytes(response, signal, reportMaximumBytes, expected.file_size)
     const digest = await abortable(crypto.subtle.digest('SHA-256', bytes), signal)

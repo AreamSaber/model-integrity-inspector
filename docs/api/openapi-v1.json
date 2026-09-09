@@ -9751,7 +9751,7 @@
             }
           }
         },
-        "description": "同事务复验 report.export/run.read/evidence.read，写不可变重试收据并创建真实数据库任务。受理后退出会话不取消作业；生成前仍检查创建者有效账户及授权。固定输入快照、报告版本和时间；只输出S1，无人工复核快照（not_included 不表示 Run 没有复核）。"
+        "description": "同事务复验 report.export/run.read/evidence.read，写不可变重试收据并创建真实数据库任务。受理后退出会话不取消作业；生成前仍检查创建者有效账户及授权。固定输入快照、报告版本和时间；只输出S1，无人工复核快照（not_included 不表示 Run 没有复核）。显式选择 json、html 或 csv 创建独立的新报告；旧报告仅下载原格式，不按需转换或覆盖。CSV profile mii.report.csv.v1 不替代报告文档 schema_version mii.report.v1。"
       }
     },
     "/reports/{reportId}/download": {
@@ -9783,7 +9783,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Frozen, integrity-checked attachment, export audited; HTML sandboxed with restrictive CSP; no credentials or arbitrary path input.",
+            "description": "Frozen, integrity-checked attachment in this report's original json/html/csv format, export audited; no on-demand conversion of old reports. Content-Type includes charset=utf-8. CSV uses mii.report.csv.v1 while the report document retains mii.report.v1; file hash covers the exact CSV bytes, not the content hash. HTML remains sandboxed with restrictive CSP; no credentials or arbitrary path input.",
             "headers": {
               "Content-Disposition": {
                 "schema": {
@@ -9818,6 +9818,13 @@
               "text/html": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "Content-Type: text/csv; charset=utf-8. UTF-8 without BOM, comma-separated CSV with CRLF including the final record; fixed csv_schema,path,value_type,json_value columns. Versioned lossless long-table projection, not raw spreadsheet cells. Report document schema_version remains mii.report.v1; at most 16777216 actual bytes.",
+                  "x-csv-profile": "mii.report.csv.v1"
                 }
               }
             }
@@ -18983,7 +18990,8 @@
             "type": "string",
             "enum": [
               "json",
-              "html"
+              "html",
+              "csv"
             ]
           },
           "analysis_revision": {
@@ -19035,7 +19043,8 @@
           "format": {
             "enum": [
               "json",
-              "html"
+              "html",
+              "csv"
             ],
             "type": "string"
           },

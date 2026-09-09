@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func exercisePublishedArtifacts(t *testing.T, p *pipelineHTTP, runID string, exp
 		t.Fatal("retirement erased historical organization approval")
 	}
 	p.request(t, "GET", "/api/v1/baselines?limit=1", nil, 200, nil)
-	for _, format := range []string{"json", "html"} {
+	for _, format := range []string{"json", "html", "csv"} {
 		p.retryKey = "synthetic-application-report-" + format
 		body := map[string]any{"format": format, "analysis_revision": 1}
 		var artifact runservice.ReportView
@@ -58,7 +59,8 @@ func exercisePublishedArtifacts(t *testing.T, p *pipelineHTTP, runID string, exp
 			t.Fatal("ready report lacks independent file identity")
 		}
 		data := downloadPipelineReport(t, p, artifact)
-		if format == "json" {
+		switch format {
+		case "json":
 			var doc struct {
 				ReportID                string            `json:"report_id"`
 				RunID                   string            `json:"run_id"`
@@ -71,8 +73,14 @@ func exercisePublishedArtifacts(t *testing.T, p *pipelineHTTP, runID string, exp
 			if json.Unmarshal(data, &doc) != nil || doc.ReportID != id || doc.RunID != runID || doc.OrganizationID != p.orgID || len(doc.Samples) != expectedSamples || doc.ReviewState != "not_included" || string(doc.Review) != "null" || !doc.Development || doc.Calibrated {
 				t.Fatal("report misrepresented development or human review state")
 			}
-		} else if !bytes.Contains(data, []byte("<!doctype html>")) || !bytes.Contains(data, []byte("未纳入人工复核快照")) {
-			t.Fatal("HTML report missing truthful review boundary")
+		case "html":
+			if !bytes.Contains(data, []byte("<!doctype html>")) || !bytes.Contains(data, []byte("未纳入人工复核快照")) {
+				t.Fatal("HTML report missing truthful review boundary")
+			}
+		case "csv":
+			checkPipelineCSV(t, data, artifact, p.orgID, expectedSamples)
+		default:
+			t.Fatal("unsupported actual pipeline report format")
 		}
 		p.request(t, "POST", "/api/v1/runs/"+runID+"/reports", body, 202, &artifact)
 		if artifact.ID != id || !bytes.Equal(data, downloadPipelineReport(t, p, artifact)) {
@@ -95,6 +103,10 @@ func downloadPipelineReport(t *testing.T, p *pipelineHTTP, artifact runservice.R
 		t.Fatal("actual report download failed")
 	}
 	defer func() { _ = response.Body.Close() }()
+	mime, known := map[string]string{"json": "application/json", "html": "text/html", "csv": "text/csv"}[artifact.Format]
+	if !known || response.Header.Get("Content-Type") != mime+"; charset=utf-8" || response.Header.Get("Content-Disposition") != `attachment; filename="report-`+artifact.ID+"-r"+strconv.Itoa(artifact.Revision)+"."+artifact.Format+`"` {
+		t.Fatal("actual pipeline report MIME or immutable filename mismatch")
+	}
 	if response.StatusCode != 200 || response.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(response.Header.Get("Content-Disposition"), "attachment;") || !strings.Contains(response.Header.Get("Content-Security-Policy"), "sandbox") {
 		t.Fatalf("report download boundary failed: status %d", response.StatusCode)
 	}

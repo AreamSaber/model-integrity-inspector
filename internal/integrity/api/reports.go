@@ -164,17 +164,19 @@ func (c *control) downloadReport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer download.Close()
 	view := download.View()
+	contentType, extension, ok := reportDownloadFormat(view.Format)
+	if !ok {
+		c.failure(w, r, 503, "MI_REPORT_FILE_UNAVAILABLE")
+		return
+	}
 	data := download.Bytes()
 	controller := http.NewResponseController(w)
 	if err := controller.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		c.failure(w, r, 503, "MI_REPORT_FILE_UNAVAILABLE")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if view.Format == "html" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	}
-	w.Header().Set("Content-Disposition", `attachment; filename="report-`+view.ID+"-r"+strconv.Itoa(view.Revision)+"."+view.Format+`"`)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="report-`+view.ID+"-r"+strconv.Itoa(view.Revision)+"."+extension+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -200,11 +202,24 @@ func (c *control) downloadReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		end := min(offset+64*1024, len(data))
-		// #nosec G705 -- bytes are a bounded verified report artifact, never caller HTML; attachment/nosniff and sandbox default-src none apply to both fixed MIME types.
+		// #nosec G705 -- bytes are a bounded verified report artifact, never caller HTML; attachment/nosniff and sandbox default-src none apply to all three fixed MIME types.
 		n, err := w.Write(data[offset:end])
 		if err != nil || n == 0 {
 			return
 		}
 		offset += n
+	}
+}
+
+func reportDownloadFormat(format string) (contentType, extension string, ok bool) {
+	switch format {
+	case "json":
+		return "application/json; charset=utf-8", "json", true
+	case "html":
+		return "text/html; charset=utf-8", "html", true
+	case "csv":
+		return "text/csv; charset=utf-8", "csv", true
+	default:
+		return "", "", false
 	}
 }

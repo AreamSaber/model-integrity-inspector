@@ -155,7 +155,8 @@ function ReportsScope({ runID, analysisRevision, onDenied, ...context }: Context
   return <section className="review-panel" aria-labelledby="reports-title">
     <h3 id="reports-title">脱敏报告 · 分析修订 {analysisRevision}</h3>
     <p className="notice warning">仅导出已发布的 S1 统计、样本引用与免责声明，不包含原始请求/响应、凭证或敏感端点。当前报告未纳入人工复核快照，不表示此 Run 从未被复核，也不代表软件获批或结果已校准。</p>
-    <p className="field-help">JSON 与 HTML 都是下载文件；HTML 不在本页预览或执行。生成不触发模型调用，不重新分析。内容哈希用于规范化内容，文件哈希用于实际下载字节，两者不能混用。</p>
+    <p className="field-help">JSON、HTML 与 CSV 都是下载文件；HTML 不在本页预览或执行。生成不触发模型调用，不重新分析。内容哈希用于规范化内容，文件哈希用于实际下载字节，两者不能混用。</p>
+    <p className="field-help">旧报告仅按其原格式下载。生成 CSV 会创建独立的新报告，不转换或覆盖已有 JSON/HTML 报告。CSV 格式规范为 mii.report.csv.v1，报告文档版本仍为 mii.report.v1。</p>
     <ErrorNotice error={problem(error)} id="report-error" />
     {notice && <output className="notice success">{notice}</output>}
     {downloading && <div className="form-actions"><Loading>正在校验并下载文件（最多 60 秒）…</Loading><button onClick={() => { operation.current?.abort(); operation.current = null; active.current = false; setBusy(false); setDownloading(false); setNotice('本次下载已取消，未请求浏览器保存文件。') }}>取消本次报告下载</button></div>}

@@ -85,7 +85,7 @@ func pipelineDerivedBytes(t *testing.T, db *sql.DB, p *pipelineHTTP, runID strin
 	return data
 }
 
-func capturePipelineRetention(t *testing.T, db *sql.DB, p *pipelineHTTP, runID string, days int) pipelineRetentionSnapshot {
+func capturePipelineRetention(t *testing.T, db *sql.DB, p *pipelineHTTP, runID string, days int, allowExtraReports bool) pipelineRetentionSnapshot {
 	t.Helper()
 	var snapshot pipelineRetentionSnapshot
 	path := "/api/v1/runs/" + runID
@@ -117,8 +117,8 @@ func capturePipelineRetention(t *testing.T, db *sql.DB, p *pipelineHTTP, runID s
 		Items []runservice.ReportView `json:"items"`
 	}
 	p.request(t, "GET", path+"/reports?analysis_revision=1&limit=100", nil, 200, &page)
-	if len(page.Items) != 2 {
-		t.Fatal("actual JSON/HTML report snapshots absent before cleanup")
+	if !validPipelineReportInventory(page.Items, runID, allowExtraReports) {
+		t.Fatal("actual JSON/HTML/CSV report inventory missing, duplicated, unready or outside scope before cleanup")
 	}
 	for _, report := range page.Items {
 		if report.Status != "ready" || report.RunID != runID {

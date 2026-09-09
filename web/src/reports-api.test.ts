@@ -8,6 +8,24 @@ function ready(): Report { return { ...record(), status: 'ready', content_hash: 
 function ok(data: unknown) { return Response.json({ data, request_id: 'reports-test' }) }
 
 describe('strict S1 report metadata client', () => {
+  it('creates and reads CSV as a new fixed-format report without replacing the document schema', async () => {
+    const csv: Report = { ...record(), format: 'csv' }
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => ok(csv)); vi.stubGlobal('fetch', fetcher)
+    const controller = new AbortController(), body: ReportInput = { ...input, format: 'csv' }
+    expect(await reportsApi.create(org, runID, 'synthetic-csrf', body, 'csv:fixed-key-12345', controller.signal)).toEqual(csv)
+    expect(await reportsApi.get(org, runID, 1, reportID, controller.signal)).toEqual(csv)
+    const options = fetcher.mock.calls[0][1]!
+    expect(JSON.parse(options.body as string)).toEqual(body)
+    expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('synthetic-csrf')
+    expect(new Headers(options.headers).get('Idempotency-Key')).toBe('csv:fixed-key-12345')
+    expect(new Headers(options.headers).get('X-Organization-ID')).toBe(org)
+    expect(options.signal).toBeTruthy(); expect(csv.schema_version).toBe('mii.report.v1')
+    expect(report({ ...csv, schema_version: 'mii.report.csv.v1' })).toBe(false)
+    expect(() => reportUpdate(record(), csv)).toThrow('MI_INVALID_RESPONSE')
+    expect(() => reportUpdate(csv, record())).toThrow('MI_INVALID_RESPONSE')
+    expect(reportUpdate(csv, { ...ready(), format: 'csv' }).status).toBe('ready')
+    expect(() => reportUpdate({ ...ready(), format: 'csv' }, { ...ready(), format: 'csv', file_hash: `sha256:${'c'.repeat(64)}` })).toThrow('MI_INVALID_RESPONSE')
+  })
   it('reads bounded same-origin revision pages with signed opaque cursor and string IDs', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(ok({ items: [record()], next_cursor: null })); vi.stubGlobal('fetch', fetcher)
     expect((await reportsApi.list(org, runID, 1, 'opaque:+')).items).toEqual([record()])
@@ -29,7 +47,7 @@ describe('strict S1 report metadata client', () => {
   it.each([
     { ...record(), id: Number(reportID) }, { ...record(), run_id: '8' }, { ...record(), analysis_revision: 2 }, { ...record(), format: 'pdf' },
     { ...record(), source_json: 'SECRET_CANARY' }, { ...record(), storage_path: 'secret/path' }, { ...record(), review_state: 'not_reviewed' },
-    { ...record(), schema_version: 'mii.report.v2' }, { ...record(), status: 'done' }, { ...record(), content_hash: `sha256:${'a'.repeat(64)}` },
+    { ...record(), schema_version: 'mii.report.v2' }, { ...record(), format: 'csv', schema_version: 'mii.report.csv.v1' }, { ...record(), format: 'CSV' }, { ...record(), status: 'done' }, { ...record(), content_hash: `sha256:${'a'.repeat(64)}` },
     { ...ready(), file_hash: 'SECRET_CANARY' }, { ...ready(), file_size: 16777217 }, { ...ready(), file_size: null },
     { ...ready(), content_hash: null }, { ...ready(), error_code: 'MI_REPORT_GENERATION_FAILED' }, { ...record(), error_code: 'MI_PRIVATE_CANARY' },
   ])('rejects unexpected, restricted, mismatched or incoherent data %#', async (value) => {

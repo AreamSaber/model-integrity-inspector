@@ -1,8 +1,8 @@
 # Development report kernel
 
-This is the bounded **M5-08 JSON/HTML generation kernel checkpoint**, not a
-report Job/API, publication store, independent audit, calibrated release, PDF
-or CSV exporter. It performs no filesystem, database, network or secret access.
+This is the bounded **M5-08 JSON/HTML/CSV generation kernel**, not a report
+Job/API, publication store, independent audit, calibrated release or PDF
+exporter. It performs no filesystem, database, network or secret access.
 
 ## Application boundary
 
@@ -35,7 +35,7 @@ read models. It deliberately does not import run/repository (avoids dependency
 cycles) and has no endpoint, name/model free text, prompt/response body,
 credentials, arbitrary title/summary/HTML, command, URL, or storage path.
 
-The future authorized adapter must:
+The authorized repository/Worker adapter must:
 
 - Revalidate the current user, organization membership and required report/S1
   evidence permissions; read the exact immutable published analysis revision.
@@ -148,6 +148,18 @@ against the separately stored file hash. Hashes prove byte consistency only,
 **not authenticity, independent approval, or a trusted calibration release**.
 
 ## Verification
+
+`GenerateCSV(snapshot)` exports the same frozen logical document using the
+`mii.report.csv.v1` four-column, full-node profile. `mii.report.v1` remains the
+document schema. CSV is a separately generated immutable artifact, not a
+conversion endpoint or replacement of an existing JSON/HTML report. Its exact
+bytes have their own SHA-256; logical content retains the canonical content
+hash. UTF-8, CRLF, quoted JSON scalar values, JSON Pointer paths and explicit
+container nodes preserve nullable values, identifiers and empty structures.
+The same S1 restrictions and 16 MiB per-file bound apply; CSV does not enable
+restricted evidence, human-review snapshots or calibrated evidence grades.
+See `docs/project/M5-CSV-REPORT-NOTES.md` and
+`docs/project/M5-CSV-INTEGRATION-NOTES.md` for profile and integration evidence.
 
 `go test ./internal/integrity/report -count=1 -cover` covers deterministic
 regeneration, concurrent reads, deep ownership, cloned output, canonical golden

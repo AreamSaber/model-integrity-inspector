@@ -36,6 +36,62 @@ async function submit() { await act(async () => { fireEvent.submit(screen.getByR
 beforeEach(() => { vi.stubGlobal('crypto', webcrypto); props.onSignedOut.mockClear(); props.onPasswordRequired.mockClear(); props.onDenied.mockClear() })
 
 describe('explicit S1 report panel', () => {
+  it('explicitly creates a separate CSV report while keeping old JSON/HTML records and their original download actions', async () => {
+    const csv: Report = { ...ready(), id: '9007199254741003', revision: 3, format: 'csv' }
+    const oldHTML: Report = { ...ready(), id: '9007199254741002', revision: 2, format: 'html' }
+    let created = false
+    const calls = network((url, options) => {
+      if (url.pathname.endsWith('/reports') && options.method === 'GET') return ok({ items: created ? [ready(), oldHTML, csv] : [ready(), oldHTML], next_cursor: null })
+      if (url.pathname.endsWith('/reports') && options.method === 'POST') { created = true; return ok(csv, 202) }
+      if (url.pathname.endsWith(`/reports/${csv.id}`)) return ok(csv)
+      return undefined
+    })
+    render(<ReportsPanel {...props} />); await open()
+    expect(screen.getByRole('option', { name: 'CSV' })).toBeTruthy()
+    expect(screen.getByText(/生成 CSV 会创建独立的新报告，不转换或覆盖已有 JSON\/HTML 报告/)).toBeTruthy()
+    expect(posts(calls)).toHaveLength(0)
+    fireEvent.change(screen.getByLabelText('报告文件格式'), { target: { value: 'csv' } }); confirm(); await submit()
+    await screen.findByRole('button', { name: `下载 CSV 报告 ${csv.id}` })
+    expect(screen.getByRole('button', { name: `下载 JSON 报告 ${reportID}` })).toBeTruthy()
+    expect(screen.getByRole('button', { name: `下载 HTML 报告 ${oldHTML.id}` })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: `下载 CSV 报告 ${reportID}` })).toBeNull()
+    expect(posts(calls)).toHaveLength(1)
+    const request = posts(calls)[0][1]!
+    expect(JSON.parse(request.body as string)).toEqual({ format: 'csv', analysis_revision: 1, include_restricted_content: false })
+    expect(new Headers(request.headers).get('X-CSRF-Token')).toBe(props.csrfToken)
+    expect(new Headers(request.headers).get('X-Organization-ID')).toBe(org)
+    expect(new Headers(request.headers).get('Idempotency-Key')).toMatch(/^[A-Za-z0-9._:-]{16,128}$/)
+    expect(calls.mock.calls.some(([url]) => String(url).includes('/download'))).toBe(false)
+    expect(csv.schema_version).toBe('mii.report.v1')
+  })
+  it.each(['json', 'html', 'csv'] as const)('downloads the stored %s format even with CSV selected for future creation, then revokes its Blob', async (format) => {
+    const mime = { json: 'application/json', html: 'text/html', csv: 'text/csv' }[format]
+    const data = new TextEncoder().encode(format === 'csv' ? 'csv_schema,path,value_type,json_value\r\nmii.report.csv.v1,,object,{}\r\n' : format === 'html' ? '<!doctype html><p>S1</p>' : '{"safe":"S1"}')
+    const value: Report = { ...ready(), format, file_size: data.length, file_hash: `sha256:${createHash('sha256').update(data).digest('hex')}` }
+    const calls = network((url, options) => {
+      if (url.pathname.endsWith('/reports') && options.method === 'GET') return ok({ items: [value], next_cursor: null })
+      if (url.pathname.endsWith(`/reports/${reportID}`)) return ok(value)
+      if (url.pathname.endsWith('/download')) return new Response(data, { headers: { 'Content-Type': `${mime}; charset=utf-8`, 'Content-Length': String(data.length), 'Content-Disposition': `attachment; filename="report-${reportID}-r1.${format}"`, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'", 'X-Report-Content-Hash': value.content_hash!, 'X-Report-File-Hash': value.file_hash! } })
+      return undefined
+    })
+    const create = vi.fn<(blob: Blob) => string>(() => 'blob:stored-format'), revoke = vi.fn<(url: string) => void>()
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }))
+    const filenames: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { filenames.push(this.download) })
+    const rendered = render(<ReportsPanel {...props} />); await open()
+    fireEvent.change(screen.getByLabelText('报告文件格式'), { target: { value: 'csv' } })
+    await click(`下载 ${format.toUpperCase()} 报告 ${reportID}`)
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect(create.mock.calls[0][0].type).toBe(`${mime}; charset=utf-8`)
+    expect(create.mock.calls[0][0].size).toBe(data.length)
+    expect(filenames).toEqual([`report-${reportID}-r1.${format}`])
+    expect(posts(calls)).toHaveLength(0)
+    const download = calls.mock.calls.find(([url]) => String(url).endsWith('/download'))!
+    expect(download[0]).toBe(`/api/v1/reports/${reportID}/download`)
+    expect(new Headers(download[1]?.headers).get('Accept')).toBe(mime)
+    expect(document.querySelector('iframe')).toBeNull(); expect(document.querySelector('a[download]')).toBeNull()
+    rendered.unmount(); expect(revoke).toHaveBeenCalledWith('blob:stored-format')
+  })
   it('keeps retention as a separate manual S1 observation without mutating report hashes or asking for body', async () => {
     const data = { version: 'mii.response-retention-summary.v1', run_id: runID, analysis_revision: 1, observed_at: '2026-09-08T12:00:00Z', policy_days: 30, policy_version: 2, attempt_count: 6, raw_deleted_count: 2, display_deleted_count: 1, display_expired_count: 2, display_retained_count: 3, last_deleted_at: '2026-09-08T11:00:00Z' }
     const calls = network((url, options) => {
@@ -101,14 +157,14 @@ describe('explicit S1 report panel', () => {
     await screen.findByRole('heading', { name: `报告 ${reportID} · 可下载` })
     expect(document.activeElement?.id).toBe('report-selected-title')
   })
-  it('retains a single uncertain body/key and only manually restores it, even across a transient permission failure', async () => {
+  it.each(['json', 'csv'] as const)('retains a single uncertain %s body/key and only manually restores it, even across a transient permission failure', async (format) => {
     let permissionReads = 0, writes = 0
     const calls = network((url, options) => {
       if (url.pathname.endsWith('/auth/permissions') && ++permissionReads === 3) return failure('MI_SERVICE_UNAVAILABLE', 503)
       if (options.method === 'POST' && ++writes === 1) throw new TypeError('PRIVATE_REPORT_CANARY')
       return undefined
     })
-    render(<ReportsPanel {...props} />); await open(); confirm(); await submit()
+    render(<ReportsPanel {...props} />); await open(); fireEvent.change(screen.getByLabelText('报告文件格式'), { target: { value: format } }); confirm(); await submit()
     expect(screen.getByRole('heading', { name: '报告创建结果尚未确认' })).toBeTruthy()
     expect(screen.queryByRole('form', { name: '生成脱敏报告' })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: /我确认仅恢复原报告/ })); await click('手动恢复同一次报告创建')
@@ -117,6 +173,7 @@ describe('explicit S1 report panel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /我确认仅恢复原报告/ })); await click('手动恢复同一次报告创建')
     await open(); expect(posts(calls)).toHaveLength(2)
     expect(posts(calls)[1][1]?.body).toBe(posts(calls)[0][1]?.body)
+    expect(JSON.parse(posts(calls)[0][1]!.body as string).format).toBe(format)
     expect(new Headers(posts(calls)[1][1]?.headers).get('Idempotency-Key')).toBe(new Headers(posts(calls)[0][1]?.headers).get('Idempotency-Key'))
     expect(document.body.textContent).not.toContain('PRIVATE_REPORT_CANARY')
   })

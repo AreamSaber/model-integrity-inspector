@@ -26,7 +26,7 @@
 
 运行 .tools/go/bin/go test ./tests/contracts 检查 77 项追踪完整性、路径/参数/引用/敏感字段和原型覆盖。这是仓库语义回归，不替代完整 OpenAPI 规范校验、真实 API 契约测试或 E2E。实现每组 API 后，应补上实际请求/权限/失败路径测试，将 x-development-status 和台账据实更新；未实现接口不得返回样例成功数据。
 
-正式 schema/接口变更与客户端同时提交；不默默缩减原计划。P1 reanalyze、Webhook、OIDC、PDF/CSV 不作为当前 API 已完成项。
+正式 schema/接口变更与客户端同时提交；不默默缩减原计划。CSV 已接入既有报告创建/下载接口，保持显式 S1 权限、不可覆盖报告身份和双哈希；不代表完整报告生命周期完成。P1 reanalyze、Webhook、OIDC、PDF 不作为当前 API 已完成项。
 
 ## Run 控制链路（持续开发）
 

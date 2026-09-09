@@ -55,7 +55,9 @@ describe('real Run history page', () => {
     await act(async () => { fireEvent.submit(screen.getByRole('form', { name: '筛选检测历史' })) })
     expect(screen.getByRole('alert').textContent).toContain('筛选字段格式无效')
     expect(calls).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/已支持显式生成和下载脱敏 S1 JSON\/HTML 报告/)).toBeTruthy()
+    expect(screen.getByText(/有完整导出权限时，结果页已支持显式生成和下载脱敏 S1 JSON\/HTML\/CSV 报告/)).toBeTruthy()
+    expect(screen.getByText(/PDF 导出与报告内人工复核快照尚未实现/)).toBeTruthy()
+    expect(screen.getByText(/正式审核尚未完成，报告不代表软件获批/)).toBeTruthy()
   })
   it('selects only two explicit published IDs without scanning history or starting requests for comparison', async () => {
     const secondID = '9007199254741100'

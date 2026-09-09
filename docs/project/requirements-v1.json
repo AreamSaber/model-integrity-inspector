@@ -1397,10 +1397,29 @@
       ],
       "acceptance": [],
       "test_case": "REQ-REP-007",
-      "implementation": "not_started",
-      "code": [],
-      "tests": [],
-      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/csv.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go",
+        "web/src/components/results/ReportsPanel.tsx",
+        "web/src/report-download.ts"
+      ],
+      "tests": [
+        "internal/integrity/report/csv_test.go",
+        "internal/integrity/worker/report_csv_test.go",
+        "internal/integrity/repository/report_csv_test.go",
+        "internal/integrity/reportstorage/csv_test.go",
+        "internal/integrity/api/reports_csv_test.go",
+        "internal/app/pipeline_csv_test.go",
+        "internal/app/artifacts_pipeline_test.go",
+        "web/src/components/results/ReportsPanel.test.tsx",
+        "web/src/report-download.test.ts",
+        "tests/contracts/report_csv_test.go"
+      ],
+      "notes": "原PRD分类保留为future，当前Goal仍包含PDF/CSV全部范围。CSV已真实接通不可覆盖报告生成、Worker、存储、受限下载及页面，双库回归和实际浏览器新旧报告下载校验通过；正文清理后仍逐项验证全部报告字节和哈希。PDF尚未实现，本项和M5不标记完成；正式审核仍待统一进行。",
       "goal_included": true
     },
     {
