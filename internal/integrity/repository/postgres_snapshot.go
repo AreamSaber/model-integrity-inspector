@@ -178,6 +178,7 @@ func postgresSnapshotError(ctx context.Context, err error) error {
 	}
 	for _, known := range []error{errPostgresSnapshotClosed, errPostgresSnapshotCanceled,
 		errSnapshotAuditNotInitialized, errSnapshotAuditLimit, errSnapshotAuditSegments,
+		ErrSchemaMismatch, errSnapshotMigrationLimit,
 		pgbackup.ErrConfiguration, pgbackup.ErrCanceled, pgbackup.ErrProcess,
 		pgbackup.ErrOutput, pgbackup.ErrLimit, pgbackup.ErrVersion} {
 		if errors.Is(err, known) {
