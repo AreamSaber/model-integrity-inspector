@@ -21,7 +21,7 @@ func fixture() Manifest {
 		Database:    Database{"sqlite", "3.52.0", "sqlite_online_backup", f("database-snapshot")},
 		Migrations:  []Migration{{1, "foundation", strings.Repeat("b", 64)}, {2, "queue_leases", strings.Repeat("c", 64)}},
 		Reports:     []Report{{12, 5, 6, 1, 2, "json", "mii.report.v1", strings.Repeat("d", 64), strings.Repeat("e", 64), f("report-12")}},
-		Artifacts:   []Artifact{{"rule", "1.0.0-dev.1", f("rule-v1")}, {"scoring", "1.0.0-dev.1", f("scoring-v1")}, {"template", "1.0.0-dev.1", f("template-v1")}, {"tokenizer", "1.0.0-dev.1", f("tokenizer-v1")}},
+		Artifacts:   []Artifact{{Category: "rule", Version: "1.0.0-dev.1", File: f("rule-v1")}, {Category: "scoring", Version: "1.0.0-dev.1", File: f("scoring-v1")}, {Category: "template", Version: "1.0.0-dev.1", File: f("template-v1")}, {Category: "tokenizer", Version: "1.0.0-dev.1", File: f("tokenizer-v1")}},
 		KeyVersions: []string{"key-v1", "key-v2"}, AuditHistory: "complete",
 		AuditAnchors:   []AuditAnchor{{5, 99, strings.Repeat("f", 64), "key-v1", "mii.audit.v1"}, {9, 0, "", "", "mii.audit.v1"}},
 		Jobs:           []JobSummary{{OrganizationID: 5, Pending: 1, Completed: 7, Failed: 2, Cancelled: 3, UncertainAttempts: 1}, {OrganizationID: 9}},

@@ -36,7 +36,7 @@ func bounded(m Manifest) error {
 
 func validate(m Manifest) error {
 	const lastMicrosecond int64 = 253402300799999999
-	if m.SchemaVersion != Version || m.BackupID <= 0 || m.StartedAtMicros <= 0 || m.SnapshotAtMicros < m.StartedAtMicros || m.SnapshotAtMicros > lastMicrosecond || !version.MatchString(m.ApplicationVersion) || !hexDigest(m.SourceCommit, 40) && !hexDigest(m.SourceCommit, 64) || m.AuditHistory != "complete" {
+	if m.SchemaVersion != Version && m.SchemaVersion != VersionV2 || m.BackupID <= 0 || m.StartedAtMicros <= 0 || m.SnapshotAtMicros < m.StartedAtMicros || m.SnapshotAtMicros > lastMicrosecond || !version.MatchString(m.ApplicationVersion) || !hexDigest(m.SourceCommit, 40) && !hexDigest(m.SourceCommit, 64) || m.AuditHistory != "complete" {
 		return ErrInvalid
 	}
 	if !dbVersion.MatchString(m.Database.ServerVersion) || m.Database.File.EntryID != "database-snapshot" || m.ConfigTemplate.EntryID != "config-template" {
@@ -94,9 +94,12 @@ func validate(m Manifest) error {
 			return ErrInvalid
 		}
 	}
+	if !validArtifactIdentities(m.SchemaVersion, m.Artifacts, organizations) {
+		return ErrInvalid
+	}
 	categories := map[string]bool{}
-	for i, a := range m.Artifacts {
-		if !slices.Contains([]string{"rule", "template", "tokenizer", "scoring"}, a.Category) || !artifactVersion.MatchString(a.Version) || i > 0 && a.Category == m.Artifacts[i-1].Category && a.Version == m.Artifacts[i-1].Version || !add(a.File) {
+	for _, a := range m.Artifacts {
+		if !slices.Contains([]string{"rule", "template", "tokenizer", "scoring"}, a.Category) || !artifactVersion.MatchString(a.Version) || !add(a.File) {
 			return ErrInvalid
 		}
 		categories[a.Category] = true

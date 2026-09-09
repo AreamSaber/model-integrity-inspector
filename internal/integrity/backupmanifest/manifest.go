@@ -17,6 +17,7 @@ import (
 
 const (
 	Version                = "mii.backup-manifest.v1"
+	VersionV2              = "mii.backup-manifest.v2"
 	MaxBytes               = 16 << 20
 	MaxEntries             = 65536
 	MaxOrganizations       = 16384
@@ -66,10 +67,16 @@ type Report struct {
 
 // Artifact includes every retained version, not just the current bundle. All
 // categories use the archive's rule kind and an unambiguous manifest category.
+// v1 forbids Scope/OrganizationID/ID. v2 preserves each rule/template source
+// row's organization and ID; installed tokenizer/scoring files have neither.
+// omitempty preserves v1 bytes and makes omitted installed IDs canonical in v2.
 type Artifact struct {
-	Category string `json:"category"`
-	Version  string `json:"version"`
-	File     File   `json:"file"`
+	Category       string `json:"category"`
+	Scope          string `json:"scope,omitempty"`
+	OrganizationID int64  `json:"organization_id,omitempty"`
+	ID             int64  `json:"id,omitempty"`
+	Version        string `json:"version"`
+	File           File   `json:"file"`
 }
 
 type AuditAnchor struct {
@@ -96,8 +103,8 @@ type JobSummary struct {
 
 // Manifest must be constructed from one verified database snapshot. It has no
 // free-form configuration, SQL, path, DSN, key material, credentials or prose.
-// v1 requires complete audit history: sealed-segment support needs a new format
-// before any backup coordinator can accept a database with archived segments.
+// Both supported versions require complete audit history: v2 only adds artifact
+// tenancy, not sealed-segment support or additional restore authority.
 type Manifest struct {
 	SchemaVersion      string        `json:"schema_version"`
 	BackupID           int64         `json:"backup_id"`
@@ -203,7 +210,13 @@ func canonical(m Manifest) Manifest {
 		if v := compare(a.Category, b.Category); v != 0 {
 			return v
 		}
-		return compare(a.Version, b.Version)
+		if v := compare(a.OrganizationID, b.OrganizationID); v != 0 {
+			return v
+		}
+		if v := compare(a.Version, b.Version); v != 0 {
+			return v
+		}
+		return compare(a.ID, b.ID)
 	})
 	slices.Sort(m.KeyVersions)
 	slices.SortFunc(m.AuditAnchors, func(a, b AuditAnchor) int { return compare(a.OrganizationID, b.OrganizationID) })

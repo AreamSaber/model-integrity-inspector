@@ -68,7 +68,13 @@ func TestManifestPreservesRealTemplateRegistryVersions(t *testing.T) {
 // Synthetic file payloads exercise the actual archive crypto and every planned
 // entry kind. These are not database snapshots or real audit-chain verification.
 func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
-	m := backupmanifest.TestOnlyFixture()
+	for _, m := range []backupmanifest.Manifest{backupmanifest.TestOnlyFixture(), backupmanifest.TestOnlyScopedFixture()} {
+		t.Run(m.SchemaVersion, func(t *testing.T) { manifestPlanBindsActualAuthenticatedArchive(t, m) })
+	}
+}
+
+func manifestPlanBindsActualAuthenticatedArchive(t *testing.T, m backupmanifest.Manifest) {
+	t.Helper()
 	payloads := map[string][]byte{}
 	set := func(f *backupmanifest.File) {
 		payloads[f.EntryID] = []byte("synthetic-payload-for-" + f.EntryID)
@@ -102,7 +108,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 	}
 	scope := secret.BackupScope{BackupID: m.BackupID, ManifestHash: sum}
 	limits := secret.BackupLimits{MaxBytes: 1 << 20, MaxEntries: backupmanifest.MaxEntries, Timeout: time.Second}
-	for _, mode := range []string{"valid", "changed_payload", "missing_entry", "extra_entry", "wrong_kind"} {
+	for _, mode := range []string{"valid", "changed_payload", "missing_entry", "extra_entry", "wrong_kind", "swapped_artifact"} {
 		t.Run(mode, func(t *testing.T) {
 			var archive bytes.Buffer
 			_, err := sealer.Seal(t.Context(), scope, limits, &archive, func(_ context.Context, w *secret.BackupArchiveWriter) error {
@@ -114,6 +120,13 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 					payload := payloads[entry.File.EntryID]
 					if mode == "changed_payload" && entry.Kind == "database" {
 						payload = []byte("different-but-authenticated")
+					}
+					if mode == "swapped_artifact" && entry.File.EntryID == "rule-v1" {
+						otherID := "scoring-v1"
+						if m.SchemaVersion == backupmanifest.VersionV2 {
+							otherID = "rule-org9"
+						}
+						payload = payloads[otherID]
 					}
 					if mode == "wrong_kind" && entry.Kind == "database" {
 						kind = "report"
@@ -208,6 +221,11 @@ func FuzzManifestDecode(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(valid)
+	scoped, _, err := backupmanifest.Encode(backupmanifest.TestOnlyScopedFixture())
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(scoped)
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"backup_id":91,"backup_id":91}`))
 	f.Add(append(bytes.Clone(valid), ' '))
@@ -217,7 +235,7 @@ func FuzzManifestDecode(f *testing.F) {
 			t.Skip("bounded parser fuzz input")
 		}
 		got, err := backupmanifest.Decode(data, 91, integrationDigest(data))
-		if bytes.Equal(data, valid) && err != nil {
+		if (bytes.Equal(data, valid) || bytes.Equal(data, scoped)) && err != nil {
 			t.Fatal("valid seed rejected", err)
 		}
 		if err != nil {

@@ -4,3 +4,5 @@ package backupmanifest
 // integration tests. This bridge exists only in the package's test binary;
 // it adds no production export or alternate validation path.
 var TestOnlyFixture = fixture
+
+var TestOnlyScopedFixture = scopedFixture
