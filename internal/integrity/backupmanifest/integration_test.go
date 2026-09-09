@@ -1,17 +1,28 @@
-package backupmanifest
+package backupmanifest_test
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"model-integrity-inspector.local/mii/internal/integrity/backupmanifest"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
 	"model-integrity-inspector.local/mii/internal/integrity/secret"
 )
+
+// Compose the public manifest and crypto APIs from an external test package:
+// secret depends on repository, which consumes backupmanifest in production.
+// Only the shared synthetic fixture is bridged through an internal _test.go.
+func integrationDigest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
 
 func TestManifestPreservesRealTemplateRegistryVersions(t *testing.T) {
 	for _, length := range []int{66, 128} {
@@ -30,25 +41,26 @@ func TestManifestPreservesRealTemplateRegistryVersions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m := fixture()
-		m.Artifacts[2] = Artifact{"template", retained.Version, File{"template-v1", int64(len(data)), sha}}
-		encoded, sum, err := Encode(m)
+		m := backupmanifest.TestOnlyFixture()
+		m.Artifacts[2] = backupmanifest.Artifact{Category: "template", Version: retained.Version,
+			File: backupmanifest.File{EntryID: "template-v1", Bytes: int64(len(data)), SHA256: sha}}
+		encoded, sum, err := backupmanifest.Encode(m)
 		if err != nil {
 			t.Fatal("backup cannot retain a real supported version", err)
 		}
-		decoded, err := Decode(encoded, m.BackupID, sum)
+		decoded, err := backupmanifest.Decode(encoded, m.BackupID, sum)
 		if err != nil || decoded.Artifacts[2].Version != retained.Version {
 			t.Fatal("template version altered", err)
 		}
 	}
-	m := fixture()
+	m := backupmanifest.TestOnlyFixture()
 	m.Artifacts[0].Version = strings.Repeat("a", 129)
-	if _, _, err := Encode(m); err == nil {
+	if _, _, err := backupmanifest.Encode(m); err == nil {
 		t.Fatal("artifact version limit lost")
 	}
-	m = fixture()
+	m = backupmanifest.TestOnlyFixture()
 	m.KeyVersions[1] = strings.Repeat("a", 65)
-	if _, _, err := Encode(m); err == nil {
+	if _, _, err := backupmanifest.Encode(m); err == nil {
 		t.Fatal("artifact fix expanded key version contract")
 	}
 }
@@ -56,12 +68,12 @@ func TestManifestPreservesRealTemplateRegistryVersions(t *testing.T) {
 // Synthetic file payloads exercise the actual archive crypto and every planned
 // entry kind. These are not database snapshots or real audit-chain verification.
 func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
-	m := fixture()
+	m := backupmanifest.TestOnlyFixture()
 	payloads := map[string][]byte{}
-	set := func(f *File) {
+	set := func(f *backupmanifest.File) {
 		payloads[f.EntryID] = []byte("synthetic-payload-for-" + f.EntryID)
 		f.Bytes = int64(len(payloads[f.EntryID]))
-		f.SHA256 = digest(payloads[f.EntryID])
+		f.SHA256 = integrationDigest(payloads[f.EntryID])
 	}
 	set(&m.Database.File)
 	set(&m.ConfigTemplate)
@@ -71,12 +83,12 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 	for i := range m.Artifacts {
 		set(&m.Artifacts[i].File)
 	}
-	data, sum, err := Encode(m)
+	data, sum, err := backupmanifest.Encode(m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payloads["backup-manifest"] = data
-	entries, err := Entries(m)
+	entries, err := backupmanifest.Entries(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +101,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	scope := secret.BackupScope{BackupID: m.BackupID, ManifestHash: sum}
-	limits := secret.BackupLimits{MaxBytes: 1 << 20, MaxEntries: MaxEntries, Timeout: time.Second}
+	limits := secret.BackupLimits{MaxBytes: 1 << 20, MaxEntries: backupmanifest.MaxEntries, Timeout: time.Second}
 	for _, mode := range []string{"valid", "changed_payload", "missing_entry", "extra_entry", "wrong_kind"} {
 		t.Run(mode, func(t *testing.T) {
 			var archive bytes.Buffer
@@ -131,7 +143,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 				for _, want := range entries {
 					if want.File.EntryID == entry.ID {
 						matched = true
-						if seen[entry.ID] || want.Kind != entry.Kind || want.File.Bytes != int64(len(plain)) || want.File.SHA256 != digest(plain) {
+						if seen[entry.ID] || want.Kind != entry.Kind || want.File.Bytes != int64(len(plain)) || want.File.SHA256 != integrationDigest(plain) {
 							mismatch = true
 						}
 					}
@@ -141,7 +153,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 				}
 				seen[entry.ID] = true
 				if entry.Kind == "manifest" {
-					if _, err := Decode(plain, m.BackupID, sum); err != nil {
+					if _, err := backupmanifest.Decode(plain, m.BackupID, sum); err != nil {
 						mismatch = true
 					}
 				}
@@ -159,19 +171,19 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 			// Independently exercise the production streaming verifier. The
 			// preceding pass proves every fixture has valid AEAD framing; this
 			// pass must reject the inconsistent inventory without buffering files.
-			verified := VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
+			verified := backupmanifest.VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
 				_, err := opener.Open(ctx, scope, limits, bytes.NewReader(archive.Bytes()), func(_ context.Context, entry secret.BackupEntry, in io.Reader) error {
 					return accept(entry.Kind, entry.ID, in)
 				})
 				return err
 			})
-			if mode == "valid" && verified != nil || mode != "valid" && !errors.Is(verified, ErrMismatch) {
+			if mode == "valid" && verified != nil || mode != "valid" && !errors.Is(verified, backupmanifest.ErrMismatch) {
 				t.Fatal("production inventory verifier disagreed with independent oracle", verified)
 			}
 			if mode == "valid" {
 				for _, damaged := range [][]byte{append(bytes.Clone(archive.Bytes()), 1), bytes.Clone(archive.Bytes()[:archive.Len()-1])} {
 					accepted := 0
-					verified = VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
+					verified = backupmanifest.VerifyStream(t.Context(), m, time.Second, func(ctx context.Context, accept func(string, string, io.Reader) error) error {
 						_, err := opener.Open(ctx, scope, limits, bytes.NewReader(damaged), func(_ context.Context, entry secret.BackupEntry, in io.Reader) error {
 							if err := accept(entry.Kind, entry.ID, in); err != nil {
 								return err
@@ -181,7 +193,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 						})
 						return err
 					})
-					if accepted != len(entries) || !errors.Is(verified, ErrCallback) {
+					if accepted != len(entries) || !errors.Is(verified, backupmanifest.ErrCallback) {
 						t.Fatal("complete valid inventory concealed failed archive end/outer EOF", accepted, verified)
 					}
 				}
@@ -191,7 +203,7 @@ func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
 }
 
 func FuzzManifestDecode(f *testing.F) {
-	valid, _, err := Encode(fixture())
+	valid, _, err := backupmanifest.Encode(backupmanifest.TestOnlyFixture())
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -199,26 +211,26 @@ func FuzzManifestDecode(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"backup_id":91,"backup_id":91}`))
 	f.Add(append(bytes.Clone(valid), ' '))
-	f.Add([]byte(`{"backup_id":91,"reports":[` + strings.Repeat(`{},`, MaxEntries) + `{}]}`))
+	f.Add([]byte(`{"backup_id":91,"reports":[` + strings.Repeat(`{},`, backupmanifest.MaxEntries) + `{}]}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 256<<10 {
 			t.Skip("bounded parser fuzz input")
 		}
-		got, err := Decode(data, 91, digest(data))
+		got, err := backupmanifest.Decode(data, 91, integrationDigest(data))
 		if bytes.Equal(data, valid) && err != nil {
 			t.Fatal("valid seed rejected", err)
 		}
 		if err != nil {
-			if err != ErrInvalid && err != ErrLimit && err != ErrMismatch { //nolint:errorlint // Exact closed sentinel: no wrapped input or parser details.
+			if err != backupmanifest.ErrInvalid && err != backupmanifest.ErrLimit && err != backupmanifest.ErrMismatch { //nolint:errorlint // Exact closed sentinel: no wrapped input or parser details.
 				t.Fatal("unclassified error")
 			}
 			return
 		}
-		encoded, sum, err := Encode(got)
-		if err != nil || !bytes.Equal(encoded, data) || sum != digest(data) {
+		encoded, sum, err := backupmanifest.Encode(got)
+		if err != nil || !bytes.Equal(encoded, data) || sum != integrationDigest(data) {
 			t.Fatal("successful decode is not canonical", err)
 		}
-		if _, err := Entries(got); err != nil {
+		if _, err := backupmanifest.Entries(got); err != nil {
 			t.Fatal("accepted manifest cannot form a bounded archive", err)
 		}
 	})
