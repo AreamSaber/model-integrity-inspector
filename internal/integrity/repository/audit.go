@@ -234,38 +234,52 @@ func (t *Tenant) verifyAudit(full bool) (AuditVerification, error) {
 			return persistenceError(err)
 		}
 		var err error
-		result, err = t.store.verifyAuditTail(tx, head)
-		if err != nil || !full {
-			return err
+		if full {
+			result, err = t.store.verifyAuditFull(tx, head)
+		} else {
+			result, err = t.store.verifyAuditTail(tx, head)
 		}
-		result.VerifiedCount = 0
-		previousHash := ""
-		// The head SHARE lock serializes appends; cursor batches bound memory.
-		for result.VerifiedCount < head.EventCount {
-			var events []audit.Event
-			if err := tx.Select(auditEventReadColumns(tx)).Where("organization_id = ? AND sequence > ?", t.orgID, result.VerifiedCount).Order("sequence").Limit(500).Find(&events).Error; err != nil {
-				return persistenceError(err)
-			}
-			if len(events) == 0 {
-				return audit.ErrIntegrity
-			}
-			for _, event := range events {
-				if event.Sequence != result.VerifiedCount+1 || event.PreviousHash != previousHash {
-					return audit.ErrIntegrity
-				}
-				if err := audit.Verify(event, t.store.auditSigner); err != nil {
-					return err
-				}
-				result.VerifiedCount++
-				previousHash = event.EventHMAC
-			}
-		}
-		if result.VerifiedCount != head.EventCount || previousHash != head.EventHash {
-			return audit.ErrIntegrity
-		}
-		return nil
+		return err
 	})
 	return result, persistenceError(err)
+}
+
+// One full-chain algorithm serves the original lock-owning public reader and
+// the internal caller-owned snapshot reader. The caller supplies either its
+// existing head lock or a stable transaction snapshot; this function does not
+// start another transaction, change isolation, or acquire a head lock itself.
+func (s *Store) verifyAuditFull(tx *gorm.DB, head auditChainHead) (AuditVerification, error) {
+	result, err := s.verifyAuditTail(tx, head)
+	if err != nil {
+		return result, err
+	}
+	result.VerifiedCount = 0
+	previousHash := ""
+	// The public caller's SHARE lock serializes appends; snapshot callers instead
+	// keep a stable read view. The same 500-event cursor batches bound memory.
+	for result.VerifiedCount < head.EventCount {
+		var events []audit.Event
+		if err := tx.Select(auditEventReadColumns(tx)).Where("organization_id = ? AND sequence > ?", head.OrganizationID, result.VerifiedCount).Order("sequence").Limit(500).Find(&events).Error; err != nil {
+			return result, persistenceError(err)
+		}
+		if len(events) == 0 {
+			return result, audit.ErrIntegrity
+		}
+		for _, event := range events {
+			if event.Sequence != result.VerifiedCount+1 || event.PreviousHash != previousHash {
+				return result, audit.ErrIntegrity
+			}
+			if err := audit.Verify(event, s.auditSigner); err != nil {
+				return result, err
+			}
+			result.VerifiedCount++
+			previousHash = event.EventHMAC
+		}
+	}
+	if result.VerifiedCount != head.EventCount || previousHash != head.EventHash {
+		return result, audit.ErrIntegrity
+	}
+	return result, nil
 }
 
 // ListAudit is scope-bound and append-only: no event update/delete API exists.
