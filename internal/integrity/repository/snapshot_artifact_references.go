@@ -85,7 +85,8 @@ func snapshotReferenceSources() [3]snapshotReferenceSource {
 // source body. Do not format even these private identities and digests.
 type snapshotReferenceRow struct {
 	OrganizationID, ID, TargetID, RunID                                    int64
-	Revision, Valid, Unsigned                                              int
+	Revision                                                               int64
+	Valid, Unsigned                                                        int
 	Rule, Template, Scoring, Tokenizer                                     string
 	ManifestHash, AnalysisSource, SnapshotHash, ResultHash, ParametersHash string
 	Model, Protocol                                                        string
@@ -294,9 +295,12 @@ func snapshotReferenceColumns(tx *gorm.DB, source snapshotReferenceSource) strin
 	valid := positive("r.id") + " AND " + positive("r.organization_id") + " AND (SELECT COUNT(*) FROM organizations o WHERE o.id=r.organization_id)=1 AND " + textOK(source.body, 1, source.maxBytes)
 	columns := integer("organization_id", "organization_id", 9223372036854775807) + "," + integer("id", "id", 9223372036854775807)
 	if source.kind == "baseline" {
-		valid += " AND " + positive("r.run_id") + " AND " + snapshotKeyIntegerOK(tx, "r.analysis_revision", 1, 2147483647) + " AND (SELECT COUNT(*) FROM integrity_runs p WHERE p.organization_id=r.organization_id AND p.id=r.run_id)=1 AND (SELECT COUNT(*) FROM integrity_run_results q WHERE q.organization_id=r.organization_id AND q.run_id=r.run_id AND q.analysis_revision=r.analysis_revision)=1"
+		// Foundation INTEGER is native int64 on SQLite; PostgreSQL already
+		// enforces its own int32 column range. Never impose PG's range on
+		// legitimate retained SQLite revisions or narrow them while scanning.
+		valid += " AND " + positive("r.run_id") + " AND " + positive("r.analysis_revision") + " AND (SELECT COUNT(*) FROM integrity_runs p WHERE p.organization_id=r.organization_id AND p.id=r.run_id)=1 AND (SELECT COUNT(*) FROM integrity_run_results q WHERE q.organization_id=r.organization_id AND q.run_id=r.run_id AND q.analysis_revision=r.analysis_revision)=1"
 		valid += " AND ((r.approval_key_version IS NULL AND r.approval_mac IS NULL) OR (" + textOK("approval_key_version", 1, 64) + " AND " + textOK("approval_mac", 64, 64) + "))"
-		columns += "," + integer("run_id", "run_id", 9223372036854775807) + "," + integer("analysis_revision", "revision", 2147483647) + ",CASE WHEN r.approval_key_version IS NULL AND r.approval_mac IS NULL THEN 1 ELSE 0 END AS unsigned"
+		columns += "," + integer("run_id", "run_id", 9223372036854775807) + "," + integer("analysis_revision", "revision", 9223372036854775807) + ",CASE WHEN r.approval_key_version IS NULL AND r.approval_mac IS NULL THEN 1 ELSE 0 END AS unsigned"
 		for _, field := range []struct {
 			column, alias string
 			limit         int

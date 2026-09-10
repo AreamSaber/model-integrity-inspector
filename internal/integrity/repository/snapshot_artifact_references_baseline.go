@@ -46,7 +46,7 @@ func snapshotReferenceBaselineScope(ctx context.Context, row snapshotReferenceRo
 	if err != nil || !bytes.Equal(raw, canonical) {
 		return zero, false, errSnapshotReferenceInvalid
 	}
-	if scope.OrganizationID != row.OrganizationID || scope.RunID != row.RunID || scope.AnalysisRevision != row.Revision || scope.TargetID < 1 || scope.Model != row.Model || scope.Protocol != row.Protocol || scope.ManifestHash != row.ManifestHash || scope.ResultHash != row.ResultHash || scope.ParametersHash != row.ParametersHash {
+	if scope.OrganizationID != row.OrganizationID || scope.RunID != row.RunID || int64(scope.AnalysisRevision) != row.Revision || scope.TargetID < 1 || scope.Model != row.Model || scope.Protocol != row.Protocol || scope.ManifestHash != row.ManifestHash || scope.ResultHash != row.ResultHash || scope.ParametersHash != row.ParametersHash {
 		return zero, false, errSnapshotReferenceInvalid
 	}
 	for _, hash := range []string{scope.TemplateHash, scope.TokenizerHash, scope.ManifestHash, scope.ResultHash, scope.ParametersHash} {
