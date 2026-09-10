@@ -38,10 +38,12 @@
 ./scripts/apply-branch-protection.ps1 -Repository AreamSaber/model-integrity-inspector -Preview
 ```
 
-## 当前外部前置条件
+## 当前交付状态与后续流程
 
 2026-09-07 创建的仓库 [AreamSaber/model-integrity-inspector](https://github.com/AreamSaber/model-integrity-inspector) 已按项目方明确授权从私有转换为公开，并回读确认 `PUBLIC`。本地 `origin` 和 `main` 保持同步。GitHub CLI 已登录 `AreamSaber`，远端确认账号具有 `ADMIN` 权限。
 
-原私有仓库的套餐限制通过公开仓库解决。`main` 分支保护仍须使用上述脚本应用并回读验证；CI 中的聚合检查失败不能代替 GitHub 服务端的强制合并限制。
+原私有仓库的套餐限制通过公开仓库解决。`main` 分支保护已使用上述脚本应用，独立回读逐项确认了必需 CI、GitHub Actions 来源、最新分支、管理员约束、一次批准、旧批准失效、最后推送批准、对话解决、线性历史、禁止强推和禁止删除。
 
-Docker 镜像构建、OCI 标签验证、镜像 SBOM 和 Trivy 扫描已在 GitHub 托管 runner 上实际执行；本地未安装 Docker 不再阻塞取得这些验收证据。M0-03 已于 2026-09-07 获得项目方正式批准，CI 运行证据见 `docs/reviews/M0-04-review.md`。M0-04 提交最终审核前，仍须完成分支保护应用和回读。
+Docker 镜像构建、OCI 标签验证、镜像 SBOM 和 Trivy 扫描已在 GitHub 托管 runner 上实际执行；本地未安装 Docker 不再阻塞取得这些验收证据。M0-03 已于 2026-09-07 获得项目方正式批准。M0-04 已具备提交最终审核的条件，CI 和分支保护证据见 `docs/reviews/M0-04-review.md`。
+
+后续变更先推送工作分支，再向 `main` 创建 PR。必须满足 `m0-04-required` 成功、分支包含最新 `main`、所有对话已解决，并取得最后推送者之外的有效批准。PR 作者不能批准自己的 PR；当前 CLI 使用仓库所有者账号，因此需要另一位具有相应审核权限的协作者完成 GitHub 审核。管理员也不能直接绕过这些要求。

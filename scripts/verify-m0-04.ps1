@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
+. (Join-Path $PSScriptRoot 'ci-policy.ps1')
 
 $workspaceRoot = Split-Path -Parent $PSScriptRoot
 $go = Resolve-MIIGo
@@ -14,6 +15,8 @@ $requiredFiles = @(
     '.syft.yaml',
     'Dockerfile',
     'scripts\apply-branch-protection.ps1',
+    'scripts\ci-policy.ps1',
+    'scripts\tests\test-m0-04-policy.ps1',
     'scripts\bootstrap-actionlint.ps1',
     'scripts\bootstrap-golangci-lint.ps1',
     'scripts\bootstrap-govulncheck.ps1',
@@ -59,18 +62,10 @@ try {
             throw "Action is not pinned to a full commit SHA: $($actionReference.Value.Trim())"
         }
     }
-    $versionSources = @($workflow) + @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter '*.ps1' | ForEach-Object {
-        Get-Content -Raw -Encoding UTF8 -LiteralPath $_.FullName
-    })
-    foreach ($versionMarker in @('v2.13.2', 'v1.7.0', 'v0.74.0', 'v1.51.1')) {
-        if (($versionSources -join "`n") -notmatch [regex]::Escape($versionMarker)) { throw "Pinned CI tool version is missing: $versionMarker" }
-    }
+    Assert-MIICIVersions -Sources (Get-MIICIVersionSources -WorkspaceRoot $workspaceRoot)
 
     $policy = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspaceRoot '.github\branch-protection\main.json') | ConvertFrom-Json
-    if ($policy.required_status_checks.contexts -notcontains 'm0-04-required') { throw 'Branch policy does not require m0-04-required.' }
-    if (-not $policy.required_status_checks.strict -or -not $policy.enforce_admins) { throw 'Branch policy must be strict and apply to administrators.' }
-    if ($policy.required_pull_request_reviews.required_approving_review_count -lt 1) { throw 'Branch policy must require an approval.' }
-    if ($policy.allow_force_pushes -or $policy.allow_deletions) { throw 'Branch policy must block force pushes and deletion.' }
+    Assert-MIIBranchPolicy -Policy $policy
 
     $dockerfile = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspaceRoot 'Dockerfile')
     if ([regex]::Matches($dockerfile, '(?m)^FROM\s+\S+@sha256:[0-9a-f]{64}').Count -lt 2) { throw 'Docker build stages must pin base image digests.' }

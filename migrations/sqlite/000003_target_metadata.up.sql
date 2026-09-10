@@ -1,0 +1,1 @@
+-- Shared ALTER TABLE expansion uses portable types and defaults.

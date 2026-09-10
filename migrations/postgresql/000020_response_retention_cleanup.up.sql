@@ -1,0 +1,14 @@
+CREATE INDEX integrity_response_retention_due ON integrity_response_retention_schedule(next_due_at, last_checked_at, organization_id);
+CREATE INDEX integrity_response_retention_history ON integrity_response_retention_batches(organization_id, run_id, completed_at, id);
+CREATE INDEX integrity_evidence_deletions_batch ON integrity_evidence_deletions(organization_id, batch_id, attempt_id, source_kind);
+CREATE INDEX integrity_evidence_deletions_run ON integrity_evidence_deletions(organization_id, run_id, attempt_id, source_kind);
+CREATE INDEX integrity_response_evidence_capture_expiry ON integrity_response_evidence(organization_id, created_at, run_id, attempt_id);
+CREATE INDEX integrity_display_evidence_capture_expiry ON integrity_display_evidence(organization_id, captured_at_micros, run_id, attempt_id) WHERE state = 'captured';
+CREATE FUNCTION integrity_evidence_deletion_immutable_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'immutable evidence deletion receipt'; END; $$;
+CREATE TRIGGER integrity_evidence_deletion_immutable BEFORE UPDATE OR DELETE ON integrity_evidence_deletions FOR EACH ROW EXECUTE FUNCTION integrity_evidence_deletion_immutable_guard();
+CREATE FUNCTION integrity_retention_batch_immutable_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF TG_OP = 'DELETE' OR OLD.state = 'completed' THEN RAISE EXCEPTION 'immutable retention batch receipt'; END IF; RETURN NEW; END; $$;
+CREATE TRIGGER integrity_retention_batch_immutable BEFORE UPDATE OR DELETE ON integrity_response_retention_batches FOR EACH ROW EXECUTE FUNCTION integrity_retention_batch_immutable_guard();
+CREATE FUNCTION integrity_raw_no_resurrection_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS (SELECT 1 FROM integrity_evidence_deletions d WHERE d.organization_id = NEW.organization_id AND d.attempt_id = NEW.attempt_id AND d.source_kind = 'analysis-response') THEN RAISE EXCEPTION 'deleted response evidence'; END IF; RETURN NEW; END; $$;
+CREATE TRIGGER integrity_raw_no_resurrection BEFORE INSERT ON integrity_response_evidence FOR EACH ROW EXECUTE FUNCTION integrity_raw_no_resurrection_guard();
+CREATE FUNCTION integrity_display_no_resurrection_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS (SELECT 1 FROM integrity_evidence_deletions d WHERE d.organization_id = NEW.organization_id AND d.attempt_id = NEW.attempt_id AND d.source_kind = 'response-display') THEN RAISE EXCEPTION 'deleted response evidence'; END IF; RETURN NEW; END; $$;
+CREATE TRIGGER integrity_display_no_resurrection BEFORE INSERT ON integrity_display_evidence FOR EACH ROW EXECUTE FUNCTION integrity_display_no_resurrection_guard();

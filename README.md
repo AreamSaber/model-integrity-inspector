@@ -1,6 +1,10 @@
 # Model Integrity Inspector
 
-Model Integrity Inspector（模型真实性检测系统）是一个独立部署的模型 API 完整性检测工具。本仓库当前进入 M0-04 工程交付基线阶段，提供可编译的 Go 单一制品骨架、React + TypeScript 管理端、双数据库迁移目录、规则目录、测试入口、CI、安全扫描、SBOM 和部署目录。
+Model Integrity Inspector（模型真实性检测系统）是一个独立部署的模型 API 完整性检测工具。当前集成分支正在开发 V1.0，主线推进到 M6-05 备份恢复；尚不是完整候选版或正式发行版。
+
+实际应用已验证初始化、登录、目标配置、受控 TLS 预检、预算确认、Worker 检测、分析与证据下钻，以及 JSON/HTML/CSV 报告生成和下载。使用 Go 后端、嵌入式 React + TypeScript 管理端、SQLite/PostgreSQL 和数据库 Job 队列，不依赖其他业务项目源码。
+
+当前仍在补齐完整备份恢复、可信基线评分与规则生命周期、报告其余能力、独立算法校准、部署运维及系统验收。算法仍为开发/未校准状态，不能把测试场景通过当成真实性认证或正式算法验收。各任务的真实证据、已知缺陷和下一步见 [持续开发台账](docs/project/V1.0-持续开发台账.md)，以其顶部最新记录为准；原计划中的正式审核状态与开发进度分别记录。
 
 ## Toolchain
 
@@ -31,21 +35,35 @@ CI 定义位于 `.github/workflows/ci.yml`，稳定合并门禁为 `m0-04-requir
 
 ## Run locally
 
+本地 SQLite 必须使用 `all` 角色，在同一进程中运行 Server 和 Worker；不要用独立的
+`server`/`worker` 角色连接默认 SQLite 配置。先完成上述构建，并在当前进程环境安全设置
+32～256 字节的 `MII_SETUP_TOKEN`，用于首次初始化；不要把真实 token 写入仓库或命令示例。
+以下命令假定没有其他 `MII_*` 配置覆盖，且当前目录是本仓库：
+
 ```powershell
-./scripts/run-server.ps1
-./scripts/run-worker.ps1
-./scripts/run-web.ps1
+$env:APP_ROLE = 'all'
+# 仅首次运行：安全创建主密钥；已有密钥不会被覆盖。
+./artifacts/mii.exe keygen
+./artifacts/mii.exe run
 ```
 
-Server 默认监听 `127.0.0.1:8080`，提供 `/health`、`/ready` 和 `/version`。前端开发服务器默认监听 `127.0.0.1:5173`。当前 Worker 仅验证角色启动与优雅退出，数据库 Job 实现在 M1-06 交付。
+默认使用 `./data/mii.db`、`./data/integrity-master.key` 和 `./reports`，只在本机回环地址
+`http://127.0.0.1:8080` 提供管理端及 `/health`、`/ready`、`/version`。主密钥需单独保管；
+不要删除已有密钥来解决启动失败。非回环部署需要 HTTPS origin 和相应部署配置。
+
+可通过 `--config` 或 `MII_CONFIG` 选择严格 YAML 配置；配置相对路径基于该文件目录。
+PostgreSQL 可使用独立 Server/Worker 角色，需要显式配置数据库、主密钥和共享报告目录；
+`run-server.ps1`/`run-worker.ps1` 仅选择角色，不自动建立这些依赖。前端单独开发可运行
+`./scripts/run-web.ps1`（默认端口 5173），但不能代替真实后端集成验证。完整干净环境安装、
+Compose 交付和恢复演练仍在开发，不将上述开发启动方式当成正式部署验收。
 
 ## Repository boundaries
 
 - `cmd/mii`：唯一 Go 可执行入口，通过 `APP_ROLE=server|worker|all` 切换运行组件。
 - `internal/integrity`：领域和应用模块；禁止从其他业务项目导入源码。
 - `web`：React + TypeScript + Vite 管理端。
-- `migrations/sqlite`、`migrations/postgresql`：双数据库迁移；M1-01 开始加入正式 schema。
-- `rules`：版本化规则、模板和 tokenizer 包；M3 开始发布实际 bundle。
+- `migrations/sqlite`、`migrations/postgresql`：双数据库版本化迁移、校验和与升级测试；已应用的迁移不得原地改写。
+- `rules`：版本化开发规则、模板和 tokenizer 资源；正式校准与发布准入尚未完成。
 - `tests`：集成、契约和 mock upstream 测试资产。
 - `deploy`：单机与 Docker Compose 交付资产。
 

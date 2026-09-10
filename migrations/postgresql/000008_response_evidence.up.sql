@@ -1,0 +1,2 @@
+CREATE INDEX integrity_response_evidence_expiry ON integrity_response_evidence(organization_id, expires_at, attempt_id);
+CREATE INDEX integrity_response_evidence_run ON integrity_response_evidence(organization_id, run_id, logical_sample_id);

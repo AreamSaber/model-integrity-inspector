@@ -1,0 +1,415 @@
+$ErrorActionPreference = 'Stop'
+$scriptsRoot = Split-Path -Parent $PSScriptRoot
+$workspaceRoot = Split-Path -Parent $scriptsRoot
+. (Join-Path $scriptsRoot 'ci-policy.ps1')
+
+$script:policyTestCount = 0
+function Test-MIIPolicyCase {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Test, [switch]$MustFail, [string]$ErrorPattern)
+    $caught = $null
+    try { & $Test } catch { $caught = $_ }
+    if ($MustFail -and $null -eq $caught) { throw "FAIL: $Name accepted an invalid configuration." }
+    if ($MustFail -and $ErrorPattern -and $caught.Exception.Message -notmatch $ErrorPattern) { throw "FAIL: $Name failed for the wrong reason: $caught" }
+    if (-not $MustFail -and $null -ne $caught) { throw "FAIL: $Name failed: $caught" }
+    $script:policyTestCount++
+}
+
+$sources = Get-MIICIVersionSources -WorkspaceRoot $workspaceRoot
+Test-MIIPolicyCase 'actual repository tool sources' { Assert-MIICIVersions -Sources $sources }
+Test-MIIPolicyCase 'Core race owns its job budget independently of builds' {
+    $workflow = $sources['.github/workflows/ci.yml']
+    $core = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name 'core-race'
+    $quality = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name 'quality'
+    if ($core -notmatch 'run: \./scripts/test-race\.ps1 -Group Core' -or $quality -match 'test-race\.ps1') { throw 'Core race must not share the build job budget.' }
+}
+foreach ($case in @(
+    @{ Name = 'missing Application matrix dependency'; Old = 'worker-race, application-race, identity-postgres-race'; New = 'worker-race, identity-postgres-race' },
+    @{ Name = 'Application result faked'; Old = 'APPLICATION_RACE: ${{ needs.application-race.result }}'; New = 'APPLICATION_RACE: success' },
+    @{ Name = 'Application result ignored'; Old = '"$WORKER_RACE" "$APPLICATION_RACE" "$IDENTITY_POSTGRES_RACE"'; New = '"$WORKER_RACE" "$IDENTITY_POSTGRES_RACE"' },
+    @{ Name = 'missing required Core race dependency'; Old = 'needs: [quality, core-race, repository-race'; New = 'needs: [quality, repository-race' },
+    @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, core-race, repository-race, worker-race'; New = 'needs: [quality, core-race, worker-race' },
+    @{ Name = 'missing required Worker matrix dependency'; Old = 'repository-race, worker-race, application-race'; New = 'repository-race, application-race' },
+    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'application-race, identity-postgres-race, dependency-scan'; New = 'application-race, dependency-scan' },
+    @{ Name = 'missing required native PG backup dependency'; Old = ', image, pg-backup-native]'; New = ', image]' },
+    @{ Name = 'native PG backup result replaced by literal success'; Old = 'PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}'; New = 'PG_BACKUP_NATIVE: success' },
+    @{ Name = 'required gate ignores native PG backup result'; Old = '"$IMAGE" "$PG_BACKUP_NATIVE"; do'; New = '"$IMAGE"; do' },
+    @{ Name = 'one missing race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
+    @{ Name = 'duplicate race matrix shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
+    @{ Name = 'race matrix cancels siblings on failure'; Old = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: false"; New = "repository-race-`${{ matrix.shard }}`r`n    strategy:`r`n      fail-fast: true" },
+    @{ Name = 'race matrix can exclude shard'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" },
+    @{ Name = 'Core job omits remaining race packages'; Old = 'run: ./scripts/test-race.ps1 -Group Core'; New = 'run: echo omitted' },
+    @{ Name = 'Core job uses unknown race group'; Old = 'run: ./scripts/test-race.ps1 -Group Core'; New = 'run: ./scripts/test-race.ps1 -Group Unknown' },
+    @{ Name = 'repository matrix always executes one shard'; Old = 'run: ./scripts/test-race.ps1 -Group Repository -Shard ${{ matrix.shard }}'; New = 'run: ./scripts/test-race.ps1 -Group Repository -Shard 0' },
+    @{ Name = 'required gate may be skipped after failure'; Old = 'if: always()'; New = 'if: success()' },
+    @{ Name = 'required gate ignores Core result'; Old = '"$QUALITY" "$CORE_RACE" "$REPOSITORY_RACE"'; New = '"$QUALITY" "$REPOSITORY_RACE"' },
+    @{ Name = 'required gate ignores matrix result'; Old = '"$CORE_RACE" "$REPOSITORY_RACE" "$WORKER_RACE"'; New = '"$CORE_RACE" "$WORKER_RACE"' },
+    @{ Name = 'required gate ignores Worker result'; Old = '"$REPOSITORY_RACE" "$WORKER_RACE" "$APPLICATION_RACE"'; New = '"$REPOSITORY_RACE" "$APPLICATION_RACE"' },
+    @{ Name = 'required gate ignores PostgreSQL identity result'; Old = '"$APPLICATION_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN"'; New = '"$APPLICATION_RACE" "$DEPENDENCY_SCAN"' },
+    @{ Name = 'required gate ignores failed result'; Old = 'test "$result" = "success" || exit 1'; New = 'test "$result" = "success" || exit 0' },
+    @{ Name = 'required gate bound to literal success'; Old = 'REPOSITORY_RACE: ${{ needs.repository-race.result }}'; New = 'REPOSITORY_RACE: success' },
+    @{ Name = 'Core result replaced by literal success'; Old = 'CORE_RACE: ${{ needs.core-race.result }}'; New = 'CORE_RACE: success' },
+    @{ Name = 'Worker result replaced by literal success'; Old = 'WORKER_RACE: ${{ needs.worker-race.result }}'; New = 'WORKER_RACE: success' },
+    @{ Name = 'PostgreSQL identity result replaced by literal success'; Old = 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}'; New = 'IDENTITY_POSTGRES_RACE: success' },
+    @{ Name = 'Worker always executes shard zero'; Old = 'run: ./scripts/test-race.ps1 -Group Worker -Shard ${{ matrix.shard }}'; New = 'run: ./scripts/test-race.ps1 -Group Worker -Shard 0' },
+    @{ Name = 'PostgreSQL identity replaced by default Core'; Old = 'run: ./scripts/test-race.ps1 -Group IdentityPostgres'; New = 'run: ./scripts/test-race.ps1 -Group Core' },
+    @{ Name = 'failed matrix is marked nonfatal'; Old = 'name: repository-race-${{ matrix.shard }}'; New = "name: repository-race-`${{ matrix.shard }}`n    continue-on-error: true" }
+)) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $old = $case.Old -replace '\r\n', "`n"
+    $offset = $workflow.IndexOf($old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Mutation target missing: $($case.Name)" }
+    $changedWorkflow = $workflow.Remove($offset, $old.Length).Insert($offset, ($case.New -replace '\r\n', "`n"))
+    Test-MIIPolicyCase $case.Name -MustFail -ErrorPattern 'race|Race|Required|required|six|six|success|CI' {
+        Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+    }
+}
+
+# Scope each native-tool mutation to this exact job. An unchanged pinned
+# PostgreSQL service/version elsewhere in the workflow cannot satisfy it.
+foreach ($mutation in @(
+    @{ Name = 'native backup job missing'; Old = '    name: pg-backup-native'; New = '    name: disconnected-pg-backup' },
+    @{ Name = 'native backup job skipped'; Old = '    runs-on: ubuntu-24.04'; New = "    runs-on: ubuntu-24.04`n    if: false" },
+    @{ Name = 'native backup job wrong OS'; Old = '    runs-on: ubuntu-24.04'; New = '    runs-on: windows-2025' },
+    @{ Name = 'native backup timeout raised'; Old = '    timeout-minutes: 25'; New = '    timeout-minutes: 30' },
+    @{ Name = 'tool image not pinned'; Old = 'postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af'; New = 'postgres:18.6-bookworm' },
+    @{ Name = 'container init omitted'; Old = '      options: --init'; New = '      options: --cpus 1' },
+    @{ Name = 'service omitted'; Old = '    services:'; New = '    services-disabled:' },
+    @{ Name = 'service exposes host port'; Old = '        options: >-'; New = "        ports: [5432:5432]`n        options: >-" },
+    @{ Name = 'service health command changed'; Old = '--health-cmd "pg_isready -U mii_test_owner -d mii_ci"'; New = '--health-cmd "true"' },
+    @{ Name = 'container dependency setup omitted'; Old = '          apt-get update'; New = '          echo omitted' },
+    @{ Name = 'unpinned checkout action'; Old = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'; New = 'actions/checkout@main' },
+    @{ Name = 'unpinned setup-go action'; Old = 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'; New = 'actions/setup-go@main' },
+    @{ Name = 'native test skipped'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - name: Native PostgreSQL backup and TLS regression`n        if: false" },
+    @{ Name = 'native test failure ignored'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - name: Native PostgreSQL backup and TLS regression`n        continue-on-error: true" },
+    @{ Name = 'extra unnamed step'; Old = '      - name: Native PostgreSQL backup and TLS regression'; New = "      - run: echo extra`n      - name: Native PostgreSQL backup and TLS regression" },
+    @{ Name = 'dump path is relative'; Old = 'MII_TEST_PG_DUMP: /usr/lib/postgresql/18/bin/pg_dump'; New = 'MII_TEST_PG_DUMP: pg_dump' },
+    @{ Name = 'restore path is relative'; Old = 'MII_TEST_PG_RESTORE: /usr/lib/postgresql/18/bin/pg_restore'; New = 'MII_TEST_PG_RESTORE: pg_restore' },
+    @{ Name = 'native tool version changed'; Old = 'pg_dump (PostgreSQL) 18.6'; New = 'pg_dump (PostgreSQL) 18.7' },
+    @{ Name = 'service version assertion bypassed'; Old = "current_setting('server_version_num')='180006'"; New = 'true' },
+    @{ Name = 'CREATEDB assertion bypassed'; Old = 'rolname=current_user AND rolcreatedb'; New = 'rolname=current_user' },
+    @{ Name = 'uses host loopback instead of service'; Old = '@postgres:5432/mii_ci?sslmode=disable'; New = '@127.0.0.1:5432/mii_ci?sslmode=disable' },
+    @{ Name = 'prints full DSN'; Old = '          go test -p 1 -tags pgbackup_integration'; New = "          echo `"`$MII_TEST_POSTGRES_DSN`"`n          go test -p 1 -tags pgbackup_integration" },
+    @{ Name = 'implicit GOFLAGS allowed'; Old = '          test -z "$(go env GOFLAGS)"'; New = '          echo flags unchecked' },
+    @{ Name = 'integration build tag omitted'; Old = '-tags pgbackup_integration'; New = '-tags unrelated' },
+    @{ Name = 'repository integration omitted'; Old = './internal/integrity/pgbackup ./internal/integrity/repository'; New = './internal/integrity/pgbackup' },
+    @{ Name = 'TLS integration omitted'; Old = './internal/integrity/pgbackup ./internal/integrity/repository'; New = './internal/integrity/repository' },
+    @{ Name = 'TLS test family filtered out'; Old = 'TestPostgresDump|TestPGBackupTLS|TestNativeProcess'; New = 'TestPostgresDump|TestNativeProcess' },
+    @{ Name = 'native process family filtered out'; Old = 'TestPostgresDump|TestPGBackupTLS|TestNativeProcess'; New = 'TestPostgresDump|TestPGBackupTLS' },
+    @{ Name = 'native package parallelism changed'; Old = 'go test -p 1'; New = 'go test -p 2' },
+    @{ Name = 'cached test result allowed'; Old = '-count=1 -timeout=10m'; New = '-timeout=10m' },
+    @{ Name = 'native test timeout raised'; Old = '-count=1 -timeout=10m'; New = '-count=1 -timeout=20m' },
+    @{ Name = 'native failure swallowed'; Old = '-count=1 -timeout=10m'; New = '-count=1 -timeout=10m || true' }
+)) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name 'pg-backup-native'
+    $offset = $body.IndexOf($mutation.Old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Native PG CI mutation target missing: $($mutation.Name)" }
+    $changedBody = $body.Remove($offset, $mutation.Old.Length).Insert($offset, $mutation.New)
+    Test-MIIPolicyCase $mutation.Name -MustFail -ErrorPattern 'Required PG backup CI' {
+        Assert-MIIPGBackupWorkflow -Workflow $workflow.Replace($body, $changedBody)
+    }
+}
+
+# Scope mutations to each actual job. Unchanged checks in a different job
+# cannot accidentally satisfy the mutated task's requirement.
+foreach ($jobName in @('core-race', 'worker-race', 'application-race', 'identity-postgres-race')) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name $jobName
+    $mutations = @(
+        @{ Name = 'job silently skipped'; Old = '    runs-on: ubuntu-24.04'; New = "    runs-on: ubuntu-24.04`n    if: false" },
+        @{ Name = 'job limit raised'; Old = '    timeout-minutes: 25'; New = '    timeout-minutes: 30' },
+        @{ Name = 'native race host changed'; Old = '    runs-on: ubuntu-24.04'; New = '    runs-on: windows-2025' },
+        @{ Name = 'race step conditionally skipped'; Old = '        run: ./scripts/test-race.ps1'; New = "        if: false`n        run: ./scripts/test-race.ps1" },
+        @{ Name = 'isolated service omitted'; Old = '    services:'; New = '    services-disabled:' }
+    )
+    if ($jobName -ceq 'worker-race' -or $jobName -ceq 'application-race') {
+        $mutations += @(
+            @{ Name = 'one Worker shard missing'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
+            @{ Name = 'one Worker shard duplicated'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
+            @{ Name = 'Worker sibling cancelled'; Old = 'fail-fast: false'; New = 'fail-fast: true' },
+            @{ Name = 'Worker matrix excludes parent'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" }
+        )
+    }
+    if ($jobName -ceq 'application-race') {
+        $mutations += @(
+            @{ Name = 'Application serialized behind Core'; Old = '    timeout-minutes: 25'; New = "    timeout-minutes: 25`n    needs: [core-race]" },
+            @{ Name = 'Application no pinned action'; Old = 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'; New = 'actions/setup-go@main' },
+            @{ Name = 'Application no enumeration policy'; Old = './scripts/tests/test-race-shards.ps1 -NativeGo'; New = 'echo omitted' },
+            @{ Name = 'Application wrong database'; Old = 'POSTGRES_DB: mii_ci'; New = 'POSTGRES_DB: unrelated' },
+            @{ Name = 'Application fake DSN'; Old = 'MII_TEST_POSTGRES_DSN: postgres://'; New = 'MII_TEST_POSTGRES_DSN: fake://' },
+            @{ Name = 'Application wrong health'; Old = '--health-cmd "pg_isready -U mii_test_owner -d mii_ci"'; New = '--health-cmd "true"' },
+            @{ Name = 'Application hidden filter'; Old = '        env:'; New = "        env:`n          GOFLAGS: -skip=Test" },
+            @{ Name = 'Application constant shard'; Old = '-Group Application -Shard ${{ matrix.shard }}'; New = '-Group Application -Shard 0' },
+            @{ Name = 'Application wrong group'; Old = '-Group Application'; New = '-Group Core' },
+            @{ Name = 'Application ignored exit'; Old = '-Group Application -Shard ${{ matrix.shard }}'; New = '-Group Application -Shard ${{ matrix.shard }}; exit 0' },
+            @{ Name = 'Application added body'; Old = '    steps:'; New = "    steps:`n      - run: echo unexpected" }
+        )
+    }
+    if ($jobName -ceq 'core-race') {
+        $mutations += @(
+            @{ Name = 'serializes behind quality budget'; Old = '    name: core-race'; New = "    name: core-race`n    needs: [quality]" },
+            @{ Name = 'wrong Core job name'; Old = '    name: core-race'; New = '    name: disconnected-core' },
+            @{ Name = 'unpinned action'; Old = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'; New = 'actions/checkout@main' },
+            @{ Name = 'missing modules download'; Old = '        run: go mod download'; New = '        run: echo omitted' },
+            @{ Name = 'coverage policy omitted'; Old = '          ./scripts/tests/test-race-shards.ps1'; New = '          echo omitted' },
+            @{ Name = 'wrong PG database'; Old = 'POSTGRES_DB: mii_ci'; New = 'POSTGRES_DB: unrelated' },
+            @{ Name = 'wrong PG DSN host'; Old = '@127.0.0.1:15432/mii_ci'; New = '@localhost:5432/mii_ci' },
+            @{ Name = 'fake DSN presence'; Old = 'MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable'; New = 'MII_TEST_POSTGRES_DSN: offline-test-presence' },
+            @{ Name = 'health check replaced'; Old = '--health-cmd "pg_isready -U mii_test_owner -d mii_ci"'; New = '--health-cmd "true"' },
+            @{ Name = 'skips tests with implicit flags'; Old = '        env:'; New = "        env:`n          GOFLAGS: -skip=Test" },
+            @{ Name = 'duplicates race body'; Old = '        run: ./scripts/test-race.ps1 -Group Core'; New = "        run: ./scripts/test-race.ps1 -Group Core`n      - name: duplicate`n        run: ./scripts/test-race.ps1 -Group Core" },
+            @{ Name = 'step failure swallowed'; Old = '        run: ./scripts/test-race.ps1 -Group Core'; New = '        run: ./scripts/test-race.ps1 -Group Core; exit 0' },
+            @{ Name = 'extra shard filter'; Old = '        run: ./scripts/test-race.ps1 -Group Core'; New = '        run: ./scripts/test-race.ps1 -Group Core -Shard 1' }
+        )
+    }
+    foreach ($mutation in $mutations) {
+        $offset = $body.IndexOf($mutation.Old, [StringComparison]::Ordinal)
+        if ($offset -lt 0) { throw "Mutation target missing in ${jobName}: $($mutation.Name)" }
+        $changedBody = $body.Remove($offset, $mutation.Old.Length).Insert($offset, $mutation.New)
+        $changedWorkflow = $workflow.Replace($body, $changedBody)
+        Test-MIIPolicyCase "$jobName $($mutation.Name)" -MustFail -ErrorPattern 'race|Race|Required|required|six|success|CI' {
+            Assert-MIIRaceWorkflow -Workflow $changedWorkflow
+        }
+    }
+}
+foreach ($mutation in @(
+    @{ Name = 'quality job limit raised'; Old = '    timeout-minutes: 25'; New = '    timeout-minutes: 30' },
+    @{ Name = 'quality build skipped'; Old = '        run: ./scripts/build.ps1'; New = '        run: echo omitted' },
+    @{ Name = 'quality static check skipped'; Old = '        run: ./scripts/lint.ps1'; New = '        run: echo omitted' },
+    @{ Name = 'quality offline isolation skipped'; Old = '        run: ./scripts/test-replay-netns.ps1'; New = '        run: echo omitted' },
+    @{ Name = 'quality conditional step'; Old = '        run: ./scripts/build.ps1'; New = "        if: false`n        run: ./scripts/build.ps1" },
+    @{ Name = 'quality serializes behind Core'; Old = '    name: quality'; New = "    name: quality`n    needs: [core-race]" },
+    @{ Name = 'Core moved back to build budget'; Old = '        run: ./scripts/build.ps1'; New = "        run: ./scripts/build.ps1`n      - name: race again`n        run: ./scripts/test-race.ps1 -Group Core" }
+)) {
+    $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
+    $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name 'quality'
+    $offset = $body.IndexOf($mutation.Old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Quality mutation target missing: $($mutation.Name)" }
+    $changedBody = $body.Remove($offset, $mutation.Old.Length).Insert($offset, $mutation.New)
+    Test-MIIPolicyCase $mutation.Name -MustFail -ErrorPattern 'Quality CI' {
+        Assert-MIIRaceWorkflow -Workflow $workflow.Replace($body, $changedBody)
+    }
+}
+Test-MIIPolicyCase 'verifier literals cannot replace tool sources' -MustFail {
+    Assert-MIICIVersions -Sources @{ 'scripts/verify-m0-04.ps1' = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'verify-m0-04.ps1') }
+}
+foreach ($sourcePath in $sources.Keys) {
+    Test-MIIPolicyCase "missing authoritative file $sourcePath" -MustFail {
+        $changed = $sources.Clone()
+        $changed.Remove($sourcePath)
+        Assert-MIICIVersions -Sources $changed
+    }
+}
+
+foreach ($case in @(
+    @{ Name = 'Go CI version'; File = '.github/workflows/ci.yml'; Old = 'GO_VERSION: 1.26.7'; New = 'GO_VERSION: 1.26.8' },
+    @{ Name = 'Node CI version'; File = '.github/workflows/ci.yml'; Old = 'NODE_VERSION: 24.19.0'; New = 'NODE_VERSION: 24.20.0' },
+    @{ Name = 'pnpm CI version'; File = '.github/workflows/ci.yml'; Old = 'PNPM_VERSION: 11.19.0'; New = 'PNPM_VERSION: 11.20.0' },
+    @{ Name = 'pnpm install ignores pinned environment'; File = '.github/workflows/ci.yml'; Old = 'run: npm install --global "pnpm@${PNPM_VERSION}"'; New = 'run: npm install --global "pnpm@latest"' },
+    @{ Name = 'one of two Trivy actions'; File = '.github/workflows/ci.yml'; Old = 'version: v0.74.0'; New = 'version: v0.74.1' },
+    @{ Name = 'one missing Syft action pin'; File = '.github/workflows/ci.yml'; Old = 'syft-version: v1.51.1'; New = '# syft-version: v1.51.1' },
+    @{ Name = 'duplicate Trivy pin'; File = '.github/workflows/ci.yml'; Old = 'version: v0.74.0'; New = "version: v0.74.0`n          version: v0.74.1" },
+    @{ Name = 'setup-go not using pinned environment'; File = '.github/workflows/ci.yml'; Old = 'go-version: ${{ env.GO_VERSION }}'; New = 'go-version: stable' },
+    @{ Name = 'setup-node not using pinned environment'; File = '.github/workflows/ci.yml'; Old = 'node-version: ${{ env.NODE_VERSION }}'; New = 'node-version: latest' },
+    @{ Name = 'Go local expected version'; File = 'scripts/toolchain.ps1'; Old = "`$MIIExpectedGoVersion = 'go1.26.7'"; New = "`$MIIExpectedGoVersion = 'go1.26.8'" },
+    @{ Name = 'Node local expected version'; File = 'scripts/toolchain.ps1'; Old = "`$MIIExpectedNodeVersion = 'v24.19.0'"; New = "`$MIIExpectedNodeVersion = 'v24.20.0'" },
+    @{ Name = 'pnpm local expected version'; File = 'scripts/toolchain.ps1'; Old = "`$MIIExpectedPnpmVersion = '11.19.0'"; New = "`$MIIExpectedPnpmVersion = '11.20.0'" },
+    @{ Name = 'golangci-lint URL but old archive names remain'; File = 'scripts/bootstrap-golangci-lint.ps1'; Old = '/download/v2.13.2/'; New = '/download/v2.13.3/' },
+    @{ Name = 'golangci-lint Windows archive'; File = 'scripts/bootstrap-golangci-lint.ps1'; Old = 'golangci-lint-2.13.2-windows-amd64.zip'; New = 'golangci-lint-2.13.3-windows-amd64.zip' },
+    @{ Name = 'golangci-lint Linux archive'; File = 'scripts/bootstrap-golangci-lint.ps1'; Old = 'golangci-lint-2.13.2-linux-amd64.tar.gz'; New = 'golangci-lint-2.13.3-linux-amd64.tar.gz' },
+    @{ Name = 'govulncheck install but old version assertion remains'; File = 'scripts/bootstrap-govulncheck.ps1'; Old = 'install golang.org/x/vuln/cmd/govulncheck@v1.7.0'; New = 'install golang.org/x/vuln/cmd/govulncheck@v1.8.0' },
+    @{ Name = 'govulncheck removed install'; File = 'scripts/bootstrap-govulncheck.ps1'; Old = '& $go install golang.org/x/vuln/cmd/govulncheck@v1.7.0'; New = '# & $go install golang.org/x/vuln/cmd/govulncheck@v1.7.0' },
+    @{ Name = 'actionlint actual URL'; File = 'scripts/bootstrap-actionlint.ps1'; Old = '/download/v1.7.12/'; New = '/download/v1.7.13/' },
+    @{ Name = 'Syft actual URL'; File = 'scripts/bootstrap-syft.ps1'; Old = '/download/v1.51.1/'; New = '/download/v1.51.2/' }
+)) {
+    $offset = $sources[$case.File].IndexOf($case.Old, [StringComparison]::Ordinal)
+    if ($offset -lt 0) { throw "Test mutation target not found: $($case.Name)" }
+    Test-MIIPolicyCase $case.Name -MustFail {
+        $changed = $sources.Clone()
+        # Replace only one occurrence; old values elsewhere and in comments must not satisfy the guard.
+        $changed[$case.File] = $changed[$case.File].Remove($offset, $case.Old.Length).Insert($offset, $case.New) + "`n# Previous setting: $($case.Old)`n"
+        Assert-MIICIVersions -Sources $changed
+    }
+}
+
+$policyJSON = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspaceRoot '.github/branch-protection/main.json')
+Test-MIIPolicyCase 'actual request policy' { Assert-MIIBranchPolicy -Policy ($policyJSON | ConvertFrom-Json) }
+# Sanitized shape of the real GitHub GET response, independently specified, not produced by the validator.
+$appliedJSON = @'
+{
+  "required_status_checks": { "strict": true, "contexts": ["m0-04-required"], "checks": [{"context": "m0-04-required", "app_id": 15368}] },
+  "required_pull_request_reviews": { "dismiss_stale_reviews": true, "require_code_owner_reviews": false, "require_last_push_approval": true, "required_approving_review_count": 1 },
+  "enforce_admins": { "enabled": true },
+  "required_linear_history": { "enabled": true },
+  "allow_force_pushes": { "enabled": false },
+  "allow_deletions": { "enabled": false },
+  "block_creations": { "enabled": false },
+  "required_conversation_resolution": { "enabled": true },
+  "lock_branch": { "enabled": false },
+  "allow_fork_syncing": { "enabled": false }
+}
+'@
+Test-MIIPolicyCase 'real response shape without disabled restrictions' { Assert-MIIBranchPolicy -Policy ($appliedJSON | ConvertFrom-Json) -Applied }
+Test-MIIPolicyCase 'response with explicit null restrictions' {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed | Add-Member -NotePropertyName restrictions -NotePropertyValue $null
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'legacy unsafe response still contains required context' -MustFail {
+    Assert-MIIBranchPolicy -Applied -Policy ('{"required_status_checks":{"contexts":["m0-04-required"],"strict":false},"enforce_admins":{"enabled":false},"required_pull_request_reviews":{"required_approving_review_count":0},"allow_force_pushes":{"enabled":true},"allow_deletions":{"enabled":true}}' | ConvertFrom-Json)
+}
+foreach ($field in @('enforce_admins', 'required_linear_history', 'allow_force_pushes', 'allow_deletions',
+    'block_creations', 'required_conversation_resolution', 'lock_branch', 'allow_fork_syncing')) {
+    Test-MIIPolicyCase "changed remote $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.$field.enabled = -not $changed.$field.enabled
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+    Test-MIIPolicyCase "missing remote $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.PSObject.Properties.Remove($field)
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+    Test-MIIPolicyCase "missing remote $field.enabled" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.$field.PSObject.Properties.Remove('enabled')
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+    Test-MIIPolicyCase "changed local $field" -MustFail {
+        $changed = $policyJSON | ConvertFrom-Json
+        $changed.$field = -not $changed.$field
+        Assert-MIIBranchPolicy -Policy $changed
+    }
+}
+foreach ($field in @('dismiss_stale_reviews', 'require_last_push_approval', 'require_code_owner_reviews')) {
+    Test-MIIPolicyCase "changed review $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_pull_request_reviews.$field = -not $changed.required_pull_request_reviews.$field
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+    Test-MIIPolicyCase "missing review $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_pull_request_reviews.PSObject.Properties.Remove($field)
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+}
+foreach ($count in @(0, 2, '1', $null)) {
+    Test-MIIPolicyCase "changed approval count [$count]" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_pull_request_reviews.required_approving_review_count = $count
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+}
+foreach ($appID in @(-1, 999, '15368', $null)) {
+    Test-MIIPolicyCase "wrong status check app [$appID]" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_status_checks.checks[0].app_id = $appID
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+}
+foreach ($field in @('checks', 'contexts', 'strict')) {
+    Test-MIIPolicyCase "missing required status $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_status_checks.PSObject.Properties.Remove($field)
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+}
+foreach ($field in @('context', 'app_id')) {
+    Test-MIIPolicyCase "missing bound check $field" -MustFail {
+        $changed = $appliedJSON | ConvertFrom-Json
+        $changed.required_status_checks.checks[0].PSObject.Properties.Remove($field)
+        Assert-MIIBranchPolicy -Policy $changed -Applied
+    }
+}
+Test-MIIPolicyCase 'missing approval count' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_pull_request_reviews.PSObject.Properties.Remove('required_approving_review_count')
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'wrong required context' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_status_checks.contexts = @('m0-04-required-fake')
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'check app bound to wrong context' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_status_checks.checks[0].context = 'm0-04-required-fake'
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'disabled strict status' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_status_checks.strict = $false
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'false string is not a JSON boolean' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.allow_force_pushes.enabled = 'false'
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'unbound duplicate required check' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_status_checks.checks += [PSCustomObject]@{ context = 'm0-04-required'; app_id = -1 }
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+Test-MIIPolicyCase 'PR bypass allowlist' -MustFail {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.required_pull_request_reviews | Add-Member -NotePropertyName bypass_pull_request_allowances -NotePropertyValue ([PSCustomObject]@{ users = @([PSCustomObject]@{ login = 'admin' }); teams = @(); apps = @() })
+    Assert-MIIBranchPolicy -Policy $changed -Applied
+}
+
+function Invoke-MIIMockedProtectionApply {
+    param([Parameter(Mandatory)][string]$Response)
+    $mockState = @{ Response = $Response; Calls = [Collections.Generic.List[string]]::new() }
+    $savedExitCode = $global:LASTEXITCODE
+    $fakeGH = {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'auth') { $mockState.Calls.Add('AUTH'); return }
+        if ($args[0] -ne 'api') { throw 'Unexpected mock gh command.' }
+        if ($args -contains 'PUT') { $mockState.Calls.Add('PUT'); return }
+        $mockState.Calls.Add('GET')
+        $mockState.Response
+    }.GetNewClosure()
+    # Function scope shadows command resolution only while the production script is called.
+    # The mock never launches gh, so even the PUT branch has no external side effect.
+    function Get-Command {
+        param([string]$Name, [string]$ErrorAction)
+        if ($Name -cne 'gh' -or $ErrorAction -cne 'SilentlyContinue') { throw 'Unexpected mock command lookup.' }
+        [PSCustomObject]@{ Source = $fakeGH }
+    }
+    try {
+        & (Join-Path $scriptsRoot 'apply-branch-protection.ps1') -Repository 'fixture/test'
+    } finally {
+        $global:LASTEXITCODE = $savedExitCode
+        if (($mockState.Calls -join ',') -cne 'AUTH,PUT,GET') { throw 'Production script did not execute expected mock AUTH,PUT,GET sequence.' }
+    }
+}
+Test-MIIPolicyCase 'actual apply entry point accepts secure readback' {
+    $output = Invoke-MIIMockedProtectionApply -Response $appliedJSON
+    if ($output -notcontains 'Branch protection applied and verified: fixture/test/main') { throw 'Success message is missing.' }
+}
+Test-MIIPolicyCase 'actual apply entry point rejects unsafe readback' -MustFail -ErrorPattern '^Policy mismatch at allow_force_pushes.enabled:' {
+    $changed = $appliedJSON | ConvertFrom-Json
+    $changed.allow_force_pushes.enabled = $true
+    Invoke-MIIMockedProtectionApply -Response ($changed | ConvertTo-Json -Depth 10)
+}
+Test-MIIPolicyCase 'actual apply entry point rejects incomplete readback' -MustFail -ErrorPattern '^Required policy field is missing:' {
+    Invoke-MIIMockedProtectionApply -Response '{"required_status_checks":{"contexts":["m0-04-required"]}}'
+}
+Test-MIIPolicyCase 'actual apply entry point rejects malformed JSON' -MustFail -ErrorPattern 'JSON' {
+    Invoke-MIIMockedProtectionApply -Response 'not-json-m0-04-required'
+}
+
+# Verify production entry points are wired to the same tested helpers, without running network writes or builds.
+foreach ($entry in @(
+    @{ File = 'verify-m0-04.ps1'; Commands = @('Assert-MIICIVersions', 'Get-MIICIVersionSources', 'Assert-MIIBranchPolicy') },
+    @{ File = 'apply-branch-protection.ps1'; Commands = @('Assert-MIIBranchPolicy', 'ConvertFrom-Json') }
+)) {
+    Test-MIIPolicyCase "production validator wiring $($entry.File)" {
+        $ast = Get-MIIPolicyScriptAST -Source (Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot $entry.File))
+        $commands = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
+        foreach ($command in $entry.Commands) {
+            if ($commands -notcontains $command) { throw "Production entry point does not call $command." }
+        }
+    }
+}
+Write-Output "M0-04 policy regression tests passed: $script:policyTestCount cases (offline, no remote mutations)."

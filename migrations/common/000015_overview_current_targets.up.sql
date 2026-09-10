@@ -1,0 +1,2 @@
+-- Organization overview reads only current target directory records.
+-- Versions 1 through 14 remain immutable; the index is dialect-specific.

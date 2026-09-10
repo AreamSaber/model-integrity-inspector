@@ -1,0 +1,11 @@
+# Transactional tamper-evident audit
+
+The audit module defines a fixed canonical event format (`mii.audit.v1`) and an external-key `MAC` interface. `secret.KeyRing` implements that interface through its separately derived audit-integrity key. No integrity key or master key is stored in SQL. Canonical timestamps are UTC integer microseconds to round-trip identically through PostgreSQL and SQLite.
+
+Trusted application services attach `audit.Actor` with `audit.WithActor`. Actor metadata contains a stable reason code and pre-sanitized IP/device summaries, never passwords, keys, submitted usernames, request/response bodies or arbitrary freeform diffs. Missing signer or actor metadata rejects sensitive writes. Initial setup accepts an anonymous request context and binds its first event to the newly created administrator inside the setup transaction.
+
+Repository appends serialize on a per-organization chain-head row (PostgreSQL `FOR UPDATE`, SQLite immediate single-writer transaction), verify the current tail, sign the next event and update the head inside the same transaction as the sensitive mutation. Signing or audit insertion failure rolls back setup, password/session changes and catalog writes. The repository exposes append/list/verify only, not event update/delete.
+
+`Tenant.VerifyAuditTail` verifies the current two-event tail and chain head. `Tenant.VerifyAuditFull` locks a consistent head and verifies ordered batches, including sequence gaps and predecessor links. A missing head is a failure, not an empty-chain success. Startup/recovery must perform a full-chain verification before enabling sensitive writes; readiness can use the bounded tail check. API DTOs must not expose event HMACs or raw chain hashes.
+
+Limitations and pending work: this is tamper evidence, not protection against a host administrator controlling the database, binary and external key ring. A tail check does not replace full-chain verification. External backup anchors are needed to detect rollback of the entire database to an earlier internally valid chain. Retention sealing, deletion receipts, maintenance-account grants and backup manifest anchor export are separate M6/OPS work and are not implemented by this module; deleting audit events directly will fail full verification. Old key versions must be retained for all retained events.

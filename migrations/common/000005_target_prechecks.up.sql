@@ -1,0 +1,28 @@
+CREATE TABLE integrity_target_prechecks (
+ id BIGINT NOT NULL PRIMARY KEY CHECK (id > 0),
+ organization_id BIGINT NOT NULL REFERENCES organizations(id),
+ target_id BIGINT NOT NULL,
+ target_version BIGINT NOT NULL CHECK (target_version > 0),
+ secret_id BIGINT NOT NULL,
+ secret_version BIGINT NOT NULL CHECK (secret_version > 0),
+ request_key TEXT NOT NULL CHECK (length(request_key) BETWEEN 1 AND 128),
+ snapshot_json TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'passed', 'failed')),
+ job_id BIGINT,
+ request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count BETWEEN 0 AND 3),
+ max_output_parameter TEXT NOT NULL DEFAULT '',
+ result_json TEXT NOT NULL DEFAULT '[]',
+ error_code TEXT NOT NULL DEFAULT '',
+ created_by BIGINT NOT NULL,
+ created_at TIMESTAMP NOT NULL,
+ started_at TIMESTAMP,
+ finished_at TIMESTAMP,
+ version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+ UNIQUE (organization_id, id),
+ UNIQUE (organization_id, request_key),
+ FOREIGN KEY (organization_id, target_id) REFERENCES integrity_targets(organization_id, id),
+ FOREIGN KEY (organization_id, secret_id) REFERENCES integrity_secrets(organization_id, id),
+ FOREIGN KEY (organization_id, created_by) REFERENCES organization_members(organization_id, user_id),
+ FOREIGN KEY (organization_id, job_id) REFERENCES integrity_jobs(organization_id, id)
+);
+CREATE INDEX idx_prechecks_target_time ON integrity_target_prechecks (organization_id, target_id, created_at);

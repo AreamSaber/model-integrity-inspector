@@ -1,0 +1,1748 @@
+{
+  "schema_version": 1,
+  "source": "模型真实性检测系统-PRD-V1.0.md",
+  "requirements": [
+    {
+      "id": "SYS-001",
+      "requirement": "首次启动提供初始化流程，创建系统配置、首个组织和初始管理员",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-02"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-001",
+      "implementation": "in_progress",
+      "code": ["internal/identity/service.go","internal/integrity/repository/identity.go","internal/integrity/repository/bootstrap_bundles.go","web/src/components/AuthForms.tsx"],
+      "tests": ["internal/identity/service_test.go","internal/integrity/repository/bootstrap_bundles_test.go","internal/app/pipeline_test.go","web/src/App.test.tsx"],
+      "notes": "一次性初始化、首组织/管理员、系统配置和开发包原子登记已实现；重入/审计失败回滚及实际应用双库有证据，完整干净部署与初始化浏览器统一验收仍待执行。开发进度回填，不代表M7验收或正式批准。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-002",
+      "requirement": "自带用户名/密码登录、退出、会话管理和密码修改能力",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-002",
+      "implementation": "in_progress",
+      "code": ["internal/identity/service.go","internal/identity/password.go","internal/identity/sessions.go","internal/integrity/repository/identity_sessions.go","internal/integrity/api/control.go","internal/integrity/api/sessions.go","web/src/components/AuthForms.tsx","web/src/components/SessionSecurity.tsx"],
+      "tests": ["internal/identity/service_test.go","internal/identity/password_test.go","internal/identity/sessions_test.go","internal/integrity/repository/identity_sessions_test.go","internal/integrity/api/control_test.go","internal/integrity/api/sessions_test.go","web/src/components/SessionSecurity.test.tsx","web/src/App.test.tsx","tests/contracts/sessions_test.go"],
+      "notes": "本地登录/当前退出、CSRF、会话到期、改密注销及账号锁定已有双库/浏览器证据；独立退出所有会话服务/HTTP/账户与强改密页面已接线，无需改密和组织授权，锁后身份复验/审计失败原子回滚/前端未知结果不自动重试有回归。2026-09-08真实SQLite浏览器确认全退→刷新保持未登录→原密码重新登录→取消确认/普通退出通过，窄屏无整页溢出，无控制台警告/错误。不是多设备浏览器验收；完整M7统一验收与正式审核仍待进行。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-003",
+      "requirement": "自带用户、组织、成员、角色和权限管理",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-003",
+      "implementation": "in_progress",
+      "code": ["internal/identity/management.go","internal/identity/permissions.go","internal/integrity/api/identity_management.go","web/src/components/management/UsersPage.tsx","web/src/components/management/OrganizationsPage.tsx","web/src/components/management/MembersPage.tsx"],
+      "tests": ["internal/identity/management_test.go","internal/integrity/repository/identity_management_test.go","internal/integrity/api/identity_management_test.go","web/src/management.test.tsx"],
+      "notes": "用户/组织/成员及冻结内置角色、显式权限管理已接真实服务/API/页面；双库CAS、最后管理员、撤权/审计回滚及组件有回归。全管理异常状态浏览器/可访问性统一验收尚未完成；不额外声称已实现自定义角色编辑。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-004",
+      "requirement": "自带供应商与模型档案管理，不依赖外部模型目录",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-004",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/catalog/service.go","internal/integrity/repository/catalog.go","internal/integrity/api/catalog.go","web/src/components/catalog/CatalogPage.tsx"],
+      "tests": ["internal/integrity/repository/catalog_test.go","internal/integrity/api/catalog_test.go","web/src/catalog-api.test.ts","web/src/catalog.test.tsx"],
+      "notes": "本地供应商/模型档案CRUD、引用约束、版本CAS和组织权限已实现并与目标关联；双库与前端组件有证据。完整目录浏览器异常流程尚待统一验证；声明能力/价格/tokenizer元数据不作为真实模型证据。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-005",
+      "requirement": "自带任务队列、Worker、失败恢复和任务清理能力",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-06",
+        "M2-07",
+        "M6-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-005",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/repository/job_queue.go","internal/integrity/worker/runner.go","internal/integrity/worker/run.go"],
+      "tests": ["internal/integrity/repository/job_queue_test.go","internal/integrity/worker/runner_test.go","internal/integrity/worker/run_cancellation_test.go","internal/integrity/worker/maintenance_test.go"],
+      "notes": "数据库队列/真实Worker、租约fencing、失租/停机/取消、保守故障结算与草稿TTL维护已实现并有实际SQLite/PG证据；完整任务/证据/报告生命周期清理仍未完成，Runner仍单作业，不宣称100并发或生产恢复容量达标。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-006",
+      "requirement": "自带数据库迁移、版本检查、健康检查和运行状态页",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M1-01",
+        "M1-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-006",
+      "implementation": "in_progress",
+      "code": ["internal/integrity/repository/migrate.go","migrations/migrations.go","internal/app/app.go","internal/app/system_status.go","internal/identity/system_status.go","internal/integrity/api/control.go","internal/integrity/api/system_status.go","internal/integrity/repository/system_status.go","web/src/system-status-api.ts","web/src/components/system/SystemStatusPage.tsx"],
+      "tests": ["internal/integrity/repository/store_test.go","internal/integrity/repository/migrate_parser_test.go","internal/app/app_test.go","internal/app/system_status_test.go","internal/integrity/api/control_test.go","internal/integrity/api/system_status_test.go","internal/integrity/repository/system_status_test.go","tests/contracts/system_status_test.go","web/src/system-status-api.test.ts","web/src/components/system/SystemStatusPage.test.tsx","web/src/App.test.tsx"],
+      "notes": "真实迁移/校验和/health/ready已实现；/system/health在当前系统角色和选定组织run.read/audit.read授权下只读实际DB/schema/Job/审计尾链及本地Worker，双库/实际起停/撤权/限流有证据。key/report仅startup_verified、远端Worker/配额/保留清理/备份明确不可用，coverage=partial不冒称整体ready。#/system已接真实后端；SQLite浏览器读取/刷新、390px窄屏无整页溢出通过；完整监控/运维回执和M7验收仍待完成，正式审核未进行。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-007",
+      "requirement": "提供项目自身的 Docker 镜像及 Docker Compose 部署清单",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M6-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-007",
+      "implementation": "in_progress",
+      "code": ["Dockerfile"],
+      "tests": ["tests/contracts/distribution_test.go"],
+      "notes": "自身多阶段镜像已存在，c560963 CI实际镜像构建、标签、SBOM和扫描成功；Compose目录当前只有说明，实际清单/私有卷权限/干净环境启动及完整交付仍未实现，不能据镜像成功关闭本需求。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-008",
+      "requirement": "支持从系统内导出配置与数据备份，并提供恢复校验",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M6-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-SYS-008",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/privatefile/file.go",
+        "internal/integrity/privatefile/file_windows.go",
+        "internal/integrity/privatefile/file_linux.go",
+        "internal/integrity/privatefile/sqlite_staging.go",
+        "internal/integrity/privatefile/sqlite_staging_windows.go",
+        "internal/integrity/privatefile/sqlite_staging_linux.go",
+        "internal/integrity/repository/system_maintenance.go",
+        "internal/integrity/repository/system_maintenance_gate.go",
+        "internal/integrity/repository/system_maintenance_lease.go",
+        "internal/integrity/repository/system_maintenance_transaction.go",
+        "internal/integrity/repository/system_maintenance_records.go",
+        "internal/integrity/repository/audit.go",
+        "internal/integrity/repository/audit_bounds.go",
+        "internal/integrity/repository/audit_snapshot.go",
+        "internal/integrity/repository/postgres_snapshot.go",
+        "internal/integrity/repository/sqlite_snapshot.go",
+        "internal/integrity/secret/backup.go",
+        "internal/integrity/secret/keyring_files.go",
+        "internal/integrity/backupmanifest/manifest.go",
+        "internal/integrity/backupmanifest/preflight.go",
+        "internal/integrity/backupmanifest/entries.go",
+        "internal/integrity/backupmanifest/stream.go"
+      ],
+      "tests": [
+        "internal/integrity/privatefile/file_test.go",
+        "internal/integrity/privatefile/file_windows_test.go",
+        "internal/integrity/privatefile/file_linux_test.go",
+        "internal/integrity/privatefile/backup_integration_test.go",
+        "internal/integrity/privatefile/sqlite_staging_test.go",
+        "internal/integrity/privatefile/sqlite_staging_windows_test.go",
+        "internal/integrity/privatefile/sqlite_staging_linux_test.go",
+        "internal/integrity/repository/system_maintenance_test.go",
+        "internal/integrity/repository/system_maintenance_initialization_test.go",
+        "internal/integrity/repository/system_maintenance_expiry_test.go",
+        "internal/integrity/repository/system_maintenance_lock_test.go",
+        "internal/integrity/repository/system_maintenance_binding_test.go",
+        "internal/integrity/repository/audit_bounds_test.go",
+        "internal/integrity/repository/audit_snapshot_test.go",
+        "internal/integrity/repository/audit_snapshot_fixture_test.go",
+        "internal/integrity/repository/postgres_snapshot_test.go",
+        "internal/integrity/repository/sqlite_snapshot_test.go",
+        "internal/integrity/repository/sqlite_snapshot_finalize_test.go",
+        "internal/integrity/repository/sqlite_snapshot_windows_test.go",
+        "internal/integrity/repository/sqlite_snapshot_linux_test.go",
+        "internal/integrity/worker/maintenance_gate_test.go",
+        "internal/app/maintenance_initialization_test.go",
+        "internal/integrity/secret/backup_test.go",
+        "internal/integrity/secret/backup_fuzz_test.go",
+        "internal/app/keyring_pipeline_test.go",
+        "internal/integrity/backupmanifest/manifest_test.go",
+        "internal/integrity/backupmanifest/integration_test.go",
+        "internal/integrity/backupmanifest/stream_test.go"
+      ],
+      "notes": "生产私有文件、分块认证归档、历史key、canonical manifest/VerifyStream、SQLite专有工作区/online backup及migration21维护门禁已实现专项验证；3ffad26的CI34204020837已全部success。新增同一只读事务整链审计与PostgreSQL RR/RO导出快照生命周期已真实双库组合三轮53.693s通过，含第二页篡改、另连接追加不漂移、实际独立导入、拒写后提交失败、运行中取消及能力失效；不以旧CI追认新增代码。PG实际pg_dump、同快照完整inventory/报告/规则文件、配置模板、系统内备份、隔离恢复/全链校验、CLI/UI及演练仍未完成。具体提交、扩大回归和剩余范围见持续台账与M6专属记录；内部组件、SQL共享快照及合成隔离中间态不等于SYS-008验收或正式批准。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-009",
+      "requirement": "可选接入 OIDC/SSO，不得作为本地部署的强制依赖",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M7-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-SYS-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "SYS-010",
+      "requirement": "可选通过通用 REST API/Webhook 与外部平台集成",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE/OPS",
+      "tasks": [
+        "M7-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-SYS-010",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-001",
+      "requirement": "创建目标：名称、Endpoint、协议、API Key、模型名",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-002",
+      "requirement": "配置组织、环境、渠道 ID、标准模型和标签",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-003",
+      "requirement": "API Key 加密保存、掩码显示、只可替换",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-02"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-004",
+      "requirement": "执行连通性、鉴权、模型存在性和流式兼容检查",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-005",
+      "requirement": "支持自定义请求头，但禁止覆盖系统保留头",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01",
+        "M2-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-006",
+      "requirement": "支持代理、超时、区域和 TLS 校验设置",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-03"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-TAR-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-007",
+      "requirement": "一个目标绑定多个模型配置",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-TAR-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "TAR-008",
+      "requirement": "在系统内维护供应商与模型档案，并与检测目标关联",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M1-05",
+        "M2-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-TAR-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-001",
+      "requirement": "提供快速、标准、深度、自定义四种检测包",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01",
+        "M3-03",
+        "M4-01",
+        "M2-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-002",
+      "requirement": "运行前显示预计请求量、Token 量、费用和时间",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-003",
+      "requirement": "支持并发数、重复次数、超时、重试和预算上限",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-08",
+        "M2-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-004",
+      "requirement": "每次运行冻结规则版本、提示模板版本和参数",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01",
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-005",
+      "requirement": "同批次使用随机 nonce 和动态样本，避免固定题库",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M3-01"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-006",
+      "requirement": "实时展示总进度、各探针进度、成功/失败数和消耗",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-10"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-007",
+      "requirement": "支持安全取消；已完成样本保留并标记取消",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-008",
+      "requirement": "允许对失败或可疑探针单独复测；复测形成新任务或修订，不覆盖原始样本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M2-07",
+        "M2-10"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-RUN-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-009",
+      "requirement": "支持定时复检和异常通知",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M6-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RUN-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "RUN-010",
+      "requirement": "支持多目标同策略对照运行",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RUN-010",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-001",
+      "requirement": "格式契约探针 — 要求只输出随机结构或短标记，检测固定前后缀、额外解释和格式破坏",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-01"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-002",
+      "requirement": "成对差分探针 — 仅改变一个无关变量，判断输出是否受到非用户指令稳定影响",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-02"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-003",
+      "requirement": "中性拒答探针 — 对无风险任务测试异常拒答、身份声明和固定免责声明",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-03"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-004",
+      "requirement": "身份/风格偏置探针 — 检测持续自称特定身份、固定语气或强制话题偏移",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-04"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-005",
+      "requirement": "多语言等价探针 — 对语义等价的中英文请求比较行为差异",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-006",
+      "requirement": "顺序与位置探针 — 改变用户内容顺序，判断隐藏前后缀影响",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-02"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-PINJ-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-007",
+      "requirement": "工具调用契约探针 — 检测隐藏指令对函数调用选择和参数的影响",
+      "priority": "P2",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-01"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-PINJ-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "PINJ-008",
+      "requirement": "自报告问题 — 仅作为辅助信息，禁止单独参与确定性结论",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-PINJ-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-001",
+      "requirement": "多档位阶梯测试 — 至少测试 64/128/256/512 四档，可按模型调整",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-03"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-002",
+      "requirement": "持续生成任务 — 使用不易自然提前结束且可验证完整性的任务",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-02"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-003",
+      "requirement": "结构完整性检测 — 判断 JSON、编号序列、句子或代码块是否未完成",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-004",
+      "requirement": "停止原因一致性 — 比较 `finish_reason`、协议事件、输出形态和 Token 数",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-005",
+      "requirement": "Usage 交叉校验 — 比较上游 Usage 与本地 tokenizer/估算器",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-04",
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-006",
+      "requirement": "流式/非流式对照 — 检测仅在某种传输模式发生的提前截断",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-007",
+      "requirement": "参数别名兼容 — 识别 `max_tokens` 与 `max_completion_tokens` 的协议差异",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04",
+        "M2-06"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-MTOK-007",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-008",
+      "requirement": "上下文窗口测试 — 检测输入+输出总长度能力",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-03"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-MTOK-008",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "MTOK-009",
+      "requirement": "隐性分段上限 — 识别按账户、模型、时间或请求类型变化的限制",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-MTOK-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "完整自适应分段诊断为 P1；固定/概率上限发布检出率仍由 M3-06、M7-02 验证。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-001",
+      "requirement": "检测固定前缀、后缀、免责声明或代理水印",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M4-06",
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-001",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-002",
+      "requirement": "检测 SSE 提前结束、缺少结束事件和异常断连",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-05",
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-002",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-003",
+      "requirement": "检测正文与 Usage、finish_reason 的明显矛盾",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-07"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-003",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-004",
+      "requirement": "比较流式与非流式内容长度和结束方式",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M3-08"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-005",
+      "requirement": "记录响应头白名单字段及请求追踪 ID",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04",
+        "M2-05"
+      ],
+      "acceptance": [
+        "M7-01",
+        "M7-02"
+      ],
+      "test_case": "REQ-RINT-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "RINT-006",
+      "requirement": "检测响应 JSON 字段被删除、添加或类型改变",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/QA/ALG",
+      "tasks": [
+        "M2-04"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-RINT-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-001",
+      "requirement": "支持将已审核任务设为可信基线",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-001",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "组织基线草稿/审批已接真实已发布来源；开发未校准基线仍不能参加可信评分，不能把组织业务批准冒充校准或正式项目批准。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-002",
+      "requirement": "基线绑定模型、协议、参数、区域、日期和规则版本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-002",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "签名冻结模型/协议/参数hash/日期/版本；区域和official来源是组织声明未验证，实际区域/可信来源认证仍需完善。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-003",
+      "requirement": "基线过期后提示重新采样",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-003",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "后端到期返回expired及重新采样限制，审批不能使用过期参考；实际前端与全链路后续继续。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-004",
+      "requirement": "支持官方接口基线和目标自身历史基线",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-004",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "支持official/historical类型的组织声明来源；不得声称系统认证了官方供应商，可信官方对照采样/评分尚缺。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-005",
+      "requirement": "基线不能被普通用户静默覆盖",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-BASE-005",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "草稿修改与审批/退休使用版本CAS/持久权限/事务审计，批准后不可就地覆盖；双库篡改/并发/撤权已验证，页面仍在接入。",
+      "goal_included": true
+    },
+    {
+      "id": "BASE-006",
+      "requirement": "支持同批随机种子/探针变量的成对比较",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-05"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-BASE-006",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/baseline/service.go",
+        "internal/integrity/repository/baseline_repository.go",
+        "internal/integrity/api/baselines.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/baseline_repository_test.go",
+        "internal/integrity/repository/baseline_safety_test.go",
+        "internal/integrity/api/baselines_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "已有同批变量hash和适用性描述检查；并未实现对照采样与可信成对评分。原始P1仍在当前Goal范围。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-001",
+      "requirement": "任务总览包含风险、置信度、证据等级和完整性声明",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-02",
+        "M5-03",
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-001",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "已展示四维风险/置信/C-D/完整性与开发限制；可信基线与正式校准仍待完成。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-002",
+      "requirement": "每项结论可下钻到探针和样本",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-002",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "当前Finding显示样本引用且可读S1样本/Attempt；完整结论→探针→样本交互及正文复现尚缺。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-003",
+      "requirement": "样本展示请求参数、脱敏正文、响应、Usage、停止原因和耗时",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-003",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/worker/run.go",
+        "internal/integrity/repository/execution_display.go",
+        "internal/integrity/evidencedisplay/prepare.go",
+        "internal/integrity/secret/display.go",
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/integrity/worker/execution_display_test.go",
+        "internal/integrity/repository/execution_display_test.go",
+        "internal/integrity/repository/execution_display_migration_test.go",
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "已有S1 Usage/停止原因/耗时/最终Attempt；实际Worker采集脱敏请求与响应、独立加密和同事务持久化通过双库三轮/完整Worker及实际应用回归，仍固定30天。授权读取HTTP/正文页面、完整保留策略与0天分析仍未接入，不能以后台采集替代完整展示要求。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-004",
+      "requirement": "给出替代解释与检测局限性",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-04",
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-004",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/run/result.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/results/ResultsPage.tsx",
+        "web/src/components/results/ResultViews.tsx"
+      ],
+      "tests": [
+        "internal/app/pipeline_test.go",
+        "internal/integrity/api/run_results_test.go",
+        "web/src/components/results/ResultsPage.test.tsx"
+      ],
+      "notes": "真实结果及报告包含闭集替代解释/开发限制/探索性统计说明；整体算法与文案验收仍待完成。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-005",
+      "requirement": "输出复现用请求模板，但不包含真实 Key",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-005",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/evidencedisplay/prepare.go",
+        "internal/integrity/secret/display.go",
+        "internal/integrity/worker/run.go",
+        "internal/integrity/repository/execution_display.go"
+      ],
+      "tests": [
+        "internal/integrity/evidencedisplay/boundaries_test.go",
+        "internal/integrity/secret/display_test.go",
+        "internal/integrity/worker/execution_display_test.go"
+      ],
+      "notes": "实际冻结请求模板副本在Credentials.Use内按实际Key及所有自定义Header值脱敏，并绑定原请求hash、独立模板hash和request_changed，已双库验证采集。尚无授权模板下载/API/UI和最终读取审计；不能宣称复现导出已交付或所有秘密编码都可识别。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-006",
+      "requirement": "支持 JSON 和 HTML 导出",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-REP-006",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/canonical.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go",
+        "web/src/components/results/ReportsPanel.tsx",
+        "web/src/report-download.ts"
+      ],
+      "tests": [
+        "internal/integrity/report/report_test.go",
+        "internal/integrity/worker/report_generate_test.go",
+        "internal/integrity/repository/report_test.go",
+        "internal/integrity/api/reports_test.go",
+        "internal/app/artifacts_pipeline_test.go",
+        "web/src/components/results/ReportsPanel.test.tsx",
+        "web/src/report-download.test.ts"
+      ],
+      "notes": "真实异步JSON/HTML后端与页面已接通，双库和浏览器生成/长度/hash验证下载通过；人工复核快照与完整授权导出内容仍待完成。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-007",
+      "requirement": "支持 PDF/CSV 导出",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-007",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/csv.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go",
+        "web/src/components/results/ReportsPanel.tsx",
+        "web/src/report-download.ts"
+      ],
+      "tests": [
+        "internal/integrity/report/csv_test.go",
+        "internal/integrity/worker/report_csv_test.go",
+        "internal/integrity/repository/report_csv_test.go",
+        "internal/integrity/reportstorage/csv_test.go",
+        "internal/integrity/api/reports_csv_test.go",
+        "internal/app/pipeline_csv_test.go",
+        "internal/app/artifacts_pipeline_test.go",
+        "web/src/components/results/ReportsPanel.test.tsx",
+        "web/src/report-download.test.ts",
+        "tests/contracts/report_csv_test.go"
+      ],
+      "notes": "原PRD分类保留为future，当前Goal仍包含PDF/CSV全部范围。CSV已真实接通不可覆盖报告生成、Worker、存储、受限下载及页面，双库回归和实际浏览器新旧报告下载校验通过；正文清理后仍逐项验证全部报告字节和哈希。PDF尚未实现，本项和M5不标记完成；正式审核仍待统一进行。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-008",
+      "requirement": "报告冻结后生成内容哈希，后续修改形成新版本",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-08"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-008",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/report/canonical.go",
+        "internal/integrity/worker/report_generate.go",
+        "internal/integrity/repository/report_records.go",
+        "internal/integrity/reportstorage/store.go",
+        "internal/integrity/api/reports.go"
+      ],
+      "tests": [
+        "internal/integrity/report/report_test.go",
+        "internal/integrity/worker/report_generate_test.go",
+        "internal/integrity/repository/report_test.go",
+        "internal/integrity/api/reports_test.go",
+        "internal/app/artifacts_pipeline_test.go"
+      ],
+      "notes": "冻结输入/时间/内容hash/独立文件hash、不可覆盖版本及同key重试字节一致已验证；完整修改差异/关联版本链尚待完成。原P1仍在Goal范围。",
+      "goal_included": true
+    },
+    {
+      "id": "REP-009",
+      "requirement": "支持两个任务的差异报告",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-REP-009",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "HIS-001",
+      "requirement": "按目标展示历次风险、置信度、调用成功率和延迟",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-001",
+      "implementation": "verified",
+      "code": [
+        "internal/integrity/repository/run_trends.go",
+        "internal/integrity/run/trends.go",
+        "internal/integrity/api/run_trends.go",
+        "web/src/trends-api.ts",
+        "web/src/components/trends/TrendsPage.tsx"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_trends_test.go",
+        "internal/integrity/run/trends_test.go",
+        "internal/integrity/api/run_trends_test.go",
+        "internal/app/trends_pipeline_test.go",
+        "web/src/trends-api.test.ts",
+        "web/src/components/trends/TrendsPage.test.tsx"
+      ],
+      "notes": "按目标的有界Run页趋势后端、真实TLS应用双库与浏览器已验证；前端548全量/64专项通过，浏览器目标入口、UTC/检测包/状态筛选、空页、重读和原结果跳转通过。成功率为确认成功/全部派发Attempt，未知与在途独立；延迟使用完成且有观测值的Attempt，缺失null，不含预检。不是全目标汇总或已校准预测；verified仅开发验证，非正式审核批准。",
+      "goal_included": true
+    },
+    {
+      "id": "HIS-002",
+      "requirement": "检测规则升级时区分“行为变化”和“算法变化”",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-06",
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-002",
+      "implementation": "in_progress",
+      "code": [
+        "web/src/comparison-api.ts",
+        "web/src/components/comparison/ComparisonPage.tsx"
+      ],
+      "tests": [
+        "web/src/comparison-api.test.ts",
+        "web/src/components/comparison/ComparisonPage.test.tsx",
+        "internal/app/repeated_pipeline_test.go"
+      ],
+      "notes": "固定两Run描述性比较与版本/检测包/Manifest/分母差异提示已实现并真实浏览器验证；不将分数差归因行为，尚未完成多版本真实重分析与算法变化分解。",
+      "goal_included": true
+    },
+    {
+      "id": "HIS-003",
+      "requirement": "可筛选模型、渠道、日期、风险项和任务状态",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-09"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-HIS-003",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/repository/run_history.go",
+        "internal/integrity/api/run_results.go",
+        "web/src/components/history/RunHistory.tsx"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_trends_test.go",
+        "internal/integrity/api/run_trends_test.go",
+        "web/src/components/history/RunHistory.test.tsx"
+      ],
+      "notes": "历史筛选和趋势共用目标/状态/包/当前模型与渠道/日期/风险/文本条件；签名游标绑定组织用户及筛选，分页锚点不随状态变化失效。当前目标字段不冒充历史冻结模型；完整页面筛选浏览器验收仍待收口。",
+      "goal_included": true
+    },
+    {
+      "id": "HIS-004",
+      "requirement": "支持固定基线下重新分析历史原始数据",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-HIS-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "HIS-005",
+      "requirement": "显著恶化时产生站内通知/Webhook",
+      "priority": "P1",
+      "release": "future",
+      "owner": "BE/FE",
+      "tasks": [
+        "M6-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-HIS-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-001",
+      "requirement": "检测模板、阈值、评分权重全部版本化",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M3-01",
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-001",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/bundle/artifact.go",
+        "internal/integrity/bundle/runtime.go",
+        "internal/integrity/analysis/tokenrisk/runtime.go",
+        "internal/integrity/analysis/scoring/runtime.go"
+      ],
+      "tests": [
+        "internal/integrity/bundle/runtime_test.go",
+        "internal/integrity/bundle/runtime_analysis_test.go",
+        "internal/integrity/analysis/tokenrisk/runtime_golden_test.go",
+        "internal/integrity/analysis/scoring/runtime_golden_test.go"
+      ],
+      "notes": "受支持typed artifact、内容哈希、有限开发参数实际计算及旧版本完整输出保持已验证；未知模板/tokenizer/算法语义拒绝。尚未实现持久化候选生命周期、发布准入和Run选择多版本；开发运行时不代表校准。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-002",
+      "requirement": "已执行任务始终引用不可变规则快照",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-002",
+      "implementation": "in_progress",
+      "code": [
+        "internal/integrity/repository/run_version.go",
+        "internal/integrity/repository/bootstrap_bundles.go",
+        "internal/integrity/bundle/runtime.go"
+      ],
+      "tests": [
+        "internal/integrity/repository/run_version_test.go",
+        "internal/integrity/repository/bootstrap_bundles_test.go",
+        "internal/integrity/bundle/runtime_test.go",
+        "internal/app/repeated_pipeline_test.go"
+      ],
+      "notes": "当前内置包估算/确认内容绑定及已发布结果不可变已验证；新增纯核resolver拒绝同版本不同内容，仅进程内保护。多版本持久化、退役与历史重分析仍待实现。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-003",
+      "requirement": "规则发布前支持离线回放验收集",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-003",
+      "implementation": "in_progress",
+      "code": [
+        "tests/replay/capture.go",
+        "tests/replay/replay.go",
+        "tests/replay/transport.go",
+        "tests/replay/cmd/replay/main.go",
+        "tests/replay/localfile/file.go",
+        "tests/replay/localfile/trust.go"
+      ],
+      "tests": [
+        "tests/replay/replay_test.go",
+        "tests/replay/boundaries_test.go",
+        "tests/replay/isolation_test.go",
+        "tests/replay/diagnostics_test.go",
+        "tests/replay/capturefixture/pipeline_test.go",
+        "tests/replay/capturefixture/timing_test.go",
+        "tests/replay/capturefixture/export_test.go",
+        "tests/replay/capturefixture/export_guard_test.go",
+        "tests/replay/cmd/replay/main_test.go",
+        "tests/replay/cmd/replay/netns_linux_test.go",
+        "tests/replay/localfile/file_test.go"
+      ],
+      "notes": "B1核心和实际Worker/TLS最终提交后的双库捕获→私有文件→真实独立CLI已验证：预测及原发布逐字节一致，未提交/回滚/取消/decoded canary失败不导出；独立ManifestSigner，不导出应用master或捕获私钥。每文件原子，不冒称四文件事务；更换key与已有输出精确拒绝。Linux synthetic netns强制CI已有机制，但da6db58实际检查失败，数字socket/闭集诊断修订仍待Ubuntu重跑；实际源禁网组合、隔离验收集、准确率与发布准入尚未完成，开发签名不是QA回执。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-004",
+      "requirement": "规则变更记录操作者、差异和发布时间",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06",
+        "M1-07"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-004",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-005",
+      "requirement": "支持灰度启用新规则",
+      "priority": "P1",
+      "release": "future",
+      "owner": "TL/QA",
+      "tasks": [
+        "M5-06"
+      ],
+      "acceptance": [],
+      "test_case": "REQ-CFG-005",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "原PRD分类保留为future；当前Goal仍包含此项，尚未开发，不以优先级或历史发布分类排除。",
+      "goal_included": true
+    },
+    {
+      "id": "CFG-006",
+      "requirement": "探针模板中的敏感内容须经过安全评审",
+      "priority": "P0",
+      "release": "V1.0",
+      "owner": "TL/QA",
+      "tasks": [
+        "M3-01",
+        "SEC-03"
+      ],
+      "acceptance": [
+        "M7-01"
+      ],
+      "test_case": "REQ-CFG-006",
+      "implementation": "not_started",
+      "code": [],
+      "tests": [],
+      "notes": "验收用例编号已预留；不代表测试已实现或通过。",
+      "goal_included": true
+    }
+  ],
+  "goal_scope": "all_original_requirements",
+  "formal_review": "deferred_until_complete",
+  "scope_note": "release 保留原PRD历史分类；当前项目方Goal明确覆盖全部77项原始P0/P1/P2，不因future分类排除开发。implementation只记录开发进度，不代表正式审核。"
+}

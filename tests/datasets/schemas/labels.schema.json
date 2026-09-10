@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mii:dataset:labels:1.0.0",
+  "title": "Owner-only labels; join only after predictions are sealed",
+  "type": "array", "minItems": 1,
+  "items": {
+    "type": "object", "additionalProperties": false, "required": ["case_id", "conditions", "rationale"],
+    "properties": {
+      "case_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+      "conditions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {
+        "enum": ["normal", "fixed_cap", "probabilistic_cap", "hidden_instruction", "stream_mutation", "usage_forgery", "natural_short_answer", "safety_refusal", "unknown_tokenizer", "reasoning_model", "high_network_error"]
+      }},
+      "rationale": {"type": "string", "minLength": 1}
+    }
+  }
+}

@@ -1,5 +1,8 @@
 .git
-.github
+.github/*
+!.github/workflows
+.github/workflows/*
+!.github/workflows/ci.yml
 .tools
 artifacts
 coverage
@@ -14,5 +17,10 @@ web/dist
 *.pem
 *.p12
 *.pfx
+*.jks
+*.keystore
+secrets
+secrets*.yaml
+secrets*.yml
 .env
 .env.*

@@ -42,7 +42,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed.' }
     & $pnpm --dir $webRoot build
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
-    & $go test ./...
+    # Avoid overlapping independent database-heavy package binaries on one
+    # runner; all tests, internal concurrency and existing deadlines remain.
+    & $go test -p 1 -count=1 ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
 
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -51,7 +53,9 @@ try {
     $binaryExtension = if ($goos -eq 'windows') { '.exe' } else { '' }
     $binaryPath = Join-Path $outputRoot "$artifactStem$binaryExtension"
     $ldflags = "-s -w -X model-integrity-inspector.local/mii/internal/buildinfo.version=$version -X model-integrity-inspector.local/mii/internal/buildinfo.commit=$commit -X model-integrity-inspector.local/mii/internal/buildinfo.builtAt=$builtAt"
-    & $go build -trimpath -buildvcs=true -ldflags $ldflags -o $binaryPath ./cmd/mii
+    & $go test -count=1 -tags webassets ./web ./internal/app
+    if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend integration tests failed.' }
+    & $go build -tags webassets -trimpath -buildvcs=true -ldflags $ldflags -o $binaryPath ./cmd/mii
     if ($LASTEXITCODE -ne 0) { throw 'Versioned Go build failed.' }
 
     $embeddedBuild = (& $binaryPath version | Out-String).Trim() | ConvertFrom-Json
@@ -62,7 +66,10 @@ try {
     $webArchive = Join-Path $outputRoot "mii-web_${version}_${shortCommit}.zip"
     Compress-Archive -Path (Join-Path $webRoot 'dist\*') -DestinationPath $webArchive -Force
 
-    $artifacts = @($binaryPath, $webArchive) | ForEach-Object {
+    $noticePath = Join-Path $outputRoot "$artifactStem.THIRD_PARTY_NOTICES.md"
+    Copy-Item -LiteralPath (Join-Path $workspaceRoot 'internal/integrity/tokenizer/THIRD_PARTY_NOTICES.md') -Destination $noticePath
+
+    $artifacts = @($binaryPath, $webArchive, $noticePath) | ForEach-Object {
         [ordered]@{
             file = Split-Path -Leaf $_
             sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
@@ -83,7 +90,7 @@ try {
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
 
     $checksumPath = Join-Path $outputRoot "$artifactStem.SHA256SUMS"
-    $checksumTargets = @($binaryPath, $webArchive, $manifestPath)
+    $checksumTargets = @($binaryPath, $webArchive, $noticePath, $manifestPath)
     $checksumLines = @($checksumTargets | ForEach-Object {
         "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant())  $(Split-Path -Leaf $_)"
     })

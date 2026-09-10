@@ -1,0 +1,2 @@
+-- The portable constant default keeps prior insert clients schema-compatible;
+-- existing rows are backfilled, and current application writes set updated_at.

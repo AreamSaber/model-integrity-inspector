@@ -17,10 +17,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
 
 Push-Location $workspaceRoot
 try {
-    & $go test ./...
+    # Independent database-heavy package binaries share the runner's disk.
+    # Keep every test and its internal concurrency; schedule packages serially.
+    & $go test -p 1 -count=1 ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
     New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
-    & $go build -trimpath -o (Join-Path $artifactRoot 'mii.exe') ./cmd/mii
+    & $go test -count=1 -tags webassets ./web ./internal/app
+    if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend integration tests failed.' }
+    & $go build -tags webassets -trimpath -o (Join-Path $artifactRoot 'mii.exe') ./cmd/mii
     if ($LASTEXITCODE -ne 0) { throw 'Go build failed.' }
 } finally {
     Pop-Location

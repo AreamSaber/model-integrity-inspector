@@ -2,61 +2,376 @@ package app
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
-	"model-integrity-inspector.local/mii/internal/buildinfo"
+	"model-integrity-inspector.local/mii/internal/identity"
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/features"
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/scoring"
 	integrityapi "model-integrity-inspector.local/mii/internal/integrity/api"
+	"model-integrity-inspector.local/mii/internal/integrity/baseline"
+	runtimebundle "model-integrity-inspector.local/mii/internal/integrity/bundle"
+	"model-integrity-inspector.local/mii/internal/integrity/catalog"
+	"model-integrity-inspector.local/mii/internal/integrity/domain"
+	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
+	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
+	"model-integrity-inspector.local/mii/internal/integrity/reportstorage"
+	"model-integrity-inspector.local/mii/internal/integrity/repository"
+	runservice "model-integrity-inspector.local/mii/internal/integrity/run"
+	"model-integrity-inspector.local/mii/internal/integrity/safehttp"
+	"model-integrity-inspector.local/mii/internal/integrity/scheduler"
+	"model-integrity-inspector.local/mii/internal/integrity/secret"
+	"model-integrity-inspector.local/mii/internal/integrity/target"
+	"model-integrity-inspector.local/mii/internal/integrity/tokenizer"
 	"model-integrity-inspector.local/mii/internal/integrity/worker"
-	appruntime "model-integrity-inspector.local/mii/internal/platform/runtime"
+	webui "model-integrity-inspector.local/mii/web"
 )
 
-type Config struct {
-	Role  appruntime.Role
-	Addr  string
-	Build buildinfo.Info
+var ErrStartup = errors.New("MI_STARTUP_FAILED")
+
+type application struct {
+	store   *repository.Store
+	reports *reportstorage.Store
+	handler http.Handler
+	worker  *worker.Runner
+}
+
+// The pinned report-directory handles outlive all HTTP/Worker users and are
+// closed together with the database only after their graceful shutdown.
+func (a *application) close() error {
+	return errors.Join(a.reports.Close(), a.store.Close())
+}
+
+// prepare validates keys and schema before opening a listening socket. Workers
+// only check schema; only server/all may migrate. Audit corruption fails closed.
+func prepare(ctx context.Context, cfg Config) (*application, error) {
+	return prepareWithNetwork(ctx, cfg, outboundNetwork{})
+}
+
+// Internal dependency injection for controlled TLS integration tests. Operator
+// configuration and HTTP input cannot replace DNS, sockets or certificate roots.
+// Production prepare always uses SafeHTTP's normal system networking defaults.
+type outboundNetwork struct {
+	resolver    safehttp.Resolver
+	dialContext safehttp.DialContextFunc
+	rootCAs     *x509.CertPool
+}
+
+func prepareWithNetwork(ctx context.Context, cfg Config, network outboundNetwork) (*application, error) {
+	return prepareWithNetworkAndLogger(ctx, cfg, network, nil)
+}
+
+// The trusted startup logger receives only the Worker's existing fixed events.
+// Keeping this separate preserves dependency-injected callers which need no
+// diagnostics; neither operator configuration nor HTTP supplies a logger.
+func prepareWithNetworkAndLogger(ctx context.Context, cfg Config, network outboundNetwork, logger *slog.Logger) (*application, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	key, err := secret.LoadKeyFiles(cfg.MasterKeyVersion, cfg.masterKeyReferences())
+	if err != nil {
+		return nil, err
+	}
+	artifacts, err := runtimebundle.Builtin()
+	if err != nil {
+		return nil, err
+	}
+	bootstrap := &repository.BootstrapArtifacts{RuleVersion: runtimebundle.BuiltinVersion, RuleHash: runtimebundle.BuiltinHash, RuleJSON: string(artifacts.RuleBytes()), TemplateVersion: templates.BuiltinVersion, TemplateHash: templates.BuiltinHash, TemplateJSON: string(artifacts.TemplateBytes()), ScoringVersion: scoring.Version, TokenizerVersion: tokenizer.BuiltinVersion}
+	if cfg.DatabaseDriver == "sqlite" {
+		if err := os.MkdirAll(filepath.Dir(cfg.DatabasePath), 0700); err != nil {
+			return nil, ErrStartup
+		}
+		// Create a new file with restrictive Unix mode before the SQLite driver;
+		// never truncate or replace an existing database.
+		// #nosec G304 -- Operator-selected database path, validated before startup.
+		file, err := os.OpenFile(cfg.DatabasePath, os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return nil, ErrStartup
+		}
+		if err := file.Close(); err != nil {
+			return nil, ErrStartup
+		}
+	}
+	reports, err := reportstorage.Open(cfg.ReportPath)
+	if err != nil {
+		return nil, err
+	}
+	dsn := cfg.DatabaseDSN
+	if cfg.DatabaseDriver == "sqlite" {
+		dsn = cfg.DatabasePath
+	}
+	store, err := repository.Open(ctx, repository.Config{Driver: cfg.DatabaseDriver, DSN: dsn, AuditSigner: key, Bootstrap: bootstrap})
+	if err != nil {
+		_ = reports.Close()
+		return nil, err
+	}
+	app := &application{store: store, reports: reports}
+	failed := true
+	defer func() {
+		if failed {
+			_ = app.close()
+		}
+	}()
+	if cfg.Role.Components().Server {
+		err = store.Migrate(ctx)
+	} else {
+		err = store.CheckSchema(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err = store.VerifyAllAudit(ctx, true); err != nil {
+		return nil, err
+	}
+	if cfg.Role.Components().Server {
+		if err := store.SyncBootstrapBundles(ctx); err != nil {
+			return nil, err
+		}
+	}
+	secretService, err := secret.NewService(store, key)
+	if err != nil {
+		return nil, err
+	}
+	engine, err := tokenizer.NewBuiltin()
+	if err != nil {
+		return nil, err
+	}
+	compiler, err := generator.New(artifacts.TemplateBytes(), templates.BuiltinHash, engine, key)
+	if err != nil {
+		return nil, err
+	}
+	builder, err := features.New(features.Config{Verifier: compiler, Tokenizer: engine, TemplateArtifact: artifacts.TemplateBytes(), TrustedTemplateHash: templates.BuiltinHash})
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Role.Components().Worker {
+		derivedMAC, err := key.NewDerivedSourceMAC()
+		if err != nil {
+			return nil, err
+		}
+		derivedSealer, derivedVerifier, err := features.NewDerivedCapabilitiesWithMAC(cfg.MasterKeyVersion, derivedMAC)
+		if err != nil {
+			return nil, err
+		}
+		precheck, err := worker.NewPrecheckHandler(worker.PrecheckConfig{Store: store, Secrets: secretService, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs})
+		if err != nil {
+			return nil, err
+		}
+		runConfig := worker.RunConfig{Store: store, Secrets: secretService, EvidenceKeys: key, DerivedBuilder: builder, DerivedSealer: derivedSealer, Tokenizer: engine, Resolver: network.resolver, DialContext: network.dialContext, RootCAs: network.rootCAs}
+		handlers, err := worker.NewRunHandlers(runConfig)
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobTargetPrecheck] = precheck
+		// Legacy confirmed manifests retain their original analysis mode. New
+		// manifests use authenticated S1, without requiring retained responses.
+		analysis, err := worker.NewAnalysisHandler(worker.AnalysisConfig{Builder: builder, EvidenceKeys: key, DerivedVerifier: derivedVerifier})
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobRunAnalyze] = analysis
+		reportHandler, err := worker.NewReportHandler(worker.ReportConfig{Storage: reports})
+		if err != nil {
+			return nil, err
+		}
+		handlers[repository.JobReportGenerate] = reportHandler
+		handlers[repository.JobRetentionDelete] = worker.NewResponseRetentionHandler()
+		reconcileRuns, err := worker.NewRunReconciler(runConfig)
+		if err != nil {
+			return nil, err
+		}
+		app.worker, err = worker.New(worker.Config{Store: store, Logger: logger, Handlers: handlers, Maintenance: func(ctx context.Context, queue *repository.JobQueue) error {
+			if err := reconcileRuns(ctx, queue); err != nil {
+				return err
+			}
+			if err := queue.ReconcileReports(ctx); err != nil {
+				return err
+			}
+			if err := queue.ExpireRunEstimates(ctx); err != nil {
+				return err
+			}
+			return queue.ScheduleResponseRetention(ctx)
+		}})
+		if err != nil {
+			return nil, err
+		}
+	}
+	readiness := func(ctx context.Context) bool {
+		if cfg.Role.Components().Worker && (app.worker == nil || !app.worker.Ready()) {
+			return false
+		}
+		return store.VerifyAllAudit(ctx, false) == nil
+	}
+	if cfg.Role.Components().Server {
+		service, err := identity.NewService(ctx, store)
+		if err != nil {
+			return nil, err
+		}
+		targets, err := target.NewService(target.Config{Store: store, Secrets: secretService})
+		if err != nil {
+			return nil, err
+		}
+		catalogService, err := catalog.NewService(store, service)
+		if err != nil {
+			return nil, err
+		}
+		// The actual analysis handler, immutable bundle admission and authorized
+		// result routes are registered together. Availability never upgrades the
+		// development/uncalibrated evidence grade or substitutes for cost consent.
+		runs, err := runservice.NewService(runservice.Config{Store: store, Targets: targets, Generator: compiler, Limits: scheduler.DefaultLimits(), RuleVersion: runtimebundle.BuiltinVersion, ScoringVersion: scoring.Version, AnalysisSourceVersion: domain.AnalysisSourceDerivedV1, ExecutionReady: readiness})
+		if err != nil {
+			return nil, err
+		}
+		baselines, err := baseline.NewService(baseline.Config{Store: store, Generator: compiler, Signer: key})
+		if err != nil {
+			return nil, err
+		}
+		reportService, err := runservice.NewReportService(runservice.ReportConfig{Store: store, Storage: reports, Ready: readiness})
+		if err != nil {
+			return nil, err
+		}
+		_, displayOpener, err := key.NewDisplayCapabilities(nil)
+		if err != nil {
+			return nil, err
+		}
+		evidenceService, err := runservice.NewEvidenceService(store, displayOpener)
+		if err != nil {
+			return nil, err
+		}
+		systemStatus, err := app.systemStatus(service, cfg)
+		if err != nil {
+			return nil, err
+		}
+		app.handler, err = integrityapi.NewControlHandler(integrityapi.ControlConfig{SystemStatus: systemStatus, Identity: service, Store: store, Build: cfg.Build, PublicOrigin: cfg.PublicOrigin, AllowInsecureLoopback: cfg.AllowInsecureLoopback, SetupToken: cfg.SetupToken, Readiness: readiness, CursorSigner: key, Targets: targets, Catalog: catalogService, Runs: runs, Baselines: baselines, Reports: reportService, Evidence: evidenceService, Frontend: webui.Handler()})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		app.handler = integrityapi.NewStatusHandler(cfg.Build, cfg.Role, readiness)
+	}
+	failed = false
+	return app, nil
 }
 
 func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
-	errCh := make(chan error, 2)
-	components := cfg.Role.Components()
-
-	if components.Worker {
-		go func() {
-			errCh <- worker.Run(ctx, logger)
-		}()
-	}
-
-	if components.Server {
-		server := &http.Server{
-			Addr:              cfg.Addr,
-			Handler:           integrityapi.NewHandler(cfg.Build, cfg.Role),
-			ReadHeaderTimeout: 5 * time.Second,
-		}
-		go func() {
-			logger.Info("server scaffold ready", "addr", cfg.Addr, "role", cfg.Role)
-			errCh <- server.ListenAndServe()
-		}()
-
-		select {
-		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			return server.Shutdown(shutdownCtx)
-		case err := <-errCh:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		}
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-errCh:
+	startup, cancel := context.WithTimeout(ctx, 60*time.Second)
+	app, err := prepareWithNetworkAndLogger(startup, cfg, outboundNetwork{}, logger)
+	cancel()
+	if err != nil {
 		return err
 	}
+	defer func() { _ = app.close() }()
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
+	if err != nil {
+		return ErrStartup
+	}
+	return app.serve(ctx, cfg, listener, logger)
+}
+
+func (a *application) serve(ctx context.Context, cfg Config, listener net.Listener, logger *slog.Logger) error {
+	workCtx, stopWorker := context.WithCancel(ctx)
+	defer stopWorker()
+	var workerDone chan error
+	if a.worker != nil {
+		workerDone = make(chan error, 1)
+		go func() { workerDone <- a.worker.Run(workCtx) }()
+	}
+	server := &http.Server{Handler: a.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.Serve(listener) }()
+	logger.Info("control listener started", "role", string(cfg.Role))
+	var result error
+	workerStopped := false
+	select {
+	case <-ctx.Done():
+	case err := <-errCh:
+		if !errors.Is(err, http.ErrServerClosed) {
+			logApplicationFailure(ctx, logger, "listener_exit", err)
+			result = ErrStartup
+		}
+	case err := <-workerDone:
+		workerStopped = true
+		if ctx.Err() == nil {
+			// A required consumer exiting is not a healthy server-only fallback.
+			logApplicationFailure(ctx, logger, "worker_exit", err)
+			result = ErrStartup
+		}
+	}
+	stopWorker()
+	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdown); err != nil {
+		logApplicationFailure(ctx, logger, "http_shutdown", err)
+		_ = server.Close()
+		result = ErrStartup
+	}
+	if workerDone != nil && !workerStopped {
+		select {
+		case err := <-workerDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				logApplicationFailure(ctx, logger, "worker_shutdown", err)
+				result = ErrStartup
+			}
+		case <-shutdown.Done():
+			logApplicationFailure(ctx, logger, "worker_shutdown_deadline", shutdown.Err())
+			result = ErrStartup
+		}
+	}
+	return result
+}
+
+// Classification is observational only: it never changes the existing return,
+// cancellation, lease or shutdown semantics. Never format err, including for
+// the unknown branch: wrapped driver/listener errors may contain secrets.
+func applicationFailureClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, repository.ErrJobLeaseLost):
+		return "job_lease_lost"
+	case errors.Is(err, repository.ErrConsumerLost):
+		return "consumer_lost"
+	case errors.Is(err, repository.ErrConsumerActive):
+		return "consumer_active"
+	case errors.Is(err, worker.ErrHandlerUnresponsive):
+		return "handler_unresponsive"
+	case errors.Is(err, repository.ErrUnavailable):
+		return "database_unavailable"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, repository.ErrJobCancelled):
+		return "job_cancelled"
+	case errors.Is(err, repository.ErrJobInvalid):
+		return "job_invalid"
+	case errors.Is(err, worker.ErrAlreadyRunning):
+		return "worker_already_running"
+	case errors.Is(err, worker.ErrConfiguration), errors.Is(err, repository.ErrConfiguration):
+		return "configuration_invalid"
+	case errors.Is(err, worker.ErrHandlerFailed):
+		return "handler_failed"
+	case errors.Is(err, http.ErrServerClosed), errors.Is(err, net.ErrClosed):
+		return "listener_closed"
+	default:
+		return "unknown"
+	}
+}
+
+func logApplicationFailure(ctx context.Context, logger *slog.Logger, phase string, err error) {
+	if logger == nil {
+		return
+	}
+	switch phase {
+	case "listener_exit", "worker_exit", "http_shutdown", "worker_shutdown", "worker_shutdown_deadline":
+	default:
+		phase = "unknown"
+	}
+	logger.ErrorContext(ctx, "application component stopped", "phase", phase, "class", applicationFailureClass(err), "caller_done", ctx.Err() != nil)
 }

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "public-example-1",
+  "cases": [{
+    "case_id": "c-001",
+    "split": "development",
+    "lineage_id": "public-example-family-1",
+    "input_sha256": "858ac8644cda743e7f0e5fb1f935b78b98e6ddf6917fe5b63245a21bf08064e4",
+    "coverage": ["normal", "unknown_tokenizer"]
+  }]
+}
