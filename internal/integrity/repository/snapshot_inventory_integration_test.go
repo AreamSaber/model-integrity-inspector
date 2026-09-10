@@ -15,6 +15,8 @@ func TestSnapshotInventoryErrorMappingPreservesClosedClassification(t *testing.T
 	for _, want := range []error{
 		errSnapshotJobSource, errSnapshotJobLimit, errSnapshotJobBusy,
 		errSnapshotReportInvalid, errSnapshotReportLimit, errSnapshotReportUnsupported,
+		errSnapshotArtifactInvalid, errSnapshotArtifactLimit, errSnapshotArtifactUnsupported,
+		errSnapshotArtifactCallback, errSnapshotArtifactIncomplete, errSnapshotArtifactConsumed, errSnapshotArtifactClosed,
 	} {
 		t.Run(want.Error(), func(t *testing.T) {
 			for _, input := range []error{want, fmt.Errorf("private-inventory-diagnostic: %w", want)} {
