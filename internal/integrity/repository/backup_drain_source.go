@@ -111,6 +111,14 @@ func backupDrainReadJob(db *gorm.DB, id int64, now time.Time) (backupDrainJob, e
 }
 
 func backupDrainClassify(job backupDrainJob, d backupDrainDomain) BackupDrainKind {
+	// The terminal maintenance entry point now supports the original retention
+	// organization sentinel, but only for the existing queue terminal rules. A
+	// retryable legacy sentinel and every other unsupported legacy source stay
+	// unsupported; the coordinator must never probe Apply as a fallback decoder.
+	if job.Type == string(JobRetentionDelete) && job.ObjectID == job.OrganizationID && d.Legacy && !job.Unsettled && !job.UnsettledLegacy && (job.Status == "pending" || (job.Status == "running" && job.Expired)) &&
+		(job.CancelRequestedAt.Valid || job.AttemptCount >= job.MaxAttempts || job.Inactive || (job.Status == "running" && !job.LeaseUntil.Valid)) {
+		return BackupDrainTerminalRequired
+	}
 	if d.Legacy || job.UnsettledLegacy {
 		return BackupDrainSourceUnsupported
 	}
