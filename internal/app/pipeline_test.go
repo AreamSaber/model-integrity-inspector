@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/netip"
 	"net/url"
 	"os"
@@ -103,7 +104,8 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 			t.Fatal(err)
 		}
 	}
-	req, err := http.NewRequestWithContext(t.Context(), method, p.endpoint+path, bytes.NewReader(raw))
+	diagnostic, trace := newPipelineHTTPDiagnostic()
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), method, p.endpoint+path, bytes.NewReader(raw))
 	if err != nil {
 		t.Fatal("create app request")
 	}
@@ -118,13 +120,19 @@ func (p *pipelineHTTP) request(t *testing.T, method, path string, body any, stat
 	if p.retryKey != "" {
 		req.Header.Set("Idempotency-Key", p.retryKey)
 	}
+	stopObservation := diagnostic.startSlowObservation()
+	defer stopObservation()
 	res, err := p.client.Do(req)
 	if err != nil {
+		stopObservation()
+		t.Logf("bounded pipeline transport diagnostics: %s; before_timeout={%s}; after_failure={%s}", diagnostic.summary(), diagnostic.slowSummary(), observePipelineGoroutines().summary())
 		t.Fatalf("app HTTP request failed (class=%s, request_context=%s)", pipelineHTTPErrorClass(err), applicationFailureClass(req.Context().Err()))
 	}
 	defer func() { _ = res.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(res.Body, 5<<20))
 	if err != nil {
+		stopObservation()
+		t.Logf("bounded pipeline transport diagnostics: %s; before_timeout={%s}; after_failure={%s}", diagnostic.summary(), diagnostic.slowSummary(), observePipelineGoroutines().summary())
 		t.Fatalf("app HTTP response read failed (class=%s, request_context=%s)", pipelineHTTPErrorClass(err), applicationFailureClass(req.Context().Err()))
 	}
 	if len(data) >= 5<<20 {

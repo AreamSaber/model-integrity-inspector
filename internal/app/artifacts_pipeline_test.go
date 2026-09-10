@@ -48,6 +48,9 @@ func exercisePublishedArtifacts(t *testing.T, p *pipelineHTTP, runID string, exp
 		if id == "" || artifact.RunID != runID || artifact.Format != format || artifact.ReviewState != "not_included" {
 			t.Fatal("queued report receipt invalid")
 		}
+		// Fixed loop literals only: identify the failing renderer without IDs,
+		// URLs, hashes, source snapshots or report contents in CI diagnostics.
+		t.Logf("actual report Worker status polling format=%s", format)
 		poll(func() bool {
 			p.request(t, "GET", "/api/v1/reports/"+id, nil, 200, &artifact)
 			if artifact.Status == "failed" {
