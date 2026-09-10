@@ -1,13 +1,11 @@
 package repository
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"slices"
@@ -529,9 +527,8 @@ func TestSnapshotJobInventoryCountAndRepresentationGuards(t *testing.T) {
 		if _, err := yaml.Marshal(item.input); err == nil {
 			t.Fatal("private YAML serialization accepted")
 		}
-		var output bytes.Buffer
-		slog.New(slog.NewJSONHandler(&output, nil)).Info("inventory", "value", item.input)
-		if !strings.Contains(output.String(), item.want) || strings.Contains(output.String(), "123456789") || strings.Contains(output.String(), "987654321") {
+		output := snapshotInventoryLogText(t, item.input)
+		if output != item.want {
 			t.Fatal("private structured logging disclosure")
 		}
 	}

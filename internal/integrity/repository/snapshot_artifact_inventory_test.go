@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -368,9 +367,8 @@ func TestSnapshotArtifactInventoryRepresentationAndManifestIdentity(t *testing.T
 		if _, err := yaml.Marshal(value); err == nil {
 			t.Fatal("YAML accepted")
 		}
-		var out bytes.Buffer
-		slog.New(slog.NewJSONHandler(&out, nil)).Info("test", "inventory", value)
-		if strings.Contains(out.String(), "canary") || strings.Contains(out.String(), "1234") {
+		out := snapshotInventoryLogText(t, value)
+		if strings.Contains(out, "canary") || strings.Contains(out, "1234") || !strings.HasPrefix(out, "[private snapshot artifact ") {
 			t.Fatal("slog leaked")
 		}
 	}

@@ -1,13 +1,11 @@
 package repository
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -364,9 +362,8 @@ func TestSnapshotMigrationInventoryRequestAndRepresentationGuards(t *testing.T) 
 		if _, err := yaml.Marshal(input); err == nil {
 			t.Fatal("ordinary YAML serialized private inventory")
 		}
-		var out bytes.Buffer
-		slog.New(slog.NewJSONHandler(&out, nil)).Info("test", "inventory", input)
-		if strings.Contains(out.String(), "canary") || strings.Contains(out.String(), "1234") || !strings.Contains(out.String(), "private snapshot migration inventory") {
+		out := snapshotInventoryLogText(t, input)
+		if out != "[private snapshot migration inventory]" {
 			t.Fatal("structured logging disclosed private inventory")
 		}
 	}
