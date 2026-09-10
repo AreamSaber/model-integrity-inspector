@@ -24,21 +24,6 @@ jobs:
     name: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
-        env:
-          POSTGRES_DB: mii_ci
-          POSTGRES_USER: mii_test_owner
-          # Disposable isolated CI database only; never a deployment credential.
-          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
-        ports:
-          - 127.0.0.1:15432:5432
-        options: >-
-          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,6 +49,43 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/test-replay-netns.ps1
+
+  # Core race retains the exact test script and flags, but no longer shares
+  # its bounded job budget with lint, frontend and complete non-race builds.
+  core-race:
+    name: core-race
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_DB: mii_ci
+          POSTGRES_USER: mii_test_owner
+          # Disposable isolated Core database only; never a deployment secret.
+          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Download pinned Go dependencies
+        run: go mod download
+      - name: Verify required race coverage policy
+        shell: pwsh
+        run: |
+          ./scripts/tests/test-m0-04-policy.ps1
+          ./scripts/tests/test-race-shards.ps1
       - name: SQLite and PostgreSQL race regression
         env:
           MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
@@ -386,13 +408,14 @@ jobs:
   required:
     name: m0-04-required
     if: always()
-    needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]
+    needs: [quality, core-race, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]
     runs-on: ubuntu-24.04
     steps:
       - name: Enforce all CI results
         shell: bash
         env:
           QUALITY: ${{ needs.quality.result }}
+          CORE_RACE: ${{ needs.core-race.result }}
           REPOSITORY_RACE: ${{ needs.repository-race.result }}
           WORKER_RACE: ${{ needs.worker-race.result }}
           IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}
@@ -401,6 +424,6 @@ jobs:
           IMAGE: ${{ needs.image.result }}
           PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}
         run: |
-          for result in "$QUALITY" "$REPOSITORY_RACE" "$WORKER_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE" "$PG_BACKUP_NATIVE"; do
+          for result in "$QUALITY" "$CORE_RACE" "$REPOSITORY_RACE" "$WORKER_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE" "$PG_BACKUP_NATIVE"; do
             test "$result" = "success" || exit 1
           done

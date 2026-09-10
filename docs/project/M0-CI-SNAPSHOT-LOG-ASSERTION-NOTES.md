@@ -4,7 +4,7 @@
 
 ## 真实 CI 证据与原因
 
-已推送 head `a4f748725b2cbfc98978f6298f3502cf2af17460` 的 CI `34449102328`，Ubuntu打包job `102780438935` 实际失败。root直接回读该已完成job日志：`TestSnapshotReportInventoryRepresentation` 第534行 `slog leaked inventory`；repository总305.325s，其他包继续完成，打包脚本因Go测试非零退出。不是超时、包下载、真实数据库写入故障或data race。此时其余CI仍有在途项，不能提前宣称整个run终态。
+已推送 head `a4f748725b2cbfc98978f6298f3502cf2af17460` 的 CI `34449102328`，Ubuntu打包job `102780438935` 实际失败。root直接回读该已完成job日志：`TestSnapshotReportInventoryRepresentation` 第534行 `slog leaked inventory`；repository总305.325s，其他包继续完成，打包脚本因Go测试非零退出。不是超时、包下载、真实数据库写入故障或data race。后续整个run已终态：17成功、2失败、1取消；quality另遇任务预算耗尽，见 M0-CI-CORE-JOB-BUDGET-NOTES.md，不能用本测试修复代替该项处理。
 
 旧测试使用真实 JSON logger，再在**整行**搜索 `1234` 这个受控私有ID；标准 `time` 字段的亚秒数字也会命中它。生产 `LogValue` 只返回固定私有字符串，不含该ID。原日志没有输出被断言的完整行，不能伪造CI当时的具体纳秒；下面确定性反例证明这条断言确实会因合法时间戳失败。
 
@@ -21,4 +21,6 @@
 - 完整repository lint **0 issues**（ceefb5 exit0），未禁规则。
 - 六个精确父级：原报告表示、新提取负面、审计/迁移交易与表示guard、工件表示/manifest、Job计数与表示guard，SQLite/纯层三轮 **0.734s PASS**（0d98ea exit0），未作 driver 子路径过滤。未配置DSN的PG分支不计为实际PG。
 
-PostgreSQL交易guard部分及新远端CI证据待后续真实执行。当前已完成的Ubuntu失败不重启或改写为成功；修复将以新head触发独立验证。
+- 执行单元独占General时，当前routing加上述六父级 **双库三轮20.266s PASS**（session99593实际终态0）；没有driver子路径过滤，不与其他PG组并发。该组合同时覆盖PG交易guard与路由，不虚称每个纯表示用例各自需要DB。
+
+新远端CI证据待新head真实执行。当前已完成的Ubuntu失败不重启或改写为成功；修复将以新head触发独立验证。
