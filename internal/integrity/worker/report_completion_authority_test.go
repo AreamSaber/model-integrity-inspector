@@ -284,14 +284,14 @@ func TestReportWorkerPublicationInfrastructureFailuresStopConsumer(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				done := make(chan error, 1)
-				go func() { done <- runner.Run(ctx) }()
+				// Register cancel-and-join before any fault installation can fail.
+				// Normal assertions still observe the uncancelled Runner result;
+				// cleanup also covers every early Fatal before that assertion.
+				process := startReportRunnerFixture(t, runner.Run)
 				select {
 				case <-written:
-				case err := <-done:
-					t.Fatal("report worker failed before test fault", err)
+				case <-process.done:
+					t.Fatal("report worker failed before test fault", process.result)
 				case <-time.After(5 * time.Second):
 					t.Fatal("report file not written before fault")
 				}
@@ -331,9 +331,9 @@ func TestReportWorkerPublicationInfrastructureFailuresStopConsumer(t *testing.T)
 				}
 				close(release)
 				select {
-				case err := <-done:
-					if !errors.Is(err, want) {
-						t.Fatalf("systemic/fencing failure was concealed: %v", err)
+				case <-process.done:
+					if !errors.Is(process.result, want) {
+						t.Fatalf("systemic/fencing failure was concealed: %v", process.result)
 					}
 				case <-time.After(5 * time.Second):
 					t.Fatal("consumer did not stop on infrastructure/fencing failure")
