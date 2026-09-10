@@ -5,13 +5,16 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const netnsWorkflowStep = "      - name: Offline replay OS network isolation\n        timeout-minutes: 5\n        shell: pwsh\n        run: ./scripts/test-replay-netns.ps1\n"
-const netnsRequiredJobs = "needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]"
+const netnsRequiredJobs = "needs: [quality, core-race, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]"
 
 func validNetnsWorkflow(workflow string) bool {
 	workflow = strings.ReplaceAll(workflow, "\r\n", "\n")
@@ -23,18 +26,32 @@ func validNetnsWorkflow(workflow string) bool {
 		return false
 	}
 	quality := job[0][1]
-	_, tail, found := strings.Cut(quality, "      - name: Offline replay OS network isolation\n")
-	if !found || strings.Count(quality, "      - name: Offline replay OS network isolation\n") != 1 {
+	// Decode the actual step rather than accidentally including a following
+	// job's leading YAML comment when this is the final quality step.
+	var parsed struct {
+		Jobs map[string]struct {
+			Steps []map[string]any `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if yaml.Unmarshal([]byte(workflow), &parsed) != nil {
 		return false
 	}
-	body, _, _ := strings.Cut(tail, "      - name:")
-	if "      - name: Offline replay OS network isolation\n"+body != netnsWorkflowStep {
+	count := 0
+	for _, step := range parsed.Jobs["quality"].Steps {
+		if step["name"] == "Offline replay OS network isolation" {
+			count++
+			if !reflect.DeepEqual(step, map[string]any{"name": "Offline replay OS network isolation", "timeout-minutes": 5, "shell": "pwsh", "run": "./scripts/test-replay-netns.ps1"}) {
+				return false
+			}
+		}
+	}
+	if count != 1 || !validCoreRaceWorkflow(workflow) {
 		return false
 	}
 	if regexp.MustCompile(`(?m)^    if:|^\s*continue-on-error:`).MatchString(quality) {
 		return false
 	}
-	if !strings.Contains(quality, "    runs-on: ubuntu-24.04\n") || !strings.Contains(quality, "        run: ./scripts/build.ps1\n") || strings.Count(quality, "        run: ./scripts/test-race.ps1 -Group Core\n") != 1 {
+	if !strings.Contains(quality, "    runs-on: ubuntu-24.04\n") || !strings.Contains(quality, "        run: ./scripts/build.ps1\n") || strings.Contains(quality, "test-race.ps1") {
 		return false
 	}
 	if strings.Index(quality, netnsWorkflowStep) < strings.Index(quality, "        run: ./scripts/build.ps1\n") {
@@ -46,11 +63,11 @@ func validNetnsWorkflow(workflow string) bool {
 	}
 	for _, required := range []string{
 		"    name: m0-04-required\n", "    if: always()\n", "    " + netnsRequiredJobs + "\n",
-		"          QUALITY: ${{ needs.quality.result }}\n", "          REPOSITORY_RACE: ${{ needs.repository-race.result }}\n",
+		"          QUALITY: ${{ needs.quality.result }}\n", "          CORE_RACE: ${{ needs.core-race.result }}\n", "          REPOSITORY_RACE: ${{ needs.repository-race.result }}\n",
 		"          WORKER_RACE: ${{ needs.worker-race.result }}\n", "          IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}\n",
 		"          DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}\n", "          PACKAGE: ${{ needs.package.result }}\n", "          IMAGE: ${{ needs.image.result }}\n",
 		"          PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}\n",
-		"          for result in \"$QUALITY\" \"$REPOSITORY_RACE\" \"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\" \"$DEPENDENCY_SCAN\" \"$PACKAGE\" \"$IMAGE\" \"$PG_BACKUP_NATIVE\"; do\n            test \"$result\" = \"success\" || exit 1\n          done\n",
+		"          for result in \"$QUALITY\" \"$CORE_RACE\" \"$REPOSITORY_RACE\" \"$WORKER_RACE\" \"$IDENTITY_POSTGRES_RACE\" \"$DEPENDENCY_SCAN\" \"$PACKAGE\" \"$IMAGE\" \"$PG_BACKUP_NATIVE\"; do\n            test \"$result\" = \"success\" || exit 1\n          done\n",
 	} {
 		if strings.Count(gate[0][1], required) != 1 {
 			return false
@@ -75,10 +92,13 @@ func TestReplayNamespaceWorkflowIsMandatory(t *testing.T) {
 		"policy-only":               strings.Replace(workflow, "run: ./scripts/test-replay-netns.ps1\n", "run: ./scripts/test-replay-netns.ps1 -PolicyOnly\n", 1),
 		"wrong-job":                 strings.Replace(workflow, "  quality:\n", "  disconnected-quality:\n", 1),
 		"non-linux":                 strings.Replace(workflow, "    runs-on: ubuntu-24.04\n", "    runs-on: windows-2025\n", 1),
-		"gate-omits-quality":        strings.Replace(workflow, netnsRequiredJobs, "needs: [repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]", 1),
-		"gate-omits-worker":         strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]", 1),
-		"gate-omits-identity":       strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, worker-race, dependency-scan, package, image, pg-backup-native]", 1),
-		"gate-omits-pg-backup":      strings.Replace(workflow, netnsRequiredJobs, "needs: [quality, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image]", 1),
+		"gate-omits-quality":        strings.Replace(workflow, netnsRequiredJobs, strings.Replace(netnsRequiredJobs, "quality, ", "", 1), 1),
+		"gate-omits-core":           strings.Replace(workflow, netnsRequiredJobs, strings.Replace(netnsRequiredJobs, "core-race, ", "", 1), 1),
+		"gate-omits-worker":         strings.Replace(workflow, netnsRequiredJobs, strings.Replace(netnsRequiredJobs, "worker-race, ", "", 1), 1),
+		"gate-omits-identity":       strings.Replace(workflow, netnsRequiredJobs, strings.Replace(netnsRequiredJobs, "identity-postgres-race, ", "", 1), 1),
+		"gate-omits-pg-backup":      strings.Replace(workflow, netnsRequiredJobs, strings.Replace(netnsRequiredJobs, ", pg-backup-native", "", 1), 1),
+		"core-literal-success":      strings.Replace(workflow, "CORE_RACE: ${{ needs.core-race.result }}", "CORE_RACE: success", 1),
+		"ignore-core-result":        strings.Replace(workflow, "\"$QUALITY\" \"$CORE_RACE\"", "\"$QUALITY\"", 1),
 		"old-sequential-group":      strings.Replace(workflow, "run: ./scripts/test-race.ps1 -Group Core", "run: ./scripts/test-race.ps1 -Group Other", 1),
 		"worker-literal-success":    strings.Replace(workflow, "WORKER_RACE: ${{ needs.worker-race.result }}", "WORKER_RACE: success", 1),
 		"identity-literal-success":  strings.Replace(workflow, "IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}", "IDENTITY_POSTGRES_RACE: success", 1),
