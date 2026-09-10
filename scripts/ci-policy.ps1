@@ -163,7 +163,7 @@ function Assert-MIICIVersions {
     foreach ($pin in @(
         @{ Action = 'aquasecurity/trivy-action'; Input = 'version'; Version = 'v0.74.0'; Count = 2 },
         @{ Action = 'anchore/sbom-action'; Input = 'syft-version'; Version = 'v1.51.1'; Count = 2 },
-        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 8 },
+        @{ Action = 'actions/setup-go'; Input = 'go-version'; Version = '${{ env.GO_VERSION }}'; Count = 9 },
         @{ Action = 'actions/setup-node'; Input = 'node-version'; Version = '${{ env.NODE_VERSION }}'; Count = 3 }
     )) {
         $matches = @($actions | Where-Object { $_.Action -ceq $pin.Action })
@@ -212,18 +212,20 @@ function Assert-MIIRaceWorkflow {
     $core = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'core-race'
     $repository = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'repository-race'
     $worker = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'worker-race'
+    $application = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'application-race'
+    Assert-MIIApplicationRaceWorkflow -Application $application
     $identity = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'identity-postgres-race'
     $required = Get-MIIExplicitWorkflowJob -Workflow $Workflow -Name 'required'
     if ($Workflow -match '(?m)^\s*continue-on-error:') { throw 'Required CI work must not ignore failures.' }
     Assert-MIICoreRaceWorkflow -Core $core -Quality $quality
     if ([regex]::Matches($identity, '(?m)^        run: \./scripts/test-race\.ps1 -Group IdentityPostgres\s*$').Count -ne 1) { throw 'CI must independently run explicit PostgreSQL identity/API race exactly once.' }
-    foreach ($matrix in @(@{ Body = $repository; Name = 'repository-race'; Group = 'Repository' }, @{ Body = $worker; Name = 'worker-race'; Group = 'Worker' })) {
+    foreach ($matrix in @(@{ Body = $repository; Name = 'repository-race'; Group = 'Repository' }, @{ Body = $worker; Name = 'worker-race'; Group = 'Worker' }, @{ Body = $application; Name = 'application-race'; Group = 'Application' })) {
         if ($matrix.Body -cnotmatch ('(?m)^    name: ' + [regex]::Escape($matrix.Name) + '-\$\{\{ matrix\.shard \}\}\s*$') -or
             $matrix.Body -cnotmatch '(?m)^    strategy:\r?\n      fail-fast: false\r?\n      matrix:\r?\n        shard: \[0, 1, 2, 3, 4, 5\]\r?\n    runs-on: ubuntu-24\.04\s*$' -or
             $matrix.Body -match '(?m)^\s*(include|exclude):' -or
-            [regex]::Matches($matrix.Body, ('(?m)^        run: \./scripts/test-race\.ps1 -Group ' + $matrix.Group + ' -Shard \$\{\{ matrix\.shard \}\}\s*$')).Count -ne 1) { throw 'All six repository/Worker race shards must be explicit and independently executed.' }
+            [regex]::Matches($matrix.Body, ('(?m)^        run: \./scripts/test-race\.ps1 -Group ' + $matrix.Group + ' -Shard \$\{\{ matrix\.shard \}\}\s*$')).Count -ne 1) { throw 'All six repository/Worker/Application race shards must be explicit and independently executed.' }
     }
-    foreach ($job in @($core, $repository, $worker, $identity)) {
+    foreach ($job in @($core, $repository, $worker, $application, $identity)) {
         if ([regex]::Matches($job, '(?m)^    timeout-minutes: 25\s*$').Count -ne 1 -or
             [regex]::Matches($job, '(?m)^    runs-on: ubuntu-24\.04\s*$').Count -ne 1 -or $job -match '(?m)^\s*if:') { throw 'Required race jobs must retain native Ubuntu, the 25-minute job limit and cannot conditionally skip work.' }
         if ($job -cnotmatch '(?m)^          MII_TEST_POSTGRES_DSN: postgres://[^\r\n]+$') { throw 'Every race job requires its real isolated PostgreSQL service.' }
@@ -232,16 +234,16 @@ function Assert-MIIRaceWorkflow {
     }
     if ($required -cnotmatch '(?m)^    name: m0-04-required\s*$' -or
         $required -cnotmatch '(?m)^    if: always\(\)\s*$' -or
-        $required -cnotmatch '(?m)^    needs: \[quality, core-race, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
+        $required -cnotmatch '(?m)^    needs: \[quality, core-race, repository-race, worker-race, application-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native\]\s*$') { throw 'The unchanged required gate must await every CI job, even on failure or cancellation.' }
     foreach ($binding in @(
         'QUALITY: ${{ needs.quality.result }}', 'CORE_RACE: ${{ needs.core-race.result }}', 'REPOSITORY_RACE: ${{ needs.repository-race.result }}',
-        'WORKER_RACE: ${{ needs.worker-race.result }}', 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}',
+        'WORKER_RACE: ${{ needs.worker-race.result }}', 'APPLICATION_RACE: ${{ needs.application-race.result }}', 'IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}',
         'DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}', 'PACKAGE: ${{ needs.package.result }}', 'IMAGE: ${{ needs.image.result }}',
         'PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}'
     )) {
         if ([regex]::Matches($required, ('(?m)^          ' + [regex]::Escape($binding) + '\s*$')).Count -ne 1) { throw 'Every required job result must be bound exactly once.' }
     }
-    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$CORE_RACE" "\$REPOSITORY_RACE" "\$WORKER_RACE" "\$IDENTITY_POSTGRES_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE" "\$PG_BACKUP_NATIVE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
+    if ($required -cnotmatch '(?m)^          for result in "\$QUALITY" "\$CORE_RACE" "\$REPOSITORY_RACE" "\$WORKER_RACE" "\$APPLICATION_RACE" "\$IDENTITY_POSTGRES_RACE" "\$DEPENDENCY_SCAN" "\$PACKAGE" "\$IMAGE" "\$PG_BACKUP_NATIVE"; do\r?\n            test "\$result" = "success" \|\| exit 1\r?\n          done\s*$') { throw 'Required CI accepts only success; failure, skipped, cancelled or missing is not success.' }
 }
 
 function Assert-MIICoreRaceWorkflow {
@@ -361,4 +363,55 @@ function Assert-MIIPGBackupWorkflow {
     if ($steps.Count -ne 1 -or $steps[0].Value.TrimEnd() -cne $expected.Replace("`r`n", "`n").TrimEnd()) {
         throw 'Required PG backup CI must run its complete pinned native version/permission checks and tagged two-package regression exactly.'
     }
+}
+
+# Compare the entire executable Application job. Comments are not commands;
+# hidden fields, duplicate steps, filters and environment overrides are rejected.
+function Assert-MIIApplicationRaceWorkflow {
+    param([Parameter(Mandatory)][string]$Application)
+    $body = ($Application -replace '\r\n', "`n") -replace '(?m)^\s*#[^\n]*\n', ''
+    $expected = @'
+    name: application-race-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_DB: mii_ci
+          POSTGRES_USER: mii_test_owner
+          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Download pinned Go dependencies before strict enumeration
+        run: go mod download
+      - name: Verify race shard coverage and policy
+        shell: pwsh
+        run: |
+          ./scripts/tests/test-m0-04-policy.ps1
+          ./scripts/tests/test-race-shards.ps1 -NativeGo
+      - name: SQLite and PostgreSQL Application race shard
+        env:
+          MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
+        shell: pwsh
+        run: ./scripts/test-race.ps1 -Group Application -Shard ${{ matrix.shard }}
+'@
+    if ($body.TrimEnd() -cne $expected.Replace("`r`n", "`n").TrimEnd()) { throw 'Required Application race CI must retain its exact complete six-shard job, native service, commands and limits.' }
 }

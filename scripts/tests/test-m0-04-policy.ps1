@@ -23,10 +23,13 @@ Test-MIIPolicyCase 'Core race owns its job budget independently of builds' {
     if ($core -notmatch 'run: \./scripts/test-race\.ps1 -Group Core' -or $quality -match 'test-race\.ps1') { throw 'Core race must not share the build job budget.' }
 }
 foreach ($case in @(
+    @{ Name = 'missing Application matrix dependency'; Old = 'worker-race, application-race, identity-postgres-race'; New = 'worker-race, identity-postgres-race' },
+    @{ Name = 'Application result faked'; Old = 'APPLICATION_RACE: ${{ needs.application-race.result }}'; New = 'APPLICATION_RACE: success' },
+    @{ Name = 'Application result ignored'; Old = '"$WORKER_RACE" "$APPLICATION_RACE" "$IDENTITY_POSTGRES_RACE"'; New = '"$WORKER_RACE" "$IDENTITY_POSTGRES_RACE"' },
     @{ Name = 'missing required Core race dependency'; Old = 'needs: [quality, core-race, repository-race'; New = 'needs: [quality, repository-race' },
     @{ Name = 'missing required repository matrix dependency'; Old = 'needs: [quality, core-race, repository-race, worker-race'; New = 'needs: [quality, core-race, worker-race' },
-    @{ Name = 'missing required Worker matrix dependency'; Old = 'repository-race, worker-race, identity-postgres-race'; New = 'repository-race, identity-postgres-race' },
-    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'worker-race, identity-postgres-race, dependency-scan'; New = 'worker-race, dependency-scan' },
+    @{ Name = 'missing required Worker matrix dependency'; Old = 'repository-race, worker-race, application-race'; New = 'repository-race, application-race' },
+    @{ Name = 'missing required PostgreSQL identity dependency'; Old = 'application-race, identity-postgres-race, dependency-scan'; New = 'application-race, dependency-scan' },
     @{ Name = 'missing required native PG backup dependency'; Old = ', image, pg-backup-native]'; New = ', image]' },
     @{ Name = 'native PG backup result replaced by literal success'; Old = 'PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}'; New = 'PG_BACKUP_NATIVE: success' },
     @{ Name = 'required gate ignores native PG backup result'; Old = '"$IMAGE" "$PG_BACKUP_NATIVE"; do'; New = '"$IMAGE"; do' },
@@ -40,8 +43,8 @@ foreach ($case in @(
     @{ Name = 'required gate may be skipped after failure'; Old = 'if: always()'; New = 'if: success()' },
     @{ Name = 'required gate ignores Core result'; Old = '"$QUALITY" "$CORE_RACE" "$REPOSITORY_RACE"'; New = '"$QUALITY" "$REPOSITORY_RACE"' },
     @{ Name = 'required gate ignores matrix result'; Old = '"$CORE_RACE" "$REPOSITORY_RACE" "$WORKER_RACE"'; New = '"$CORE_RACE" "$WORKER_RACE"' },
-    @{ Name = 'required gate ignores Worker result'; Old = '"$REPOSITORY_RACE" "$WORKER_RACE" "$IDENTITY_POSTGRES_RACE"'; New = '"$REPOSITORY_RACE" "$IDENTITY_POSTGRES_RACE"' },
-    @{ Name = 'required gate ignores PostgreSQL identity result'; Old = '"$WORKER_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN"'; New = '"$WORKER_RACE" "$DEPENDENCY_SCAN"' },
+    @{ Name = 'required gate ignores Worker result'; Old = '"$REPOSITORY_RACE" "$WORKER_RACE" "$APPLICATION_RACE"'; New = '"$REPOSITORY_RACE" "$APPLICATION_RACE"' },
+    @{ Name = 'required gate ignores PostgreSQL identity result'; Old = '"$APPLICATION_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN"'; New = '"$APPLICATION_RACE" "$DEPENDENCY_SCAN"' },
     @{ Name = 'required gate ignores failed result'; Old = 'test "$result" = "success" || exit 1'; New = 'test "$result" = "success" || exit 0' },
     @{ Name = 'required gate bound to literal success'; Old = 'REPOSITORY_RACE: ${{ needs.repository-race.result }}'; New = 'REPOSITORY_RACE: success' },
     @{ Name = 'Core result replaced by literal success'; Old = 'CORE_RACE: ${{ needs.core-race.result }}'; New = 'CORE_RACE: success' },
@@ -109,7 +112,7 @@ foreach ($mutation in @(
 
 # Scope mutations to each actual job. Unchanged checks in a different job
 # cannot accidentally satisfy the mutated task's requirement.
-foreach ($jobName in @('core-race', 'worker-race', 'identity-postgres-race')) {
+foreach ($jobName in @('core-race', 'worker-race', 'application-race', 'identity-postgres-race')) {
     $workflow = $sources['.github/workflows/ci.yml'] -replace '\r\n', "`n"
     $body = Get-MIIExplicitWorkflowJob -Workflow $workflow -Name $jobName
     $mutations = @(
@@ -119,12 +122,27 @@ foreach ($jobName in @('core-race', 'worker-race', 'identity-postgres-race')) {
         @{ Name = 'race step conditionally skipped'; Old = '        run: ./scripts/test-race.ps1'; New = "        if: false`n        run: ./scripts/test-race.ps1" },
         @{ Name = 'isolated service omitted'; Old = '    services:'; New = '    services-disabled:' }
     )
-    if ($jobName -ceq 'worker-race') {
+    if ($jobName -ceq 'worker-race' -or $jobName -ceq 'application-race') {
         $mutations += @(
             @{ Name = 'one Worker shard missing'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4]' },
             @{ Name = 'one Worker shard duplicated'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = 'shard: [0, 1, 2, 3, 4, 4]' },
             @{ Name = 'Worker sibling cancelled'; Old = 'fail-fast: false'; New = 'fail-fast: true' },
             @{ Name = 'Worker matrix excludes parent'; Old = 'shard: [0, 1, 2, 3, 4, 5]'; New = "shard: [0, 1, 2, 3, 4, 5]`n        exclude: [{shard: 0}]" }
+        )
+    }
+    if ($jobName -ceq 'application-race') {
+        $mutations += @(
+            @{ Name = 'Application serialized behind Core'; Old = '    timeout-minutes: 25'; New = "    timeout-minutes: 25`n    needs: [core-race]" },
+            @{ Name = 'Application no pinned action'; Old = 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'; New = 'actions/setup-go@main' },
+            @{ Name = 'Application no enumeration policy'; Old = './scripts/tests/test-race-shards.ps1 -NativeGo'; New = 'echo omitted' },
+            @{ Name = 'Application wrong database'; Old = 'POSTGRES_DB: mii_ci'; New = 'POSTGRES_DB: unrelated' },
+            @{ Name = 'Application fake DSN'; Old = 'MII_TEST_POSTGRES_DSN: postgres://'; New = 'MII_TEST_POSTGRES_DSN: fake://' },
+            @{ Name = 'Application wrong health'; Old = '--health-cmd "pg_isready -U mii_test_owner -d mii_ci"'; New = '--health-cmd "true"' },
+            @{ Name = 'Application hidden filter'; Old = '        env:'; New = "        env:`n          GOFLAGS: -skip=Test" },
+            @{ Name = 'Application constant shard'; Old = '-Group Application -Shard ${{ matrix.shard }}'; New = '-Group Application -Shard 0' },
+            @{ Name = 'Application wrong group'; Old = '-Group Application'; New = '-Group Core' },
+            @{ Name = 'Application ignored exit'; Old = '-Group Application -Shard ${{ matrix.shard }}'; New = '-Group Application -Shard ${{ matrix.shard }}; exit 0' },
+            @{ Name = 'Application added body'; Old = '    steps:'; New = "    steps:`n      - run: echo unexpected" }
         )
     }
     if ($jobName -ceq 'core-race') {

@@ -2,6 +2,7 @@
 # nested subtests and fuzz seeds; benchmarks are not run by ordinary go test.
 function Get-MIIRepositoryRacePackage { return 'model-integrity-inspector.local/mii/internal/integrity/repository' }
 function Get-MIIWorkerRacePackage { return 'model-integrity-inspector.local/mii/internal/integrity/worker' }
+function Get-MIIApplicationRacePackage { return 'model-integrity-inspector.local/mii/internal/app' }
 
 function Get-MIIRaceTestNames {
     param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Lines, [Parameter(Mandatory)][string]$Package)
@@ -67,7 +68,7 @@ function New-MIIRacePlan {
 # This changes neither any test body/deadline nor the ten-minute process bound.
 # Every parent retains ALL nested subtests and fuzz seeds; no skip/retry exists.
 function New-MIIRaceExecutionPlan {
-    param([Parameter(Mandatory)][ValidateSet('Repository','Worker')][string]$Group, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Names)
+    param([Parameter(Mandatory)][ValidateSet('Repository','Worker','Application')][string]$Group, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Names)
     if ($Names.Count -eq 0) { throw 'An empty race execution partition is invalid.' }
     $count = if ($Group -ceq 'Repository') { [Math]::Min(2, $Names.Count) } else { 1 }
     return New-MIIRacePlan -Names $Names -ShardCount $count
@@ -90,12 +91,12 @@ function Get-MIINonRepositoryRacePackages {
 # Execute returns { ExitCode, Lines }; production invokes a native Go executable,
 # tests inject an offline recorder to assert flags, quoting and failure handling.
 function Invoke-MIICIRace {
-    param([Parameter(Mandatory)][ValidateSet('Other','Repository','Core','Worker','IdentityPostgres')][string]$Group, [ValidateRange(0,5)][int]$Shard = 0, [Parameter(Mandatory)][scriptblock]$Execute)
+    param([Parameter(Mandatory)][ValidateSet('Other','Repository','Core','Worker','Application','IdentityPostgres')][string]$Group, [ValidateRange(0,5)][int]$Shard = 0, [Parameter(Mandatory)][scriptblock]$Execute)
     if ([string]::IsNullOrWhiteSpace($env:MII_TEST_POSTGRES_DSN)) { throw 'Race CI requires the isolated PostgreSQL test DSN.' }
     if (-not [string]::IsNullOrEmpty($env:GOFLAGS)) { throw 'Race CI does not accept implicit GOFLAGS that may change coverage.' }
     if (-not [string]::IsNullOrEmpty($env:MII_IDENTITY_TEST_DRIVER)) { throw 'Race CI must start with the default identity driver.' }
-    if ($Group -eq 'Repository' -or $Group -eq 'Worker') {
-        $package = if ($Group -eq 'Repository') { Get-MIIRepositoryRacePackage } else { Get-MIIWorkerRacePackage }
+    if ($Group -eq 'Repository' -or $Group -eq 'Worker' -or $Group -eq 'Application') {
+        $package = switch ($Group) { 'Repository' { Get-MIIRepositoryRacePackage }; 'Worker' { Get-MIIWorkerRacePackage }; 'Application' { Get-MIIApplicationRacePackage } }
         $listed = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-list','^(Test|Example|Fuzz)',$package) -Capture $true
         if ($listed.ExitCode -ne 0) { throw 'Race test enumeration failed.' }
         $names = Get-MIIRaceTestNames -Lines $listed.Lines -Package $package
@@ -110,7 +111,7 @@ function Invoke-MIICIRace {
         }
         return
     }
-    if ($Shard -ne 0) { throw 'Only repository and Worker support a shard index.' }
+    if ($Shard -ne 0) { throw 'Only repository, Worker and Application support a shard index.' }
     if ($Group -eq 'IdentityPostgres') {
         Invoke-MIIIdentityPostgresRace -Execute $Execute
         return
@@ -120,16 +121,22 @@ function Invoke-MIICIRace {
     $packages = Get-MIINonRepositoryRacePackages -Packages $listed.Lines
     $worker = Get-MIIWorkerRacePackage
     if ($packages -cnotcontains $worker) { throw 'Complete race enumeration must contain the exact Worker package.' }
-    [string[]]$others = @($packages | Where-Object { $_ -cne $worker })
-    if ($others.Count -eq 0 -or $others.Count -ne $packages.Count - 1) { throw 'Only the exact Worker package may move to sequential complete partitions.' }
+    $application = Get-MIIApplicationRacePackage
+    if ($packages -cnotcontains $application) { throw 'Complete race enumeration must contain the exact Application package.' }
+    [string[]]$others = @($packages | Where-Object { $_ -cne $worker -and $_ -cne $application })
+    if ($others.Count -eq 0 -or $others.Count -ne $packages.Count - 2) { throw 'Only the exact Worker and Application packages may move to complete partitions.' }
     $plan = $null
+    $applicationPlan = $null
     if ($Group -eq 'Other') {
         $listedWorker = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-list','^(Test|Example|Fuzz)',$worker) -Capture $true
         if ($listedWorker.ExitCode -ne 0) { throw 'Worker race enumeration failed.' }
         $plan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $listedWorker.Lines -Package $worker)
-        Write-Host "Race testing $($others.Count) non-repository/non-Worker packages; all Worker parents follow in six exact sequential partitions."
+        $listedApplication = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-list','^(Test|Example|Fuzz)',$application) -Capture $true
+        if ($listedApplication.ExitCode -ne 0) { throw 'Application race enumeration failed.' }
+        $applicationPlan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $listedApplication.Lines -Package $application)
+        Write-Host "Race testing $($others.Count) remaining packages; all Worker and Application parents follow in six exact sequential partitions each."
     } else {
-        Write-Host "Race testing $($others.Count) non-repository/non-Worker packages; CI separately requires all six Worker shards and PostgreSQL identity/API."
+        Write-Host "Race testing $($others.Count) remaining packages; CI separately requires all six Worker and six Application shards and PostgreSQL identity/API."
     }
     $tested = & $Execute -GoArguments (@('test','-race','-count=1','-timeout=10m') + $others) -Capture $false
     if ($tested.ExitCode -ne 0) { throw 'Non-repository race regression failed.' }
@@ -142,6 +149,12 @@ function Invoke-MIICIRace {
         Write-Host "Worker race partition $index/6: $($plan.Shards[$index].Names.Count) of $($plan.Names.Count) top-level tests; exact coverage verified."
         $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-run',$pattern,$worker) -Capture $false
         if ($tested.ExitCode -ne 0) { throw "Worker race partition $index failed." }
+    }
+    foreach ($index in 0..5) {
+        $pattern = Get-MIIRacePattern -Names $applicationPlan.Shards[$index].Names
+        Write-Host "Application race partition $index/6: $($applicationPlan.Shards[$index].Names.Count) of $($applicationPlan.Names.Count) top-level tests; exact coverage verified."
+        $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-run',$pattern,$application) -Capture $false
+        if ($tested.ExitCode -ne 0) { throw "Application race partition $index failed." }
     }
     Invoke-MIIIdentityPostgresRace -Execute $Execute
 }

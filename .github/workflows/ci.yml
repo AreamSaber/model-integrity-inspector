@@ -180,6 +180,50 @@ jobs:
         shell: pwsh
         run: ./scripts/test-race.ps1 -Group Worker -Shard ${{ matrix.shard }}
 
+  application-race:
+    name: application-race-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_DB: mii_ci
+          POSTGRES_USER: mii_test_owner
+          # Each shard gets its own runner and disposable PostgreSQL service.
+          POSTGRES_PASSWORD: mii-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -U mii_test_owner -d mii_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Download pinned Go dependencies before strict enumeration
+        run: go mod download
+      - name: Verify race shard coverage and policy
+        shell: pwsh
+        run: |
+          ./scripts/tests/test-m0-04-policy.ps1
+          ./scripts/tests/test-race-shards.ps1 -NativeGo
+      - name: SQLite and PostgreSQL Application race shard
+        env:
+          MII_TEST_POSTGRES_DSN: postgres://mii_test_owner:mii-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:15432/mii_ci?sslmode=disable
+        shell: pwsh
+        run: ./scripts/test-race.ps1 -Group Application -Shard ${{ matrix.shard }}
+
   identity-postgres-race:
     name: identity-postgres-race
     runs-on: ubuntu-24.04
@@ -408,7 +452,7 @@ jobs:
   required:
     name: m0-04-required
     if: always()
-    needs: [quality, core-race, repository-race, worker-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]
+    needs: [quality, core-race, repository-race, worker-race, application-race, identity-postgres-race, dependency-scan, package, image, pg-backup-native]
     runs-on: ubuntu-24.04
     steps:
       - name: Enforce all CI results
@@ -418,12 +462,13 @@ jobs:
           CORE_RACE: ${{ needs.core-race.result }}
           REPOSITORY_RACE: ${{ needs.repository-race.result }}
           WORKER_RACE: ${{ needs.worker-race.result }}
+          APPLICATION_RACE: ${{ needs.application-race.result }}
           IDENTITY_POSTGRES_RACE: ${{ needs.identity-postgres-race.result }}
           DEPENDENCY_SCAN: ${{ needs.dependency-scan.result }}
           PACKAGE: ${{ needs.package.result }}
           IMAGE: ${{ needs.image.result }}
           PG_BACKUP_NATIVE: ${{ needs.pg-backup-native.result }}
         run: |
-          for result in "$QUALITY" "$CORE_RACE" "$REPOSITORY_RACE" "$WORKER_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE" "$PG_BACKUP_NATIVE"; do
+          for result in "$QUALITY" "$CORE_RACE" "$REPOSITORY_RACE" "$WORKER_RACE" "$APPLICATION_RACE" "$IDENTITY_POSTGRES_RACE" "$DEPENDENCY_SCAN" "$PACKAGE" "$IMAGE" "$PG_BACKUP_NATIVE"; do
             test "$result" = "success" || exit 1
           done
