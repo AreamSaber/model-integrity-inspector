@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"errors"
 	"regexp"
 
@@ -117,7 +118,10 @@ func (s *Store) authenticateMaintenanceState(db *gorm.DB, row maintenanceState) 
 		// Its provenance belongs to the not-yet-implemented offline coordinator.
 		return nil
 	}
-	var latest []int64
+	// Preserve SQL NULL rather than failing database/sql's int64 conversion.
+	// PostgreSQL sorts NULL first for DESC; corrupt offline history must be a
+	// source-integrity error, not a misleading database-availability failure.
+	var latest []struct{ Generation sql.NullInt64 }
 	if err := db.Model(&maintenanceOperation{}).Select("generation").Order("generation DESC").Limit(1).Find(&latest).Error; err != nil {
 		return err
 	}
@@ -127,7 +131,7 @@ func (s *Store) authenticateMaintenanceState(db *gorm.DB, row maintenanceState) 
 		}
 		return nil
 	}
-	if len(latest) != 1 || latest[0] != row.Generation {
+	if len(latest) != 1 || !latest[0].Generation.Valid || latest[0].Generation.Int64 != row.Generation {
 		return ErrMaintenanceSource
 	}
 	_, err := s.authenticatedMaintenanceOperation(db, row)
