@@ -52,7 +52,7 @@ func snapshotReferencePlan(ctx context.Context, row snapshotReferenceRow, raw []
 	if err != nil {
 		return zero, snapshotReferenceJSONError(err)
 	}
-	result := snapshotReferenceObservation{legacy: mode == 2}
+	result := snapshotReferenceObservation{legacy: mode == 2, inputIncomplete: mode == 2}
 	if !estimate {
 		result.versions = domain.BundleVersions{Rule: row.Rule, Template: row.Template, Scoring: row.Scoring, Tokenizer: row.Tokenizer}
 		for _, version := range []string{row.Rule, row.Template, row.Scoring, row.Tokenizer} {
@@ -177,10 +177,14 @@ func snapshotReferencePlan(ctx context.Context, row snapshotReferenceRow, raw []
 		}
 		*target = value
 	}
-	members, err := snapshotReferenceManifestMembers(m["samples"])
-	if err != nil || !slices.Equal(result.members, members) {
+	members, inputs, incomplete, err := snapshotReferenceManifestMembers(ctx, m["samples"], result.versions.Tokenizer, result.tokenizerHash)
+	if err != nil {
+		return zero, err
+	}
+	if !slices.Equal(result.members, members) {
 		return zero, errSnapshotReferenceInvalid
 	}
+	result.inputTokenizers, result.inputIncomplete = inputs, incomplete
 	if ctx.Err() != nil {
 		return zero, ErrUnavailable
 	}
@@ -273,21 +277,34 @@ func snapshotReferencePlanMembers(raw []byte, legacy bool) ([]snapshotReferenceM
 	return result, nil
 }
 
-func snapshotReferenceManifestMembers(raw []byte) ([]snapshotReferenceMember, error) {
+func snapshotReferenceManifestMembers(ctx context.Context, raw []byte, configurationVersion, configurationHash string) ([]snapshotReferenceMember, []snapshotReferenceInputTokenizer, bool, error) {
 	samples, err := snapshotReferenceObjects(raw, 150)
 	if err != nil {
-		return nil, err
+		return nil, nil, false, err
 	}
 	result := make([]snapshotReferenceMember, len(samples))
+	inputs := make([]snapshotReferenceInputTokenizer, 0, len(samples))
+	incomplete := false
 	for i, sample := range samples {
+		if ctx.Err() != nil {
+			return nil, nil, false, ErrUnavailable
+		}
 		var ordinal int
 		if !snapshotKeyExactNames(sample, "ordinal") || len(sample["ordinal"]) == 0 || string(sample["ordinal"]) == "null" || json.Unmarshal(sample["ordinal"], &ordinal) != nil || ordinal != i {
-			return nil, errSnapshotReferenceInvalid
+			return nil, nil, false, errSnapshotReferenceInvalid
 		}
 		result[i], err = snapshotReferenceMemberOf(sample, "template_id", "template_version")
 		if err != nil {
-			return nil, err
+			return nil, nil, false, err
 		}
+		input, present, partial, err := snapshotReferenceInputEstimate(sample, configurationVersion, configurationHash)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if present {
+			inputs = append(inputs, input)
+		}
+		incomplete = incomplete || partial
 	}
-	return result, nil
+	return result, inputs, incomplete, nil
 }

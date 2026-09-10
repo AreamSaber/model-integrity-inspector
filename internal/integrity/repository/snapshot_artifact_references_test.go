@@ -124,7 +124,7 @@ func TestSnapshotArtifactReferencesAllSourcesAndSameView(t *testing.T) {
 		}
 		ctx, tx, closeView := auditSnapshotTestTransaction(t, cfg, nil, true)
 		first, err := (&Store{driver: s.driver}).snapshotArtifactReferences(ctx, tx.Where("1=0").Limit(1))
-		if err != nil || first.observed != [3]int64{1, 1, 4} || first.legacy != [3]int64{} || first.classification != snapshotReferenceObserved || len(first.references) != 5 {
+		if err != nil || first.observed != [3]int64{1, 1, 4} || first.legacy != [3]int64{} || first.inputIncomplete != [3]int64{1, 1, 4} || first.classification != snapshotReferenceLegacyIncomplete || len(first.references) != 5 {
 			t.Fatal("all sources/disabled/expiry or NewDB scope", err)
 		}
 		// Commit an original byte change from the separate live connection. Both

@@ -13,6 +13,10 @@ import (
 )
 
 func snapshotReferenceActualCompile(t *testing.T, org int64, target repository.TargetState, source string) domain.ExecutionPlan {
+	return snapshotReferenceActualCompileStandard(t, org, target, source, "")
+}
+
+func snapshotReferenceActualCompileStandard(t *testing.T, org int64, target repository.TargetState, source, standard string) domain.ExecutionPlan {
 	t.Helper()
 	raw, hash, err := templates.Builtin().Canonical()
 	if err != nil {
@@ -31,6 +35,7 @@ func snapshotReferenceActualCompile(t *testing.T, org int64, target repository.T
 		t.Fatal(err)
 	}
 	options := generator.Options{OrganizationID: org, AnalysisSourceVersion: source, Target: domain.ExecutionTarget{ID: target.Target.ID, Version: target.Target.Version, SecretID: target.Secret.ID, SecretVersion: target.Secret.Version, Endpoint: target.Target.Endpoint, Model: target.Target.Model, Protocol: target.Target.Protocol, MaxOutputParameter: "max_tokens"}, Package: "quick", Budget: domain.ExecutionBudget{MaxRequests: 150, MaxTokens: 1000000, TimeoutSeconds: 600}, RuleVersion: "1.0.0-dev.1", ScoringVersion: "1.0.0-dev.1", ContextWindow: 128000, MaxOutputTokens: 4096, SupportsSeed: true, SupportsStream: true, Concurrency: 3, MaxRetries: 2}
+	options.StandardModel = standard
 	manifest, err := compiler.Generate(options)
 	if err != nil {
 		t.Fatal(err)

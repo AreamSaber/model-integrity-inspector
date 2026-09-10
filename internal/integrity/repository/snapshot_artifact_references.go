@@ -56,6 +56,7 @@ type snapshotArtifactReferences struct {
 	references       []snapshotArtifactReference
 	classification   snapshotReferenceClassification
 	observed, legacy [3]int64 // Run, Estimate, Baseline; never filtered by status/TTL.
+	inputIncomplete  [3]int64 // Rows whose original input tokenizer identity is missing or not understood.
 	sourceSHA256     [3]string
 }
 
@@ -99,6 +100,8 @@ type snapshotReferenceObservation struct {
 	targetModel, targetProtocol, targetParameter string
 	members                                      []snapshotReferenceMember
 	legacy                                       bool
+	inputTokenizers                              []snapshotReferenceInputTokenizer
+	inputIncomplete                              bool
 }
 type snapshotReferenceMember struct{ ID, Version string }
 
@@ -208,6 +211,10 @@ func (v *snapshotArtifactReferences) scan(ctx context.Context, tx *gorm.DB, sour
 				v.classification = snapshotReferenceLegacyIncomplete
 				v.legacy[index]++
 			}
+			if observation.inputIncomplete {
+				v.classification = snapshotReferenceLegacyIncomplete
+				v.inputIncomplete[index]++
+			}
 			// Preserve original columns and exact body digest, including unknown
 			// legacy bodies. Never canonicalize history into today's representation.
 			snapshotReferenceFrame(h, struct {
@@ -262,6 +269,11 @@ func snapshotReferenceAccumulate(refs map[snapshotArtifactReference]struct{}, or
 	}
 	for _, member := range observation.members {
 		if err := add(snapshotArtifactReference{org, "template_member", member.Version, observation.templateHash, versions.Template, member.ID}); err != nil {
+			return err
+		}
+	}
+	for _, input := range observation.inputTokenizers {
+		if err := add(snapshotArtifactReference{org, "input_tokenizer_implementation", input.implementation, input.configurationHash, input.configurationVersion, input.encoding}); err != nil {
 			return err
 		}
 	}

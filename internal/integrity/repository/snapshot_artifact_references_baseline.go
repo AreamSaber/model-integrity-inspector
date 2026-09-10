@@ -80,7 +80,7 @@ func snapshotReferenceBaseline(ctx context.Context, tx *gorm.DB, row snapshotRef
 		return zero, err
 	}
 	if scope.SchemaVersion == "" {
-		return snapshotReferenceObservation{legacy: true}, nil
+		return snapshotReferenceObservation{legacy: true, inputIncomplete: true}, nil
 	}
 	source := snapshotReferenceSources()[0]
 	var runs []snapshotReferenceRow
