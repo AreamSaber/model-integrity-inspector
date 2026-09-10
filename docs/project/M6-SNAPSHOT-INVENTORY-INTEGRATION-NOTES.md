@@ -79,3 +79,10 @@ go test ./internal/integrity/repository -run '^(TestSnapshotArtifactReferences|T
 完整 repository vet 无诊断；当前共享工作树 lint 的35项均属于后续尚未提交的
 snapshot_result_references 两文件（34 unused、1 QF1001），没有将整体 lint 记为通过。
 第一引用单元独立提交后仍须按该提交身份执行检查/新CI，后续 Result 单元不随之发布。
+
+已提交为 **1ab6e13** 后，根任务在专属 detached worktree 验证提交本身，不移动或删除
+主工作树的 Result WIP。第一次检查早于 checkout 完成，vet 缺 web 包；等待 checkout
+真实终态后从头运行带逐步失败退出的检查（711aff terminal exit 0）：repository/app
+**vet 无诊断、lint 0 issues**，引用纯组合三轮 **0.418s PASS**，报告文件/安全配置
+三轮 **1.312s PASS**。临时 worktree 身份与无修改状态确认后已清理。该隔离验证仅证明
+提交的代码，不把主树 Result lint 未完成标成通过；新远端 CI 仍需实际运行。
