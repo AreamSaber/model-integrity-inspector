@@ -132,7 +132,7 @@ func (tx *TenantTransaction) FinishUnattemptedSample(sampleID int64) error {
 	if !blocked {
 		return ErrConflict
 	}
-	if err := tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ? AND completed_at IS NULL", tx.orgID, sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ? AND completed_at IS NULL", tx.orgID, sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}), 1); err != nil {
 		return err
 	}
 	return tx.closeExecutionIfFinished(run.ID, now)
@@ -165,10 +165,10 @@ func (tx *TenantTransaction) closeExecutionIfFinished(runID int64, now time.Time
 		status = "CANCELLED"
 		finished = &now
 	}
-	if err := tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ? AND execution_closed_at IS NULL", tx.orgID, runID).Updates(map[string]any{"status": status, "execution_closed_at": now, "finished_at": finished, "version": run.Version + 1}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ? AND execution_closed_at IS NULL", tx.orgID, runID).Updates(map[string]any{"status": status, "execution_closed_at": now, "finished_at": finished, "version": run.Version + 1}), 1); err != nil {
 		return err
 	}
-	if err := tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND run_id = ?", tx.orgID, runID).Updates(map[string]any{"status": "COMPLETED", "finished_at": now}).Error; err != nil {
+	if err := executionUpdateAll(tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND run_id = ?", tx.orgID, runID), map[string]any{"status": "COMPLETED", "finished_at": now}); err != nil {
 		return err
 	}
 	if status == "ANALYZING" {
@@ -243,7 +243,7 @@ func (q *JobQueue) ReconcileExecution(ctx context.Context, organizationID int64)
 					return err
 				}
 			} else {
-				if err := db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ?", organizationID, sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
+				if err := executionChanged(db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ?", organizationID, sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}), 1); err != nil {
 					return err
 				}
 				if err := capability.store.appendAudit(capability.ctx, db, organizationID, auditObject("run.sample.reconcile", "logical_sample", sample.ID), nil); err != nil {
@@ -271,16 +271,16 @@ func (tx *TenantTransaction) reconcileUnstartedRun(job Job, now time.Time) error
 		status = "CANCELLED"
 		code = "MI_EXECUTION_CANCELLED"
 	}
-	if err := tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, run.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
+	if err := executionUpdateAll(tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, run.ID), map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}); err != nil {
 		return err
 	}
 	if _, _, err := tx.sequenceFinalSamples(run.ID); err != nil {
 		return err
 	}
-	if err := tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND run_id = ?", tx.orgID, run.ID).Updates(map[string]any{"status": "COMPLETED", "finished_at": now}).Error; err != nil {
+	if err := executionUpdateAll(tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND run_id = ?", tx.orgID, run.ID), map[string]any{"status": "COMPLETED", "finished_at": now}); err != nil {
 		return err
 	}
-	if err := tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, run.ID).Updates(map[string]any{"status": status, "error_summary": code, "execution_closed_at": now, "finished_at": now, "version": run.Version + 1}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, run.ID).Updates(map[string]any{"status": status, "error_summary": code, "execution_closed_at": now, "finished_at": now, "version": run.Version + 1}), 1); err != nil {
 		return err
 	}
 	return tx.store.appendAudit(tx.ctx, tx.db, tx.orgID, auditObject("run.execution.close", "run", run.ID), nil)

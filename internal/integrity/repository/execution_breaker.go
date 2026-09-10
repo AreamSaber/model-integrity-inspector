@@ -73,7 +73,7 @@ func (tx *TenantTransaction) sequenceFinalSamples(runID int64) (RunRecord, bool,
 		if result.RowsAffected != int64(len(sampleIDs)) {
 			return run, false, ErrConflict
 		}
-		err = tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, runID).Update("finalized_sample_count", run.FinalizedSampleCount).Error
+		err = executionChanged(tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, runID).Update("finalized_sample_count", run.FinalizedSampleCount), 1)
 	}
 	return run, len(sampleIDs) > 0, err
 }
@@ -101,13 +101,13 @@ func (tx *TenantTransaction) advanceExecutionBreaker(runID int64, now time.Time)
 			return nil
 		}
 	}
-	if err := tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ? AND circuit_breaker_code = ''", tx.orgID, runID).Updates(map[string]any{"circuit_breaker_code": code, "circuit_breaker_opened_at": now, "error_summary": code, "version": run.Version + 1}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ? AND circuit_breaker_code = ''", tx.orgID, runID).Updates(map[string]any{"circuit_breaker_code": code, "circuit_breaker_opened_at": now, "error_summary": code, "version": run.Version + 1}), 1); err != nil {
 		return err
 	}
 	// Do not acquire other Job locks (job -> reservation mutex -> Run is the
 	// established lock order). End only samples with no active dispatch intent;
 	// delayed retry Jobs later finish as fenced no-ops, not new HTTP requests.
-	err = tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, runID).Where("NOT EXISTS (SELECT 1 FROM integrity_sample_attempts a WHERE a.organization_id = integrity_logical_samples.organization_id AND a.logical_sample_id = integrity_logical_samples.id AND a.status = 'DISPATCHED')").Updates(map[string]any{"validity": "NOT_APPLICABLE", "failure_code": "MI_EXECUTION_CIRCUIT_OPEN", "completed_at": now}).Error
+	err = executionUpdateAll(tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND run_id = ? AND completed_at IS NULL", tx.orgID, runID).Where("NOT EXISTS (SELECT 1 FROM integrity_sample_attempts a WHERE a.organization_id = integrity_logical_samples.organization_id AND a.logical_sample_id = integrity_logical_samples.id AND a.status = 'DISPATCHED')"), map[string]any{"validity": "NOT_APPLICABLE", "failure_code": "MI_EXECUTION_CIRCUIT_OPEN", "completed_at": now})
 	if err != nil {
 		return err
 	}

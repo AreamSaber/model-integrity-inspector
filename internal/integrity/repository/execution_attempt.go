@@ -496,7 +496,7 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 	if outcome.TokenizerQuality == "unavailable" {
 		localTokens = nil
 	}
-	if err := tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "derived_receipt": receipt, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": localTokens, "tokenizer_id": outcome.TokenizerID, "tokenizer_quality": outcome.TokenizerQuality, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&AttemptRecord{}).Where("organization_id = ? AND id = ? AND status = 'DISPATCHED'", tx.orgID, attempt.ID).Updates(map[string]any{"status": status, "derived_receipt": receipt, "validity": outcome.Validity, "error_code": outcome.ErrorCode, "http_status": outcome.HTTPStatus, "prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": tokens, "local_completion_tokens": localTokens, "tokenizer_id": outcome.TokenizerID, "tokenizer_quality": outcome.TokenizerQuality, "duration_ms": outcome.DurationMillis, "billed_estimate_micros": costValue, "finished_at": now}), 1); err != nil {
 		return err
 	}
 	valid := outcome.Validity == "VALID" || outcome.Validity == "VALID_WITH_WARNING"
@@ -522,17 +522,17 @@ func (tx *TenantTransaction) settleAttempt(run RunRecord, frozen executionSnapsh
 			return err
 		}
 	} else {
-		if err := tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ? AND completed_at IS NULL", tx.orgID, sample.ID).Updates(map[string]any{"final_attempt_id": attempt.ID, "validity": outcome.Validity, "completed_at": now}).Error; err != nil {
+		if err := executionChanged(tx.db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ? AND completed_at IS NULL", tx.orgID, sample.ID).Updates(map[string]any{"final_attempt_id": attempt.ID, "validity": outcome.Validity, "completed_at": now}), 1); err != nil {
 			return err
 		}
 		if valid {
 			run.ValidSampleCount++
-			if err := tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, sample.ProbeInstanceID).Update("valid_samples", clause.Expr{SQL: "valid_samples + 1"}).Error; err != nil {
+			if err := executionChanged(tx.db.Model(&ProbeRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, sample.ProbeInstanceID).Update("valid_samples", clause.Expr{SQL: "valid_samples + 1"}), 1); err != nil {
 				return err
 			}
 		}
 	}
-	if err := tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, run.ID).Updates(map[string]any{"token_count": run.TokenCount, "estimated_cost_micros": run.EstimatedCostMicros, "reserved_tokens": run.ReservedTokens, "reserved_cost_micros": run.ReservedCostMicros, "valid_sample_count": run.ValidSampleCount, "version": run.Version + 1}).Error; err != nil {
+	if err := executionChanged(tx.db.Model(&RunRecord{}).Where("organization_id = ? AND id = ?", tx.orgID, run.ID).Updates(map[string]any{"token_count": run.TokenCount, "estimated_cost_micros": run.EstimatedCostMicros, "reserved_tokens": run.ReservedTokens, "reserved_cost_micros": run.ReservedCostMicros, "valid_sample_count": run.ValidSampleCount, "version": run.Version + 1}), 1); err != nil {
 		return err
 	}
 	return tx.store.appendAudit(tx.ctx, tx.db, tx.orgID, auditObject("run.attempt.finish", "sample_attempt", attempt.ID), nil)

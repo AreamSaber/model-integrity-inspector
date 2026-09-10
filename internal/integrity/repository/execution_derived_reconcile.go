@@ -277,62 +277,9 @@ func (q *JobQueue) ReconcileExecutionWithDerived(ctx context.Context, source *Ex
 		if err != nil || binding != source.binding {
 			return ErrAnalysisSource
 		}
-		requiresDerived := data.Attempt != nil && data.Run.AnalysisSourceVersion == domain.AnalysisSourceDerivedV1
-		if requiresDerived != (candidates != nil) {
-			return ErrAnalysisSource
-		}
-		if data.Run.ExecutionClosedAt != nil || (data.Sample.ID != 0 && data.Sample.CompletedAt != nil) {
-			if requiresDerived {
-				var record AttemptDerivedRecord
-				if db.Where("organization_id = ? AND attempt_id = ?", job.OrganizationID, attemptID).First(&record).Error != nil || !completedReconciliationMatches(data, record, *candidates) {
-					return ErrAnalysisSource
-				}
-			}
-			result = ReconciliationAlreadyCompleted
-			return nil
-		}
-		now, err = queueTime(db, q.store.driver)
-		if err != nil {
+		result, err = capability.reconcileExecutionData(job, data, candidates)
+		if err != nil || result != ReconciliationApplied {
 			return err
-		}
-		if JobType(job.Type) == JobRunPlan {
-			if err := capability.reconcileUnstartedRun(job, now); err != nil {
-				return err
-			}
-		} else if data.Attempt == nil {
-			if err := db.Model(&LogicalSampleRecord{}).Where("organization_id = ? AND id = ? AND completed_at IS NULL", job.OrganizationID, data.Sample.ID).Updates(map[string]any{"validity": "NOT_APPLICABLE", "completed_at": now}).Error; err != nil {
-				return err
-			}
-			if err := q.store.appendAudit(actorCtx, db, job.OrganizationID, auditObject("run.sample.reconcile", "logical_sample", data.Sample.ID), nil); err != nil {
-				return err
-			}
-			if err := capability.closeExecutionIfFinished(data.Run.ID, now); err != nil {
-				return err
-			}
-		} else {
-			if data.Attempt.Status != "DISPATCHED" {
-				return ErrAnalysisSource
-			}
-			outcome := domain.AttemptOutcome{Validity: "INVALID_RETRYABLE", ErrorCode: "MI_UNCERTAIN_ATTEMPT"}
-			if requiresDerived {
-				if err := capability.insertSelectedDerived(data.Run, data.Plan, data.Sample, *data.Attempt, outcome, outcome, now, true, *candidates); err != nil {
-					return err
-				}
-			}
-			var plan domain.SamplePlan
-			if json.Unmarshal([]byte(data.Sample.RequestPlan), &plan) != nil {
-				return ErrAnalysisSource
-			}
-			var frozen executionSnapshot
-			if json.Unmarshal([]byte(data.Run.ConfigSnapshot), &frozen) != nil {
-				return ErrAnalysisSource
-			}
-			if err := capability.settleAttempt(data.Run, frozen, data.Sample, plan, *data.Attempt, outcome, now, 0, true); err != nil {
-				return err
-			}
-			if err := capability.closeExecutionIfFinished(data.Run.ID, now); err != nil {
-				return err
-			}
 		}
 		now, err = queueTime(db, q.store.driver)
 		if err != nil {
@@ -341,7 +288,6 @@ func (q *JobQueue) ReconcileExecutionWithDerived(ctx context.Context, source *Ex
 		if err := q.guardConsumer(db, now, false); err != nil {
 			return err
 		}
-		result = ReconciliationApplied
 		return nil
 	})
 	if err != nil {
