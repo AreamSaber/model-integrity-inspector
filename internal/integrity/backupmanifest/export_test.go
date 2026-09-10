@@ -6,3 +6,5 @@ package backupmanifest
 var TestOnlyFixture = fixture
 
 var TestOnlyScopedFixture = scopedFixture
+
+var TestOnlyLegacyFixture = legacyFixture

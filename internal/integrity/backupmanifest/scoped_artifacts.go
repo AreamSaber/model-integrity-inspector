@@ -17,7 +17,7 @@ func validArtifactIdentities(schema string, artifacts []Artifact, organizations 
 		}
 		return true
 	}
-	if schema != VersionV2 {
+	if schema != VersionV2 && schema != VersionV3 {
 		return false
 	}
 	type versionKey struct {

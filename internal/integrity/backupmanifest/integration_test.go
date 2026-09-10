@@ -68,8 +68,62 @@ func TestManifestPreservesRealTemplateRegistryVersions(t *testing.T) {
 // Synthetic file payloads exercise the actual archive crypto and every planned
 // entry kind. These are not database snapshots or real audit-chain verification.
 func TestManifestPlanBindsActualAuthenticatedArchive(t *testing.T) {
-	for _, m := range []backupmanifest.Manifest{backupmanifest.TestOnlyFixture(), backupmanifest.TestOnlyScopedFixture()} {
+	for _, m := range []backupmanifest.Manifest{backupmanifest.TestOnlyFixture(), backupmanifest.TestOnlyScopedFixture(), backupmanifest.TestOnlyLegacyFixture()} {
+		// Use the actual fixed-column digest protocol for legacy rows in the
+		// authenticated archive composition. This is still synthetic row input;
+		// only the repository's later SQL adapter can prove snapshot acquisition.
+		for i := range m.LegacyReports {
+			m.LegacyReports[i].RowSHA256 = integrationLegacyRowDigest(t, m.LegacyReports[i], false, "2026-09-10 09:00:00.123456789+08:00")
+		}
 		t.Run(m.SchemaVersion, func(t *testing.T) { manifestPlanBindsActualAuthenticatedArchive(t, m) })
+	}
+}
+
+func integrationLegacyRowDigest(t *testing.T, entry backupmanifest.LegacyReport, presentSource bool, timestamp string) string {
+	t.Helper()
+	text := func(raw string) backupmanifest.LegacyReportRowText {
+		return backupmanifest.LegacyReportRowText{Present: true, Bytes: int64(len(raw)), Reader: strings.NewReader(raw)}
+	}
+	row := backupmanifest.LegacyReportRow{DatabaseDriver: "sqlite", ID: entry.ID, OrganizationID: entry.OrganizationID,
+		RunID: entry.RunID, AnalysisRevision: entry.AnalysisRevision, Revision: entry.Revision,
+		ReportFormat: text("historical-format"), SchemaVersion: text("historical-schema"), Status: text("ready"),
+		CreatedAt: backupmanifest.LegacyReportRowTime(text(timestamp))}
+	if presentSource {
+		row.SourceJSON = text("") // Present empty TEXT is NOT historical SQL NULL.
+	}
+	sum, err := backupmanifest.DigestLegacyReportRow(t.Context(), row, backupmanifest.LegacyReportRowLimits{MaxBytes: 64 << 10, Timeout: time.Second})
+	if err != nil {
+		t.Fatal("actual legacy row digest failed", err)
+	}
+	return sum
+}
+
+func TestManifestV3ActualRowNullAndTimestampChangesBreakPinnedIdentity(t *testing.T) {
+	m := backupmanifest.TestOnlyLegacyFixture()
+	m.LegacyReports[0].RowSHA256 = integrationLegacyRowDigest(t, m.LegacyReports[0], false, "2026-09-10 09:00:00.123456789+08:00")
+	_, original, err := backupmanifest.Encode(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []struct {
+		name, timestamp string
+		presentSource   bool
+	}{
+		{"null_to_empty", "2026-09-10 09:00:00.123456789+08:00", true},
+		{"offset", "2026-09-10 09:00:00.123456789+07:00", false},
+		{"nanosecond", "2026-09-10 09:00:00.123456788+08:00", false},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			next := backupmanifest.TestOnlyLegacyFixture()
+			next.LegacyReports[0].RowSHA256 = integrationLegacyRowDigest(t, next.LegacyReports[0], change.presentSource, change.timestamp)
+			data, changed, err := backupmanifest.Encode(next)
+			if err != nil || changed == original || next.LegacyReports[0].RowSHA256 == m.LegacyReports[0].RowSHA256 {
+				t.Fatal("raw row difference lost in manifest identity", err)
+			}
+			if _, err := backupmanifest.Decode(data, m.BackupID, original); !errors.Is(err, backupmanifest.ErrMismatch) {
+				t.Fatal("changed original row accepted against pinned manifest", err)
+			}
+		})
 	}
 }
 
@@ -88,6 +142,16 @@ func manifestPlanBindsActualAuthenticatedArchive(t *testing.T, m backupmanifest.
 	}
 	for i := range m.Artifacts {
 		set(&m.Artifacts[i].File)
+	}
+	for i := range m.LegacyReports {
+		if f := m.LegacyReports[i].ObservedFile; f != nil {
+			if f.Bytes == 0 {
+				payloads[f.EntryID] = nil
+				f.SHA256 = integrationDigest(nil)
+			} else {
+				set(f)
+			}
+		}
 	}
 	data, sum, err := backupmanifest.Encode(m)
 	if err != nil {
@@ -108,7 +172,11 @@ func manifestPlanBindsActualAuthenticatedArchive(t *testing.T, m backupmanifest.
 	}
 	scope := secret.BackupScope{BackupID: m.BackupID, ManifestHash: sum}
 	limits := secret.BackupLimits{MaxBytes: 1 << 20, MaxEntries: backupmanifest.MaxEntries, Timeout: time.Second}
-	for _, mode := range []string{"valid", "changed_payload", "missing_entry", "extra_entry", "wrong_kind", "swapped_artifact"} {
+	modes := []string{"valid", "changed_payload", "missing_entry", "extra_entry", "wrong_kind", "swapped_artifact"}
+	if m.SchemaVersion == backupmanifest.VersionV3 {
+		modes = append(modes, "changed_legacy", "missing_legacy", "nonempty_legacy_empty")
+	}
+	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			var archive bytes.Buffer
 			_, err := sealer.Seal(t.Context(), scope, limits, &archive, func(_ context.Context, w *secret.BackupArchiveWriter) error {
@@ -116,14 +184,20 @@ func manifestPlanBindsActualAuthenticatedArchive(t *testing.T, m backupmanifest.
 					if mode == "missing_entry" && entry.Kind == "config" {
 						continue
 					}
+					if mode == "missing_legacy" && entry.File.EntryID == "legacy-report-21" {
+						continue
+					}
 					kind := entry.Kind
 					payload := payloads[entry.File.EntryID]
+					if mode == "changed_legacy" && entry.File.EntryID == "legacy-report-21" || mode == "nonempty_legacy_empty" && entry.File.EntryID == "legacy-report-24" {
+						payload = []byte("different-but-authenticated-legacy-bytes")
+					}
 					if mode == "changed_payload" && entry.Kind == "database" {
 						payload = []byte("different-but-authenticated")
 					}
 					if mode == "swapped_artifact" && entry.File.EntryID == "rule-v1" {
 						otherID := "scoring-v1"
-						if m.SchemaVersion == backupmanifest.VersionV2 {
+						if m.SchemaVersion != backupmanifest.Version {
 							otherID = "rule-org9"
 						}
 						payload = payloads[otherID]
@@ -226,6 +300,11 @@ func FuzzManifestDecode(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(scoped)
+	legacy, _, err := backupmanifest.Encode(backupmanifest.TestOnlyLegacyFixture())
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(legacy)
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"backup_id":91,"backup_id":91}`))
 	f.Add(append(bytes.Clone(valid), ' '))
@@ -235,7 +314,7 @@ func FuzzManifestDecode(f *testing.F) {
 			t.Skip("bounded parser fuzz input")
 		}
 		got, err := backupmanifest.Decode(data, 91, integrationDigest(data))
-		if (bytes.Equal(data, valid) || bytes.Equal(data, scoped)) && err != nil {
+		if (bytes.Equal(data, valid) || bytes.Equal(data, scoped) || bytes.Equal(data, legacy)) && err != nil {
 			t.Fatal("valid seed rejected", err)
 		}
 		if err != nil {

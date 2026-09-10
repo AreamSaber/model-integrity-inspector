@@ -103,8 +103,9 @@ type JobSummary struct {
 
 // Manifest must be constructed from one verified database snapshot. It has no
 // free-form configuration, SQL, path, DSN, key material, credentials or prose.
-// Both supported versions require complete audit history: v2 only adds artifact
-// tenancy, not sealed-segment support or additional restore authority.
+// All versions require complete audit history. v2 adds artifact tenancy; v3
+// also preserves explicitly unverified legacy report rows/files, not additional
+// restore authority or sealed-segment support.
 type Manifest struct {
 	SchemaVersion      string        `json:"schema_version"`
 	BackupID           int64         `json:"backup_id"`
@@ -121,6 +122,9 @@ type Manifest struct {
 	AuditAnchors       []AuditAnchor `json:"audit_anchors"`
 	Jobs               []JobSummary  `json:"jobs"`
 	ConfigTemplate     File          `json:"config_template"`
+	// Omitted when empty, preserving every v1/v2 canonical byte. Explicit empty
+	// or null wire arrays are noncanonical; older versions forbid any entries.
+	LegacyReports []LegacyReport `json:"legacy_reports,omitempty"`
 }
 
 // Serialization of infrastructure values is deliberately explicit. Encode is
@@ -204,6 +208,13 @@ func canonical(m Manifest) Manifest {
 	m.KeyVersions = append([]string{}, m.KeyVersions...)
 	m.AuditAnchors = append([]AuditAnchor{}, m.AuditAnchors...)
 	m.Jobs = append([]JobSummary{}, m.Jobs...)
+	m.LegacyReports = append([]LegacyReport(nil), m.LegacyReports...)
+	for i := range m.LegacyReports {
+		if m.LegacyReports[i].ObservedFile != nil {
+			owned := *m.LegacyReports[i].ObservedFile
+			m.LegacyReports[i].ObservedFile = &owned
+		}
+	}
 	slices.SortFunc(m.Migrations, func(a, b Migration) int { return compare(a.Version, b.Version) })
 	slices.SortFunc(m.Reports, func(a, b Report) int { return compare(a.ID, b.ID) })
 	slices.SortFunc(m.Artifacts, func(a, b Artifact) int {
@@ -221,6 +232,7 @@ func canonical(m Manifest) Manifest {
 	slices.Sort(m.KeyVersions)
 	slices.SortFunc(m.AuditAnchors, func(a, b AuditAnchor) int { return compare(a.OrganizationID, b.OrganizationID) })
 	slices.SortFunc(m.Jobs, func(a, b JobSummary) int { return compare(a.OrganizationID, b.OrganizationID) })
+	slices.SortFunc(m.LegacyReports, func(a, b LegacyReport) int { return compare(a.ID, b.ID) })
 	return m
 }
 

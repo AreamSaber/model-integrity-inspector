@@ -96,7 +96,7 @@ func scanArray(d *json.Decoder, depth int, field string, files *int) error {
 	switch field {
 	case "migrations":
 		limit = MaxMigrations
-	case "reports", "artifacts":
+	case "reports", "artifacts", "legacy_reports":
 		limit = MaxEntries - 3
 	case "key_versions":
 		limit = 64
@@ -109,7 +109,7 @@ func scanArray(d *json.Decoder, depth int, field string, files *int) error {
 		if count >= limit {
 			return ErrLimit
 		}
-		if field == "reports" || field == "artifacts" {
+		if field == "reports" || field == "artifacts" || field == "legacy_reports" {
 			if *files >= MaxEntries-3 {
 				return ErrLimit
 			}

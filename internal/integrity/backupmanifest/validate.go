@@ -28,7 +28,7 @@ func hexDigest(value string, length int) bool {
 }
 
 func bounded(m Manifest) error {
-	if len(m.Migrations) > MaxMigrations || len(m.Reports) > MaxEntries-3 || len(m.Artifacts) > MaxEntries-3 || len(m.Reports)+len(m.Artifacts) > MaxEntries-3 || len(m.KeyVersions) > 64 || len(m.AuditAnchors) > MaxOrganizations || len(m.Jobs) > MaxOrganizations {
+	if len(m.Migrations) > MaxMigrations || len(m.Reports) > MaxEntries-3 || len(m.Artifacts) > MaxEntries-3 || len(m.LegacyReports) > MaxEntries-3 || len(m.Reports)+len(m.Artifacts)+len(m.LegacyReports) > MaxEntries-3 || len(m.KeyVersions) > 64 || len(m.AuditAnchors) > MaxOrganizations || len(m.Jobs) > MaxOrganizations {
 		return ErrLimit
 	}
 	return nil
@@ -36,7 +36,7 @@ func bounded(m Manifest) error {
 
 func validate(m Manifest) error {
 	const lastMicrosecond int64 = 253402300799999999
-	if m.SchemaVersion != Version && m.SchemaVersion != VersionV2 || m.BackupID <= 0 || m.StartedAtMicros <= 0 || m.SnapshotAtMicros < m.StartedAtMicros || m.SnapshotAtMicros > lastMicrosecond || !version.MatchString(m.ApplicationVersion) || !hexDigest(m.SourceCommit, 40) && !hexDigest(m.SourceCommit, 64) || m.AuditHistory != "complete" {
+	if m.SchemaVersion != Version && m.SchemaVersion != VersionV2 && m.SchemaVersion != VersionV3 || m.BackupID <= 0 || m.StartedAtMicros <= 0 || m.SnapshotAtMicros < m.StartedAtMicros || m.SnapshotAtMicros > lastMicrosecond || !version.MatchString(m.ApplicationVersion) || !hexDigest(m.SourceCommit, 40) && !hexDigest(m.SourceCommit, 64) || m.AuditHistory != "complete" {
 		return ErrInvalid
 	}
 	if !dbVersion.MatchString(m.Database.ServerVersion) || m.Database.File.EntryID != "database-snapshot" || m.ConfigTemplate.EntryID != "config-template" {
@@ -78,28 +78,31 @@ func validate(m Manifest) error {
 	}
 	ids := map[string]bool{"backup-manifest": true}
 	var total int64
-	add := func(f File) bool {
-		if !identifier.MatchString(f.EntryID) || ids[f.EntryID] || f.Bytes < 1 || f.Bytes > MaxFileBytes || !hash(f.SHA256) || total > MaxFileBytes-f.Bytes {
+	add := func(f File, allowEmpty bool) bool {
+		if !identifier.MatchString(f.EntryID) || ids[f.EntryID] || f.Bytes < 0 || f.Bytes == 0 && (!allowEmpty || f.SHA256 != digest(nil)) || f.Bytes > MaxFileBytes || !hash(f.SHA256) || total > MaxFileBytes-f.Bytes {
 			return false
 		}
 		ids[f.EntryID] = true
 		total += f.Bytes
 		return true
 	}
-	if !add(m.Database.File) || !add(m.ConfigTemplate) {
+	if !add(m.Database.File, false) || !add(m.ConfigTemplate, false) {
 		return ErrInvalid
 	}
 	for i, r := range m.Reports {
-		if r.ID <= 0 || i > 0 && r.ID == m.Reports[i-1].ID || !organizations[r.OrganizationID] || r.RunID <= 0 || r.AnalysisRevision < 1 || r.AnalysisRevision > math.MaxInt32 || r.Revision < 1 || r.Revision > math.MaxInt32 || !slices.Contains([]string{"json", "html", "pdf", "csv"}, r.Format) || r.SchemaVersion != "mii.report.v1" || !hash(r.ContentSHA256) || !hash(r.SourceSHA256) || !add(r.File) {
+		if r.ID <= 0 || i > 0 && r.ID == m.Reports[i-1].ID || !organizations[r.OrganizationID] || r.RunID <= 0 || r.AnalysisRevision < 1 || r.AnalysisRevision > math.MaxInt32 || r.Revision < 1 || r.Revision > math.MaxInt32 || !slices.Contains([]string{"json", "html", "pdf", "csv"}, r.Format) || r.SchemaVersion != "mii.report.v1" || !hash(r.ContentSHA256) || !hash(r.SourceSHA256) || !add(r.File, false) {
 			return ErrInvalid
 		}
+	}
+	if !validLegacyReports(m, organizations, add) {
+		return ErrInvalid
 	}
 	if !validArtifactIdentities(m.SchemaVersion, m.Artifacts, organizations) {
 		return ErrInvalid
 	}
 	categories := map[string]bool{}
 	for _, a := range m.Artifacts {
-		if !slices.Contains([]string{"rule", "template", "tokenizer", "scoring"}, a.Category) || !artifactVersion.MatchString(a.Version) || !add(a.File) {
+		if !slices.Contains([]string{"rule", "template", "tokenizer", "scoring"}, a.Category) || !artifactVersion.MatchString(a.Version) || !add(a.File, false) {
 			return ErrInvalid
 		}
 		categories[a.Category] = true
@@ -118,6 +121,11 @@ func inventoryBytes(m Manifest) int64 {
 	}
 	for _, a := range m.Artifacts {
 		total += a.File.Bytes
+	}
+	for _, r := range m.LegacyReports {
+		if r.ObservedFile != nil {
+			total += r.ObservedFile.Bytes
+		}
 	}
 	return total
 }

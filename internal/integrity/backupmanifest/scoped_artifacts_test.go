@@ -311,7 +311,7 @@ func TestManifestV2RejectsConflictingScopedIdentities(t *testing.T) {
 		"incomplete_history": func(m *Manifest) { m.AuditHistory = "segmented" },
 		"active_work":        func(m *Manifest) { m.Jobs[0].Running = 1 },
 		"category_missing":   func(m *Manifest) { m.Artifacts = slices.Delete(m.Artifacts, 2, 3) },
-		"unknown_version":    func(m *Manifest) { m.SchemaVersion = "mii.backup-manifest.v3" },
+		"unknown_version":    func(m *Manifest) { m.SchemaVersion = "mii.backup-manifest.v999" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := scopedFixture()

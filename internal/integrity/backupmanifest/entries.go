@@ -18,7 +18,7 @@ func Entries(m Manifest) ([]Entry, error) {
 		return nil, err
 	}
 	m = canonical(m)
-	result := make([]Entry, 0, 3+len(m.Reports)+len(m.Artifacts))
+	result := make([]Entry, 0, 3+len(m.Reports)+len(m.Artifacts)+len(m.LegacyReports))
 	result = append(result, Entry{"manifest", File{"backup-manifest", int64(len(data)), sha}}, Entry{"database", m.Database.File}, Entry{"config", m.ConfigTemplate})
 	var total = int64(len(data))
 	for _, e := range result[1:] {
@@ -31,6 +31,12 @@ func Entries(m Manifest) ([]Entry, error) {
 	for _, a := range m.Artifacts {
 		result = append(result, Entry{"rule", a.File})
 		total += a.File.Bytes
+	}
+	for _, r := range m.LegacyReports {
+		if r.ObservedFile != nil {
+			result = append(result, Entry{"report", *r.ObservedFile})
+			total += r.ObservedFile.Bytes
+		}
 	}
 	// Encode bounds the non-manifest sum to 1 TiB; adding at most 16 MiB cannot
 	// overflow int64, but it can exceed the archive's total plaintext limit.
