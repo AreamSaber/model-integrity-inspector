@@ -20,6 +20,7 @@ func TestSnapshotInventoryErrorMappingPreservesClosedClassification(t *testing.T
 		errSnapshotKeyInvalid, errSnapshotKeyLimit, errSnapshotKeyUnsupported,
 		errSnapshotLegacyReportInvalid, errSnapshotLegacyReportLimit, errSnapshotLegacyReportUnsupported,
 		errSnapshotReferenceInvalid, errSnapshotReferenceLimit, errSnapshotReferenceUnsupported,
+		errSnapshotResultReferenceInvalid, errSnapshotResultReferenceLimit, errSnapshotResultReferenceUnsupported,
 	} {
 		t.Run(want.Error(), func(t *testing.T) {
 			for _, input := range []error{want, fmt.Errorf("private-inventory-diagnostic: %w", want)} {
@@ -46,7 +47,8 @@ func TestSnapshotInventoryErrorMappingPreservesClosedClassification(t *testing.T
 func TestSnapshotInventoryPostgresOuterFailureIsStickyAndClosesExport(t *testing.T) {
 	for _, mode := range []string{"job_source", "job_limit", "job_busy", "report_invalid", "report_limit", "report_unsupported",
 		"key_invalid", "key_limit", "key_unsupported", "legacy_invalid", "legacy_limit", "legacy_unsupported",
-		"reference_invalid", "reference_limit", "reference_unsupported"} {
+		"reference_invalid", "reference_limit", "reference_unsupported",
+		"result_invalid", "result_limit", "result_unsupported"} {
 		t.Run(mode, func(t *testing.T) {
 			eachDatabase(t, func(t *testing.T, s *Store, cfg Config) {
 				if cfg.Driver != "postgres" {
@@ -98,6 +100,9 @@ func TestSnapshotInventoryPostgresOuterFailureIsStickyAndClosesExport(t *testing
 
 func snapshotInventoryTestFailureSource(t *testing.T, s *Store, mode string) (func(context.Context, *gorm.DB) error, error) {
 	t.Helper()
+	if strings.HasPrefix(mode, "result_") {
+		return snapshotResultInventoryFailureSource(t, s, mode)
+	}
 	if strings.HasPrefix(mode, "reference_") {
 		return snapshotReferenceInventoryFailureSource(t, s, mode)
 	}
