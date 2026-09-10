@@ -23,3 +23,5 @@
 - 修正工作流/校验器后，M0-04 **194项离线策略回归 PASS**，包括新增Core依赖/结果遗漏、伪造success、错误DSN/服务、跳过/吞错、过滤器、同job重复执行、失去独立预算，以及quality构建/静态/禁网遗漏等反例。
 - 原race分片 **92项离线回归 PASS**；真实固定版本actionlint退出0；`git diff --check`退出0。调用记录证实Core和原Other中的对应测试调用仍完全一致，其他所有分片完整性不变。
 - 这些不是本机原生race证据。本机CGO0无法原生race，未改该边界；实际调度时长、完整Core原生race及整个新head仍待新CI验证。如果新run出现具体包超时/失败，将按实际日志继续处理，不将调度改动当作产品已验收。
+- 独立只读复核无确认阻断：四个变更文件及实际race/build调用全文检查；独立policy194、race92、actionlint均终态0。另在内存给原mutation执行记录真实异常，新增Core/quality反例均因对应步骤/服务/预算/门禁拒绝，不是其他job或缺工具导致误绿。
+- 实际提交 **791f1ea05070cecf3d73db6439fc8e14eea2421d** 已推送，PR6实际OPEN/draft/head相符；新 **CI34453747044** 已真实in_progress。继续跟踪同一run，尚无终态结论，不用a4的旧失败或ce8的旧全绿替代本批证据。
