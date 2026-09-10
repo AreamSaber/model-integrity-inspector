@@ -62,6 +62,22 @@ foreach ($mutation in @('duplicate-input','omitted','duplicate-shard','unknown',
     }
 }
 Test-MIIRaceCase 'too few items cannot create a silently empty shard' -MustFail { New-MIIRacePlan -Names @('TestOne') }
+Test-MIIRaceCase 'one-parent execution does not create an empty second partition' {
+    foreach ($group in @('Repository','Worker')) {
+        $single = New-MIIRaceExecutionPlan -Group $group -Names @('TestOne')
+        if ($single.Shards.Count -ne 1 -or ($single.Shards[0].Names -join ',') -cne 'TestOne') { throw 'Small package created an empty or duplicate execution.' }
+    }
+}
+Test-MIIRaceCase 'empty execution cannot silently mean all tests' -MustFail { New-MIIRaceExecutionPlan -Group Repository -Names @() }
+Test-MIIRaceCase 'odd execution size remains deterministic with exact coverage' {
+    $odd = @('TestZulu','TestAlpha','FuzzSeeds','Example_demo','TestCase')
+    $plan = New-MIIRaceExecutionPlan -Group Repository -Names $odd
+    if ($plan.Shards.Count -ne 2 -or $plan.Shards[0].Names.Count -ne 3 -or $plan.Shards[1].Names.Count -ne 2) { throw 'Odd partition imbalance or count changed.' }
+    Assert-MIIRaceCoverage -Names $odd -Shards $plan.Shards -ShardCount 2
+    [Array]::Reverse($odd)
+    $reversed = New-MIIRaceExecutionPlan -Group Repository -Names $odd
+    if (($plan | ConvertTo-Json -Depth 5 -Compress) -cne ($reversed | ConvertTo-Json -Depth 5 -Compress)) { throw 'Execution partitions depend on enumeration order.' }
+}
 foreach ($index in @(-1,6)) { Test-MIIRaceCase 'out-of-range shard rejected before execution' -MustFail { Invoke-MIICIRace -Group Repository -Shard $index -Execute { throw 'Must not run' } } }
 $packages = @('model-integrity-inspector.local/mii/internal/app', $package, "$package/extra", 'model-integrity-inspector.local/mii/scripts/tool', $workerPackage, "$workerPackage/extra")
 Test-MIIRaceCase 'only exact repository package is partitioned out' {
@@ -95,12 +111,30 @@ try {
     foreach ($shard in 0..5) {
         Test-MIIRaceCase "native argument shape for shard $shard" {
             $result = Invoke-MIIMockedRace -Group Repository -Shard $shard
-            if ($result.Failure -or $result.Calls.Count -ne 2) { throw "Unexpected execution or failure: $($result.Failure)" }
-            $run = $result.Calls[1].Arguments
-            if ($run.Count -ne 7 -or ($run[0..4] -join ',') -cne 'test,-race,-count=1,-timeout=10m,-run' -or $run[6] -cne $package) { throw 'Race, count, timeout or single-argument pattern changed.' }
+            if ($result.Failure -or $result.Calls.Count -ne 3) { throw "Repository must execute two bounded partitions: $($result.Failure)" }
             $plan = New-MIIRacePlan -Names $names
-            if ($run[5] -cne (Get-MIIRacePattern -Names $plan.Shards[$shard].Names) -or $run[5].Contains('/')) { throw 'Quoting lost parents or filtered nested subtests.' }
-            if (-not $result.Calls[0].Capture -or $result.Calls[1].Capture) { throw 'Wrong list/test output handling.' }
+            $parts = New-MIIRacePlan -Names $plan.Shards[$shard].Names -ShardCount 2
+            foreach ($index in 0..1) {
+                $call = $result.Calls[$index + 1]
+                $run = $call.Arguments
+                if ($run.Count -ne 7 -or ($run[0..4] -join ',') -cne 'test,-race,-count=1,-timeout=10m,-run' -or $run[6] -cne $package -or $call.Driver) { throw 'Race, count, timeout, database scope or single-argument pattern changed.' }
+                if ($run[5] -cne (Get-MIIRacePattern -Names $parts.Shards[$index].Names) -or $run[5].Contains('/')) { throw 'Quoting lost parents or filtered nested subtests.' }
+                if ($call.Capture) { throw 'Wrong test output handling.' }
+            }
+            if (-not $result.Calls[0].Capture) { throw 'Wrong list output handling.' }
+        }
+    }
+    Test-MIIRaceCase 'all repository execution partitions cover every parent exactly once' {
+        $runs = @()
+        foreach ($shard in 0..5) {
+            $result = Invoke-MIIMockedRace -Group Repository -Shard $shard
+            if ($result.Failure) { throw 'Repository shard failed before coverage check.' }
+            $runs += @($result.Calls | Where-Object { -not $_.Capture })
+        }
+        if ($runs.Count -ne 12) { throw 'Six repository jobs must execute twelve bounded processes.' }
+        foreach ($name in $names) {
+            $hits = @($runs | Where-Object { [regex]::IsMatch($name, $_.Arguments[5], [Text.RegularExpressions.RegexOptions]::CultureInvariant) })
+            if ($hits.Count -ne 1) { throw 'Repository parent/fuzz seed omitted or executed twice.' }
         }
     }
     Test-MIIRaceCase 'all non-repository packages and additional PostgreSQL identity/API pass' {
@@ -151,7 +185,7 @@ try {
         if ($expected.Count -ne 8 -or ($actual | ConvertTo-Json -Depth 5 -Compress) -cne ($expected | ConvertTo-Json -Depth 5 -Compress)) { throw 'Split CI omitted, duplicated or changed one of the complete Other test invocations.' }
     }
     foreach ($group in @('Other','Repository','Core','Worker','IdentityPostgres')) {
-        $steps = if ($group -ceq 'Other') { 10 } elseif ($group -ceq 'IdentityPostgres') { 1 } else { 2 }
+        $steps = if ($group -ceq 'Other') { 10 } elseif ($group -ceq 'IdentityPostgres') { 1 } elseif ($group -ceq 'Repository') { 3 } else { 2 }
         foreach ($step in 1..$steps) {
             Test-MIIRaceCase "failure is fatal at $group step $step" {
                 $result = Invoke-MIIMockedRace -Group $group -FailAt $step
@@ -215,15 +249,19 @@ if ($NativeGo) {
             if ($LASTEXITCODE -ne 0) { throw 'Native race enumeration failed.' }
             $plan = New-MIIRacePlan -Names (Get-MIIRaceTestNames -Lines $actual -Package $selectedPackage)
             foreach ($shard in $plan.Shards) {
-                $pattern = Get-MIIRacePattern -Names $shard.Names
-                $arguments = @('test','-race','-count=1','-timeout=10m','-list',$pattern,$selectedPackage)
-                $actual = @(& $go @arguments 2>&1)
-                if ($LASTEXITCODE -ne 0) { throw 'Native shard selection failed.' }
-                $selected = Get-MIIRaceTestNames -Lines $actual -Package $selectedPackage
-                [Array]::Sort($selected, [StringComparer]::Ordinal)
-                if (($selected -join ',') -cne ($shard.Names -join ',')) { throw 'Go RE2/native PowerShell selection changed exact coverage.' }
+                $group = if ($selectedPackage -ceq $package) { 'Repository' } else { 'Worker' }
+                $execution = New-MIIRaceExecutionPlan -Group $group -Names $shard.Names
+                foreach ($part in $execution.Shards) {
+                    $pattern = Get-MIIRacePattern -Names $part.Names
+                    $arguments = @('test','-race','-count=1','-timeout=10m','-list',$pattern,$selectedPackage)
+                    $actual = @(& $go @arguments 2>&1)
+                    if ($LASTEXITCODE -ne 0) { throw 'Native execution partition selection failed.' }
+                    $selected = Get-MIIRaceTestNames -Lines $actual -Package $selectedPackage
+                    [Array]::Sort($selected, [StringComparer]::Ordinal)
+                    if (($selected -join ',') -cne ($part.Names -join ',')) { throw 'Go RE2/native PowerShell selection changed exact coverage.' }
+                }
             }
-            Write-Output "Native Go race enumeration ($selectedPackage): all $($plan.Names.Count) items covered exactly once across six selections."
+            Write-Output "Native Go race enumeration ($selectedPackage): all $($plan.Names.Count) items covered exactly once across all execution partitions in six shards."
         }
     } finally { Pop-Location }
 }

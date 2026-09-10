@@ -61,6 +61,18 @@ function New-MIIRacePlan {
     return [PSCustomObject]@{ Names = $sorted; Shards = $shards }
 }
 
+# Preserve the six independently required jobs while giving each repository
+# process a smaller exact selection. CI34439268496 exhausted the ten-minute
+# TOTAL package budget; its currently running parent had only used seven seconds.
+# This changes neither any test body/deadline nor the ten-minute process bound.
+# Every parent retains ALL nested subtests and fuzz seeds; no skip/retry exists.
+function New-MIIRaceExecutionPlan {
+    param([Parameter(Mandatory)][ValidateSet('Repository','Worker')][string]$Group, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Names)
+    if ($Names.Count -eq 0) { throw 'An empty race execution partition is invalid.' }
+    $count = if ($Group -ceq 'Repository') { [Math]::Min(2, $Names.Count) } else { 1 }
+    return New-MIIRacePlan -Names $Names -ShardCount $count
+}
+
 function Get-MIINonRepositoryRacePackages {
     param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Packages)
     $repository = Get-MIIRepositoryRacePackage
@@ -88,10 +100,14 @@ function Invoke-MIICIRace {
         if ($listed.ExitCode -ne 0) { throw 'Race test enumeration failed.' }
         $names = Get-MIIRaceTestNames -Lines $listed.Lines -Package $package
         $plan = New-MIIRacePlan -Names $names
-        $pattern = Get-MIIRacePattern -Names $plan.Shards[$Shard].Names
         Write-Host "$Group race shard $Shard/6: $($plan.Shards[$Shard].Names.Count) of $($plan.Names.Count) top-level tests; exact coverage verified."
-        $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-run',$pattern,$package) -Capture $false
-        if ($tested.ExitCode -ne 0) { throw "$Group race shard $Shard failed." }
+        $execution = New-MIIRaceExecutionPlan -Group $Group -Names $plan.Shards[$Shard].Names
+        for ($index = 0; $index -lt $execution.Shards.Count; $index++) {
+            $pattern = Get-MIIRacePattern -Names $execution.Shards[$index].Names
+            Write-Host "$Group shard $Shard execution partition $index/$($execution.Shards.Count): $($execution.Shards[$index].Names.Count) parents; unchanged ten-minute process bound."
+            $tested = & $Execute -GoArguments @('test','-race','-count=1','-timeout=10m','-run',$pattern,$package) -Capture $false
+            if ($tested.ExitCode -ne 0) { throw "$Group race shard $Shard partition $index failed." }
+        }
         return
     }
     if ($Shard -ne 0) { throw 'Only repository and Worker support a shard index.' }
