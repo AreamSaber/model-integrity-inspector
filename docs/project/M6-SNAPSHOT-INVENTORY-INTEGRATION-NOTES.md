@@ -45,3 +45,37 @@ go test ./internal/integrity/repository -run '^(Test.*Snapshot|Test.*Migration)'
 最终 repository vet/lint 退出 0、0 issues。此证据不覆盖之后新增完整报告库存或配置
 载体，不等于完整备份/恢复、真实主密钥认证或最终 CI。General 已交完整报告库存
 单元独占验证，根任务不并发运行数据库测试。
+
+## 历史资源引用接线与最终读取边界（2026-09-10）
+
+新增 Reference invalid/limit/unsupported 三类闭集映射。原纯映射回归真实失败
+**0.102s**（被误转为 DATABASE_UNAVAILABLE），修后全部映射三轮 **0.125s PASS**。
+真实 PostgreSQL 从原 Run manifest hash 损坏、五引用配四条预算、保持原字节 hash
+一致的未知 generator 三种来源触发错误；原包装/吞错、禁止再次使用、零候选和
+服务端 42704 快照失效断言全部复用。新引用及新旧外层完整三轮 session36051
+**75.780s PASS**，设置真实 General DSN，未通过注入 sentinel 冒充来源错误。
+
+根任务另在最后一条 Baseline 的原 result 正文 SELECT 成功后，执行实际 sql.Tx.Rollback。
+先前仅在页读取后 rollback 的测试会被后续查询检出，未覆盖此边界；初版在 SQLite/PG
+均仍返回成功。新回归真红 **0.745s**，每源末尾在原物理事务再次 COUNT 后同用例三轮
+**1.957s PASS**。该终结检查不是调用方未来 Commit/归档发布的成功保证。
+
+全部 Snapshot/Migration 组合单轮 session44821 **149.426s PASS**；该次编译先于之后的
+Unicode model/旧 ordinal 兼容修正，后续最终组合证据须另记录，不追认。
+
+另一独立复核指出旧 SQLite 样本 ordinal 可以是 int64，而原观察器强行套用了 int32
+上限。实际 validateExecutionPlan 只要求本 probe 非负且唯一，SQLite INTEGER 支持
+64位、PG原列INTEGER支持32位；移除人为上限，不改当前 manifest 连续 ordinal 绑定。
+纯回归先红 **0.127s**，真实 CreateRun→原DB字段→库存观察使用 SQLite int64最大值和
+PG int32最大值，三轮 **2.194s PASS**。仍分类 legacy_incomplete，没有补写或升级历史。
+
+最终纳入模型512字节兼容、末尾rollback、旧ordinal及全部原引用/外层的组合：
+
+```text
+go test ./internal/integrity/repository -run '^(TestSnapshotArtifactReferences|TestSnapshotReferenceModelCompatibility|TestSnapshotInventory)' -count=3 -timeout=5m
+```
+
+真实 SQLite/General PostgreSQL，session2604 **83.168s PASS**、终态 exit 0。
+完整 repository vet 无诊断；当前共享工作树 lint 的35项均属于后续尚未提交的
+snapshot_result_references 两文件（34 unused、1 QF1001），没有将整体 lint 记为通过。
+第一引用单元独立提交后仍须按该提交身份执行检查/新CI，后续 Result 单元不随之发布。
