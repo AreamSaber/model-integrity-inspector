@@ -51,7 +51,7 @@ func (s *Store) appendAudit(ctx context.Context, tx *gorm.DB, orgID int64, comma
 	return s.appendAuditWithClock(ctx, tx, orgID, command, actorOverride, false)
 }
 
-// The database-clock option is private to response-retention deletion. Its
+// The database-clock option serves retention and maintenance operations whose
 // signed event and receipt must use the same clock authority; existing callers
 // retain their historical event timestamps and canonicalization unchanged.
 func (s *Store) appendAuditWithClock(ctx context.Context, tx *gorm.DB, orgID int64, command AuditCommand, actorOverride *int64, databaseClock bool) error {
@@ -119,11 +119,25 @@ func (s *Store) appendAuditWithClock(ctx context.Context, tx *gorm.DB, orgID int
 	if err != nil {
 		return err
 	}
-	if err := tx.Create(&event).Error; err != nil {
-		return persistenceError(err)
+	inserted := tx.Create(&event)
+	if inserted.Error != nil {
+		return persistenceError(inserted.Error)
 	}
-	return persistenceError(tx.Model(&auditChainHead{}).Where("organization_id = ?", orgID).
-		Updates(map[string]any{"event_count": event.Sequence, "event_hash": event.EventHMAC, "key_version": event.KeyVersion, "updated_at": now}).Error)
+	if inserted.RowsAffected != 1 {
+		return audit.ErrIntegrity
+	}
+	changed := tx.Model(&auditChainHead{}).Where("organization_id = ?", orgID).
+		Updates(map[string]any{"event_count": event.Sequence, "event_hash": event.EventHMAC, "key_version": event.KeyVersion, "updated_at": now})
+	if changed.Error != nil {
+		return persistenceError(changed.Error)
+	}
+	// A trigger may silently suppress either write. Do not commit a business
+	// mutation with a missing event or an unadvanced chain head. The initial
+	// create-or-lock above still legitimately permits an existing head.
+	if changed.RowsAffected != 1 {
+		return audit.ErrIntegrity
+	}
+	return nil
 }
 
 func (t *Tenant) AppendAudit(command AuditCommand) error {
