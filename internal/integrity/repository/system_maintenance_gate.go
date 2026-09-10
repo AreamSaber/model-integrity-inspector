@@ -19,6 +19,7 @@ var (
 	ErrRestoreIsolated      = errors.New("MI_RESTORE_ISOLATED")
 	ErrMaintenanceLeaseLost = errors.New("MI_MAINTENANCE_LEASE_LOST")
 	ErrMaintenanceSource    = errors.New("MI_MAINTENANCE_STATE_INVALID")
+	ErrBackupNotDrained     = errors.New("MI_BACKUP_NOT_DRAINED")
 )
 
 type MaintenanceMode string
@@ -166,7 +167,7 @@ func (s *Store) maintenanceAdmission(db *gorm.DB, purpose maintenancePurpose) (b
 }
 
 func maintenanceKnownError(err error) error {
-	for _, known := range []error{ErrSystemMaintenance, ErrRestoreIsolated, ErrMaintenanceLeaseLost, ErrMaintenanceSource} {
+	for _, known := range []error{ErrSystemMaintenance, ErrRestoreIsolated, ErrMaintenanceLeaseLost, ErrMaintenanceSource, ErrBackupNotDrained} {
 		if errors.Is(err, known) {
 			return known
 		}

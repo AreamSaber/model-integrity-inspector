@@ -17,6 +17,7 @@ func TestSystemMaintenanceNaturalLeaseExpiryFencesLateRenewalAndTakeover(t *test
 	eachDatabase(t, func(t *testing.T, s *Store, cfg Config) {
 		_, auth, ctx := managementFixture(t, s)
 		old := beginTestMaintenance(t, s, ctx, auth)
+		publication := testBackupPublication(t, old)
 		var before maintenanceState
 		if err := s.db.Where("id=1").Take(&before).Error; err != nil {
 			t.Fatal(err)
@@ -77,6 +78,9 @@ func TestSystemMaintenanceNaturalLeaseExpiryFencesLateRenewalAndTakeover(t *test
 		if err := old.Abort(ctx); !errors.Is(err, ErrMaintenanceLeaseLost) {
 			t.Fatal("expired owner reopened admission", err)
 		}
+		if receipt, err := old.CompleteBackup(ctx, publication); !errors.Is(err, ErrMaintenanceLeaseLost) || receipt != (BackupCompletionReceipt{}) {
+			t.Fatal("naturally expired owner published a backup", err)
+		}
 		if _, err := old.Observe(ctx); !errors.Is(err, ErrMaintenanceLeaseLost) {
 			t.Fatal("expired owner received an observation", err)
 		}
@@ -91,6 +95,9 @@ func TestSystemMaintenanceNaturalLeaseExpiryFencesLateRenewalAndTakeover(t *test
 		}
 		if err := old.Renew(ctx); !errors.Is(err, ErrMaintenanceLeaseLost) {
 			t.Fatal("superseded owner changed the new operation", err)
+		}
+		if receipt, err := old.CompleteBackup(ctx, publication); !errors.Is(err, ErrMaintenanceLeaseLost) || receipt != (BackupCompletionReceipt{}) {
+			t.Fatal("superseded owner published a backup", err)
 		}
 		if err := old.Abort(ctx); !errors.Is(err, ErrMaintenanceLeaseLost) {
 			t.Fatal("superseded owner reopened admission", err)

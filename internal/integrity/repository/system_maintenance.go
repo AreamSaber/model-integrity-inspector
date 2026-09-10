@@ -30,6 +30,7 @@ type BackupMaintenanceRequest struct {
 type MaintenanceLease struct {
 	store                   *Store
 	operationID, generation int64
+	startedAtMicros         int64
 	owner                   string
 	auth                    ManagementAuthority
 }
@@ -205,7 +206,7 @@ func (s *Store) beginBackupMaintenance(ctx context.Context, auth ManagementAutho
 		if err := s.finishMaintenanceAuthority(db, session, after.LeaseUntilMicros); err != nil {
 			return err
 		}
-		result = &MaintenanceLease{store: s, operationID: id, generation: after.Generation, owner: owner, auth: auth}
+		result = &MaintenanceLease{store: s, operationID: id, generation: after.Generation, startedAtMicros: op.CreatedAtMicros, owner: owner, auth: auth}
 		return nil
 	})
 	if err != nil {
@@ -255,7 +256,7 @@ func (s *Store) authenticatedMaintenanceOperation(db *gorm.DB, state maintenance
 			return op, ErrMaintenanceSource
 		}
 	case MaintenanceNormal:
-		if op.Status != "aborted" {
+		if op.Status != "aborted" && op.Status != "completed" {
 			return op, ErrMaintenanceSource
 		}
 	default:
@@ -299,6 +300,13 @@ func (s *Store) transitionMaintenanceOperation(db *gorm.DB, before, after mainte
 		op.LeaseUntilMicros = after.LeaseUntilMicros
 	}
 	event := makeMaintenanceEvent(before, after, *op, auth, action, previous, now)
+	if action == "complete" {
+		receipt, err := s.loadBackupCompletion(db, *op)
+		if err != nil {
+			return err
+		}
+		event.CompletionDigest = receipt.Digest
+	}
 	digest, err := maintenanceEventDigest(event)
 	if err != nil {
 		return err

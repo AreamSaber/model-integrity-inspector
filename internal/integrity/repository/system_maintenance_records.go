@@ -62,11 +62,17 @@ type maintenanceEvent struct {
 	LeaseUntilMicros    int64
 	DeadlineMicros      int64
 	Digest              string
+	// Loaded from the separately authenticated receipt; never a new historical
+	// SQL column or part of the original v1 event canonical bytes.
+	CompletionDigest string `gorm:"-"`
 }
 
 func (maintenanceEvent) TableName() string { return "system_maintenance_events" }
 
 func maintenanceEventDigest(e maintenanceEvent) (string, error) {
+	if (e.Action == "complete" && !executionHash.MatchString(e.CompletionDigest)) || (e.Action != "complete" && e.CompletionDigest != "") {
+		return "", ErrMaintenanceSource
+	}
 	if e.OperationID <= 0 || e.Sequence <= 0 || e.Scope != "system" || e.ActorID <= 0 || e.SessionID <= 0 || !validMaintenanceReason(e.ReasonCode) || e.BeforeVersion < 1 || e.AfterVersion < e.BeforeVersion || e.BeforeGeneration < 0 || e.AfterGeneration < e.BeforeGeneration || e.Generation < 1 || e.InitiatedBy <= 0 || e.InitiatingSessionID <= 0 || e.ObservedAtMicros <= 0 || e.LeaseUntilMicros <= 0 || e.DeadlineMicros < e.LeaseUntilMicros {
 		return "", ErrMaintenanceSource
 	}
@@ -93,6 +99,10 @@ func maintenanceEventDigest(e maintenanceEvent) (string, error) {
 		if e.PreviousStatus != "active" || e.Status != "superseded" || e.BeforeMode != MaintenanceBackupFreeze || e.AfterMode != MaintenanceBackupFreeze {
 			return "", ErrMaintenanceSource
 		}
+	case "complete":
+		if e.PreviousStatus != "active" || e.Status != "completed" || e.BeforeMode != MaintenanceBackupFreeze || e.AfterMode != MaintenanceNormal || e.AfterVersion != e.BeforeVersion+1 || e.AfterGeneration != e.BeforeGeneration || e.Generation != e.BeforeGeneration {
+			return "", ErrMaintenanceSource
+		}
 	default:
 		return "", ErrMaintenanceSource
 	}
@@ -109,11 +119,23 @@ func maintenanceEventDigest(e maintenanceEvent) (string, error) {
 		PreviousStatus, Status                                                                                       string
 		ObservedAtMicros, LeaseUntilMicros, DeadlineMicros                                                           int64
 	}{"mii.system-maintenance-event.v1", e.OperationID, e.Sequence, e.Scope, e.Action, e.ActorID, e.SessionID, e.ReasonCode, e.BeforeMode, e.AfterMode, e.BeforeVersion, e.AfterVersion, e.BeforeGeneration, e.AfterGeneration, e.Generation, e.InitiatedBy, e.InitiatingSessionID, e.PreviousStatus, e.Status, e.ObservedAtMicros, e.LeaseUntilMicros, e.DeadlineMicros}
-	data, err := json.Marshal(canonical)
+	var data []byte
+	var err error
+	domain := "mii/system-maintenance/event/v1\x00"
+	if e.Action == "complete" {
+		canonical.Version = "mii.system-maintenance-event.v2"
+		data, err = json.Marshal(struct {
+			Event         any
+			ReceiptDigest string
+		}{canonical, e.CompletionDigest})
+		domain = "mii/system-maintenance/event/v2\x00"
+	} else {
+		data, err = json.Marshal(canonical)
+	}
 	if err != nil || len(data) > 2048 {
 		return "", ErrMaintenanceSource
 	}
-	sum := sha256.Sum256(append([]byte("mii/system-maintenance/event/v1\x00"), data...))
+	sum := sha256.Sum256(append([]byte(domain), data...))
 	return hex.EncodeToString(sum[:]), nil
 }
 
@@ -156,13 +178,52 @@ func (s *Store) verifyMaintenanceOperation(db *gorm.DB, op maintenanceOperation)
 		}
 		return maintenanceEvent{}, err
 	}
+	if event.Action == "complete" {
+		receipt, err := s.loadBackupCompletion(db, op)
+		if err != nil {
+			return maintenanceEvent{}, err
+		}
+		if receipt.CompletedBy != event.ActorID || receipt.CompletingSessionID != event.SessionID {
+			return maintenanceEvent{}, ErrMaintenanceSource
+		}
+		event.CompletionDigest = receipt.Digest
+	}
 	digest, err := maintenanceEventDigest(event)
 	if err != nil || event.Sequence != op.EventSequence || digest != event.Digest || digest != op.EventDigest || event.Generation != op.Generation || event.InitiatedBy != op.InitiatedBy || event.InitiatingSessionID != op.SessionID || event.Status != op.Status || event.ReasonCode != op.ReasonCode || event.ObservedAtMicros != op.UpdatedAtMicros || event.LeaseUntilMicros != op.LeaseUntilMicros || event.DeadlineMicros != op.DeadlineMicros {
 		return maintenanceEvent{}, ErrMaintenanceSource
 	}
+	begin := event
+	if event.Sequence != 1 {
+		var rows []maintenanceEvent
+		if err := db.Where("operation_id=? AND sequence=1", op.ID).Limit(2).Find(&rows).Error; err != nil {
+			return maintenanceEvent{}, err
+		}
+		if len(rows) != 1 {
+			return maintenanceEvent{}, ErrMaintenanceSource
+		}
+		begin = rows[0]
+	}
+	beginDigest, err := maintenanceEventDigest(begin)
+	if err != nil || beginDigest != begin.Digest || begin.OperationID != op.ID || begin.Sequence != 1 || begin.Action != "begin" || begin.Generation != op.Generation || begin.AfterGeneration != op.Generation || begin.InitiatedBy != op.InitiatedBy || begin.ActorID != op.InitiatedBy || begin.InitiatingSessionID != op.SessionID || begin.SessionID != op.SessionID || begin.ReasonCode != op.ReasonCode || begin.ObservedAtMicros != op.CreatedAtMicros || begin.DeadlineMicros != op.DeadlineMicros {
+		return maintenanceEvent{}, ErrMaintenanceSource
+	}
+	if err := s.verifyMaintenanceEventAudit(db, begin); err != nil {
+		return maintenanceEvent{}, err
+	}
+	if event.Sequence != 1 {
+		if err := s.verifyMaintenanceEventAudit(db, event); err != nil {
+			return maintenanceEvent{}, err
+		}
+	}
+	return event, nil
+}
+
+// Both the immutable begin facts and latest transition require their original
+// system audit anchor. A positive CreatedAt scalar alone is not provenance.
+func (s *Store) verifyMaintenanceEventAudit(db *gorm.DB, event maintenanceEvent) error {
 	anchor, err := initialAuditOrganization(db)
 	if err != nil {
-		return maintenanceEvent{}, err
+		return err
 	}
 	var events []audit.Event
 	columns := "id,organization_id,sequence,actor_id,created_at"
@@ -176,19 +237,19 @@ func (s *Store) verifyMaintenanceOperation(db *gorm.DB, op maintenanceOperation)
 		columns += "," + strings.Replace(readBoundedText(db, field.name, field.name, field.limit), "ELSE ''", "ELSE '\n'", 1)
 	}
 	if err := db.Select(columns).Where("organization_id=? AND action=? AND object_type=? AND object_id=?", anchor, "system.maintenance."+event.Action, "system_maintenance_operation", maintenanceEventObject(event)).Limit(2).Find(&events).Error; err != nil {
-		return maintenanceEvent{}, err
+		return err
 	}
 	if len(events) != 1 || events[0].ActorID == nil || *events[0].ActorID != event.ActorID || events[0].Result != "success" {
-		return maintenanceEvent{}, ErrMaintenanceSource
+		return ErrMaintenanceSource
 	}
 	if err := audit.Verify(events[0], s.auditSigner); err != nil {
-		return maintenanceEvent{}, err
+		return err
 	}
 	var reason struct {
 		ReasonCode string `json:"reason_code"`
 	}
 	if json.Unmarshal([]byte(events[0].DiffSummary), &reason) != nil || reason.ReasonCode != event.ReasonCode || events[0].CreatedAt.UnixMicro() < event.ObservedAtMicros {
-		return maintenanceEvent{}, ErrMaintenanceSource
+		return ErrMaintenanceSource
 	}
-	return event, nil
+	return nil
 }
