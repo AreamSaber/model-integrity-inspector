@@ -17,6 +17,8 @@ func TestSnapshotInventoryErrorMappingPreservesClosedClassification(t *testing.T
 		errSnapshotReportInvalid, errSnapshotReportLimit, errSnapshotReportUnsupported,
 		errSnapshotArtifactInvalid, errSnapshotArtifactLimit, errSnapshotArtifactUnsupported,
 		errSnapshotArtifactCallback, errSnapshotArtifactIncomplete, errSnapshotArtifactConsumed, errSnapshotArtifactClosed,
+		errSnapshotKeyInvalid, errSnapshotKeyLimit, errSnapshotKeyUnsupported,
+		errSnapshotLegacyReportInvalid, errSnapshotLegacyReportLimit, errSnapshotLegacyReportUnsupported,
 	} {
 		t.Run(want.Error(), func(t *testing.T) {
 			for _, input := range []error{want, fmt.Errorf("private-inventory-diagnostic: %w", want)} {
@@ -41,7 +43,8 @@ func TestSnapshotInventoryErrorMappingPreservesClosedClassification(t *testing.T
 // layer must preserve the closed class even if the consumer wraps or swallows
 // it, and PostgreSQL itself must confirm the export is no longer importable.
 func TestSnapshotInventoryPostgresOuterFailureIsStickyAndClosesExport(t *testing.T) {
-	for _, mode := range []string{"job_source", "job_limit", "job_busy", "report_invalid", "report_limit", "report_unsupported"} {
+	for _, mode := range []string{"job_source", "job_limit", "job_busy", "report_invalid", "report_limit", "report_unsupported",
+		"key_invalid", "key_limit", "key_unsupported", "legacy_invalid", "legacy_limit", "legacy_unsupported"} {
 		t.Run(mode, func(t *testing.T) {
 			eachDatabase(t, func(t *testing.T, s *Store, cfg Config) {
 				if cfg.Driver != "postgres" {
@@ -93,6 +96,9 @@ func TestSnapshotInventoryPostgresOuterFailureIsStickyAndClosesExport(t *testing
 
 func snapshotInventoryTestFailureSource(t *testing.T, s *Store, mode string) (func(context.Context, *gorm.DB) error, error) {
 	t.Helper()
+	if strings.HasPrefix(mode, "key_") || strings.HasPrefix(mode, "legacy_") {
+		return snapshotAdditionalInventoryFailureSource(t, s, mode)
+	}
 	if strings.HasPrefix(mode, "job_") {
 		limit := 0
 		want := errSnapshotJobSource

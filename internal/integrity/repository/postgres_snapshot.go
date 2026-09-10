@@ -183,6 +183,8 @@ func postgresSnapshotError(ctx context.Context, err error) error {
 		errSnapshotReportInvalid, errSnapshotReportLimit, errSnapshotReportUnsupported,
 		errSnapshotArtifactInvalid, errSnapshotArtifactLimit, errSnapshotArtifactUnsupported,
 		errSnapshotArtifactCallback, errSnapshotArtifactIncomplete, errSnapshotArtifactConsumed, errSnapshotArtifactClosed,
+		errSnapshotKeyInvalid, errSnapshotKeyLimit, errSnapshotKeyUnsupported,
+		errSnapshotLegacyReportInvalid, errSnapshotLegacyReportLimit, errSnapshotLegacyReportUnsupported,
 		pgbackup.ErrConfiguration, pgbackup.ErrCanceled, pgbackup.ErrProcess,
 		pgbackup.ErrOutput, pgbackup.ErrLimit, pgbackup.ErrVersion} {
 		if errors.Is(err, known) {

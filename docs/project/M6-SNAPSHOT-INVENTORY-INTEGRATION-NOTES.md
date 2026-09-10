@@ -22,3 +22,26 @@ go test ./internal/integrity/repository -run '^(TestSnapshot(Report|Job|Inventor
 session 51154 实际终态退出 0，195.166s PASS；涵盖 SQLite/PostgreSQL 的报告、
 任务、迁移、审计库存及 PostgreSQL 外层生命周期组合。此结果不等同完整全仓回归、
 新远端 CI、实际文件归档或完整备份恢复演练。M6-05 仍进行中。
+
+## 历史密钥与原报告行读取接线（2026-09-10）
+
+新增 `SNAPSHOT_KEY_*` 和 `SNAPSHOT_LEGACY_REPORT_*` 的 invalid/limit/unsupported
+六个闭集映射。纯映射真实红测 **0.089s FAIL** 后修复，三轮 **0.100s/0.098s PASS**。
+实际 PostgreSQL 组合不是只注入 sentinel：密钥 envelope/列不一致、联合版本超限、
+真实旧 gateway 签名，以及缺报告行、原行摘要预算超限、PG 原 timestamp 被替换为
+TEXT 均经真实读取器失败；每项覆盖包装/吞错、禁止再用、零候选及服务端 42704。
+
+最终 key 单元已修 envelope 合法空白/顺序过拒、空审计头过拒和 Unicode SimpleFold
+别名，专项真实双库三轮 **64.732s PASS**；legacy SQL 专项双库三轮 **41.574s PASS**。
+根任务针对最终文件重新运行：
+
+```text
+go test ./internal/integrity/repository -run '^(TestSnapshotInventory|TestSnapshotKeyInventory|TestSnapshotLegacyReportRow)' -count=3 -timeout=5m
+go test ./internal/integrity/repository -run '^(Test.*Snapshot|Test.*Migration)' -count=1 -timeout=5m
+```
+
+真实 General PostgreSQL DSN 已设置。session **23589 / 135.530s** 与 **5348 /
+125.375s** 均终态退出 0；第二条覆盖新旧快照与迁移组合，未放宽业务期限或跳过失败。
+最终 repository vet/lint 退出 0、0 issues。此证据不覆盖之后新增完整报告库存或配置
+载体，不等于完整备份/恢复、真实主密钥认证或最终 CI。General 已交完整报告库存
+单元独占验证，根任务不并发运行数据库测试。
