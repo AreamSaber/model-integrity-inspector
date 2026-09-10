@@ -33,4 +33,4 @@
 
 General 明确释放后，root 使用实际受控 DSN 执行完整 `go test ./internal/integrity/repository -run '^(TestExecution|TestDerivedExecution)' -count=3 -timeout=6m`，**真实 SQLite/PostgreSQL 三轮 275.069s PASS**（62907 第一条命令，5a534b 输出）。覆盖所有顶层匹配及嵌套子树，不做 driver 过滤，包括全行/部分行触发器、两样本预算、真实1000样本批次、旧迁移/恢复/取消/限额/派生 S1 事务回归。6 分钟是该广泛组合的命令上限，未修改 CI 或生产期限；本次实际耗时仍低于5分钟。root Windows 仓储 vet/lint0、Linux amd64 交叉 vet0（61951 exit0），不等于 Linux 原生或 race。
 
-上述 Worker 真实 TLS/MAC 专项在本次 root 验证中只有 SQLite；该部分的新 PG/远端原生验证仍须后续实际结果，不挪用旧 CI。完整备份协调器、真实同视图 capture 及恢复仍未完成。
+root 随后在独立 detached checkout **625574d** 上实际载入 General 受控 DSN，原 Worker terminal reconciler 的真实 TLS/MAC 双库三轮 **6.025s PASS**；bundle/backupmanifest/contracts 三轮分别 **1.206s / 3.511s / 1.032s PASS**，repository/worker/bundle vet 与 lint 均 exit 0（47393 终态 d369f2）。验证的是已提交 source，不含主树后续 preparer/domain WIP。临时副本确认精确 HEAD 和零改动后已用 git worktree remove 清理（eb24b3），主树与全部提交保留。这不是本批远端原生/race、完整备份协调器、真实同视图 capture 或恢复证明。
