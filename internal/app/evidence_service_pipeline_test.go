@@ -33,6 +33,26 @@ func (fn pipelineDisplayWriterFunc) Write(data []byte) (int, error) { return fn(
 
 type pipelineDisplayGrants struct{ receipts, audits int }
 
+var (
+	errPipelineGrantCounts  = errors.New("pipeline display grant count mismatch")
+	errPipelineGrantBinding = errors.New("pipeline display grant binding mismatch")
+)
+
+func pipelineDisplayGrantClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, errPipelineGrantCounts):
+		return "count"
+	case errors.Is(err, errPipelineGrantBinding):
+		return "binding"
+	case errors.Is(err, errPipelineAuditSnapshot):
+		return "audit_snapshot"
+	default:
+		return "unknown"
+	}
+}
+
 // This is called by the actual TLS pipeline after publication and after the
 // HTTP audit fault has been removed, before any retention-policy suppression.
 // It uses the production store, authenticated cookies, key-file capability and
@@ -59,6 +79,7 @@ func exercisePipelineDisplayService(t *testing.T, cfg Config, store *repository.
 	if err != nil {
 		t.Fatal("construct actual disclosure service")
 	}
+	auditReader := openPipelineAuditReader(t, cfg)
 	bind := func(t *testing.T, base context.Context, client *http.Client) context.Context {
 		t.Helper()
 		endpoint, parseErr := url.Parse(p.endpoint)
@@ -140,18 +161,18 @@ func exercisePipelineDisplayService(t *testing.T, cfg Config, store *repository.
 	assertCommitted := func(before pipelineDisplayGrants) error {
 		current, err := counts()
 		if err != nil || current.receipts != before.receipts+1 || current.audits != before.audits+1 {
-			return errors.New("writer called before receipt and audit committed")
+			return errPipelineGrantCounts
 		}
 		var matched int
 		// Independent sql.DB observes only committed rows. The audit object must
 		// bind the actual receipt ID and canonical hash, not just a count increment.
 		if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM integrity_evidence_disclosures d JOIN integrity_audit_logs a ON a.organization_id=d.organization_id AND a.action='evidence.body.read' AND a.object_type='evidence_disclosure' AND a.object_id=CAST(d.id AS TEXT)||':'||d.receipt_hash WHERE d.organization_id=$1`, orgID).Scan(&matched); err != nil || matched != current.receipts {
-			return errors.New("committed display receipt lacks exact audit binding")
+			return errPipelineGrantBinding
 		}
-		if err := store.VerifyAllAudit(t.Context(), true); err != nil {
-			return errors.New("writer observed invalid committed audit chain")
-		}
-		return nil
+		// Full-history verification remains before the first writer byte, but
+		// observes a physically read-only snapshot instead of taking the live
+		// Store's sole SQLite writer connection for a test-only full scan.
+		return auditReader.verify(t.Context(), key)
 	}
 
 	t.Run("display_service_slots_and_copied_close", func(t *testing.T) {
@@ -267,7 +288,7 @@ func exercisePipelineDisplayService(t *testing.T, cfg Config, store *repository.
 				}
 			}))
 			if calls == 0 || committedError != nil {
-				t.Fatal("writer did not observe confirmed authenticated grant")
+				t.Fatalf("writer did not observe confirmed authenticated grant (calls=%d grant_check=%s write_class=%s)", calls, pipelineDisplayGrantClass(committedError), applicationFailureClass(err))
 			}
 			if mode == "success" {
 				if err != nil || n <= 0 {

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -26,6 +25,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
+	"model-integrity-inspector.local/mii/internal/integrity/secret"
 	mockupstream "model-integrity-inspector.local/mii/tests/mock-upstream"
 )
 
@@ -411,8 +411,12 @@ func testApplicationActualPipeline(t *testing.T, retentionDays int) {
 			}
 			verifyPipelineDerivedStorage(t, bodyDB, http.orgID, retentionDays, record.Planned+9)
 			exercisePipelineDisplay(t, cfg, app.store, bodyDB, &http, originalID, retentionDays)
-			if err := app.store.VerifyAllAudit(t.Context(), true); err != nil {
-				t.Fatal(fmt.Errorf("actual pipeline audit invalid: %w", err))
+			auditKey, err := secret.LoadKeyFile(cfg.MasterKeyFile, cfg.MasterKeyVersion)
+			if err != nil {
+				t.Fatal("load actual pipeline audit verifier")
+			}
+			if err := openPipelineAuditReader(t, cfg).verify(t.Context(), auditKey); err != nil {
+				t.Fatal("actual pipeline full snapshot audit invalid")
 			}
 		})
 	}
