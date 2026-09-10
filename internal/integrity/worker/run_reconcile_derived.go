@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 
-	"model-integrity-inspector.local/mii/internal/integrity/domain"
 	"model-integrity-inspector.local/mii/internal/integrity/repository"
 )
 
@@ -12,8 +11,9 @@ import (
 // a new transaction revalidates its private source before applying settlement.
 // No credentials, current target or response-body decryption are required.
 func NewRunReconciler(config RunConfig) (func(context.Context, *repository.JobQueue) error, error) {
-	if config.DerivedBuilder == nil || config.DerivedSealer == nil {
-		return nil, ErrConfiguration
+	prepare, err := NewRunRecoveryPreparer(config.DerivedBuilder, config.DerivedSealer)
+	if err != nil {
+		return nil, err
 	}
 	return func(ctx context.Context, queue *repository.JobQueue) error {
 		if ctx == nil || queue == nil {
@@ -24,18 +24,7 @@ func NewRunReconciler(config RunConfig) (func(context.Context, *repository.JobQu
 			return err
 		}
 		for _, source := range sources {
-			var candidates *repository.AttemptDerivedCandidates
-			err := source.Use(func(data repository.ExecutionReconciliationData) error {
-				if data.Run.AnalysisSourceVersion != domain.AnalysisSourceDerivedV1 || data.Attempt == nil {
-					return nil
-				}
-				prepared, err := prepareRunDerived(ctx, config, data.Plan, data.Sample, *data.Attempt, nil, domain.AttemptOutcome{Validity: "INVALID_RETRYABLE", ErrorCode: "MI_UNCERTAIN_ATTEMPT"}, true)
-				if err != nil {
-					return err
-				}
-				candidates = &prepared
-				return nil
-			})
+			candidates, err := prepare(ctx, source)
 			if err != nil {
 				return err
 			}
