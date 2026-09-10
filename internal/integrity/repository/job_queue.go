@@ -231,9 +231,13 @@ func (q *JobQueue) reconcile(tx *gorm.DB, now time.Time) error {
 		} else if job.AttemptCount < job.MaxAttempts {
 			status, errorCode = "cancelled", "JOB_ORGANIZATION_INACTIVE"
 		}
-		if err := tx.Model(&Job{}).Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).
-			Updates(map[string]any{"status": status, "last_error_code": errorCode, "lease_owner": nil, "lease_until": nil, "completed_at": now, "updated_at": now}).Error; err != nil {
-			return err
+		changed := tx.Model(&Job{}).Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).
+			Updates(map[string]any{"status": status, "last_error_code": errorCode, "lease_owner": nil, "lease_until": nil, "completed_at": now, "updated_at": now})
+		if changed.Error != nil {
+			return changed.Error
+		}
+		if changed.RowsAffected != 1 {
+			return ErrJobLeaseLost
 		}
 		if err := q.reconcilePrecheck(tx, job, status, errorCode, now); err != nil {
 			return err
