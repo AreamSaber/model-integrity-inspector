@@ -42,7 +42,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed.' }
     & $pnpm --dir $webRoot build
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
-    & $go test ./...
+    # Avoid overlapping independent database-heavy package binaries on one
+    # runner; all tests, internal concurrency and existing deadlines remain.
+    & $go test -p 1 -count=1 ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
 
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -51,7 +53,7 @@ try {
     $binaryExtension = if ($goos -eq 'windows') { '.exe' } else { '' }
     $binaryPath = Join-Path $outputRoot "$artifactStem$binaryExtension"
     $ldflags = "-s -w -X model-integrity-inspector.local/mii/internal/buildinfo.version=$version -X model-integrity-inspector.local/mii/internal/buildinfo.commit=$commit -X model-integrity-inspector.local/mii/internal/buildinfo.builtAt=$builtAt"
-    & $go test -tags webassets ./web ./internal/app
+    & $go test -count=1 -tags webassets ./web ./internal/app
     if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend integration tests failed.' }
     & $go build -tags webassets -trimpath -buildvcs=true -ldflags $ldflags -o $binaryPath ./cmd/mii
     if ($LASTEXITCODE -ne 0) { throw 'Versioned Go build failed.' }
