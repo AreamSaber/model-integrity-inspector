@@ -1,4 +1,4 @@
-package tokenrisk
+package tokenrisk_test
 
 import (
 	"crypto/rand"
@@ -10,6 +10,7 @@ import (
 
 	codec "github.com/tiktoken-go/tokenizer"
 	"model-integrity-inspector.local/mii/internal/integrity/analysis/structure"
+	"model-integrity-inspector.local/mii/internal/integrity/analysis/tokenrisk"
 	"model-integrity-inspector.local/mii/internal/integrity/domain"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/generator"
 	"model-integrity-inspector.local/mii/internal/integrity/probe/templates"
@@ -21,7 +22,7 @@ import (
 // Only the upstream response is synthetic: it emits deterministic numbered
 // units and clips the actual encoded response at a configured token budget.
 // No network service, paid endpoint or acceptance dataset is involved.
-func standardFixture(t testing.TB, mode string) []Sample {
+func standardFixture(t testing.TB, mode string) []tokenrisk.Sample {
 	t.Helper()
 	engine, err := tokenizer.NewBuiltin()
 	if err != nil {
@@ -46,7 +47,7 @@ func standardFixture(t testing.TB, mode string) []Sample {
 	m, err := g.Generate(generator.Options{OrganizationID: 1,
 		Target:  domain.ExecutionTarget{ID: 1, Version: 1, SecretID: 1, SecretVersion: 1, Model: "gpt-4o-2024-08-06", Endpoint: "https://example.com/v1", Protocol: "openai_chat", MaxOutputParameter: "max_tokens"},
 		Package: "standard", Budget: domain.ExecutionBudget{MaxRequests: 150, MaxTokens: 1000000, TimeoutSeconds: 600},
-		RuleVersion: Version, ScoringVersion: Version, ContextWindow: 128000, MaxOutputTokens: 4096, SupportsStream: true, SupportsSeed: true, Concurrency: 3, MaxRetries: 2})
+		RuleVersion: tokenrisk.Version, ScoringVersion: tokenrisk.Version, ContextWindow: 128000, MaxOutputTokens: 4096, SupportsStream: true, SupportsSeed: true, Concurrency: 3, MaxRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,21 +58,21 @@ func standardFixture(t testing.TB, mode string) []Sample {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := make([]Sample, 0, len(m.Samples))
+	result := make([]tokenrisk.Sample, 0, len(m.Samples))
 	for _, manifest := range m.Samples {
-		s := sample(int64(manifest.Ordinal+1), int64(manifest.MaxOutputTokens), 0)
+		s := tokenrisk.StandardSampleForTest(int64(manifest.Ordinal+1), int64(manifest.MaxOutputTokens), 0)
 		s.Family, s.Language, s.Variant = manifest.Family, manifest.Language, manifest.Variant
 		s.TemplateID, s.TemplateVersion = manifest.TemplateID, manifest.TemplateVersion
 		s.Repetition, s.GroupID, s.Seed, s.Stream = manifest.Repetition, manifest.GroupID, manifest.Seed, manifest.Stream
 		s.ConditionID = manifest.ConditionID
 		// Fixed task/settings identity deliberately excludes tier, stream mode
 		// and nonce. Style/format/language semantics are retained.
-		s.SeriesID = testDigest(fmt.Sprintf("%s/%s/%d/%s/%s/%s/model:gpt4o/temp:0", s.Family, s.Language, s.Variant, s.TemplateID, s.TemplateVersion, manifest.Variables.Style))
+		s.SeriesID = tokenrisk.StandardDigestForTest(fmt.Sprintf("%s/%s/%d/%s/%s/%s/model:gpt4o/temp:0", s.Family, s.Language, s.Variant, s.TemplateID, s.TemplateVersion, manifest.Variables.Style))
 		s.ProtocolChecked = true
 		output := "Complete."
 		finish := "STOP"
 		contract := structure.Contract{Kind: structure.Text}
-		if ladder(s) {
+		if tokenrisk.StandardLadderForTest(s) {
 			var body strings.Builder
 			for n := 1; n <= 100; n++ {
 				if s.Family == "jsonl" {
@@ -106,7 +107,7 @@ func standardFixture(t testing.TB, mode string) []Sample {
 		if err != nil || (s.Local.Quality != tokenizer.Exact && s.Local.Quality != tokenizer.Compatible) || s.Local.Tokens == nil {
 			t.Fatalf("actual local tokenizer failed: %v", err)
 		}
-		if ladder(s) {
+		if tokenrisk.StandardLadderForTest(s) {
 			expected := manifest.MaxOutputTokens
 			if mode == "capped256" || (mode == "stream_only" && s.Stream) {
 				expected = min(expected, 256)
@@ -128,7 +129,7 @@ func standardFixture(t testing.TB, mode string) []Sample {
 }
 
 func TestActualStandard60SamplesFixed256Proxy(t *testing.T) {
-	r := analyzeTest(t, standardFixture(t, "capped256"))
+	r := tokenrisk.StandardAnalyzeForTest(t, standardFixture(t, "capped256"))
 	hitFamilies := map[string]bool{}
 	for _, p := range r.Plateaus {
 		if p.Low.RequestedMaxTokens == 256 && p.High.RequestedMaxTokens == 512 {
@@ -153,7 +154,7 @@ func TestActualStandard60SamplesFixed256Proxy(t *testing.T) {
 func TestActualStandard60HealthyAndStreamOnlyControls(t *testing.T) {
 	for _, mode := range []string{"healthy", "stream_only"} {
 		t.Run(mode, func(t *testing.T) {
-			r := analyzeTest(t, standardFixture(t, mode))
+			r := tokenrisk.StandardAnalyzeForTest(t, standardFixture(t, mode))
 			for _, p := range r.Plateaus {
 				if p.Candidate {
 					t.Fatalf("%s fabricated common-mode platform: %+v", mode, p)
